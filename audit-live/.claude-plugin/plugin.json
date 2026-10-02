@@ -1,0 +1,6 @@
+{
+  "name": "audit-live",
+  "version": "0.1.0",
+  "description": "Live progress for the security-audit skill: phase, findings by severity and a notice for each new finding",
+  "author": { "name": "Bartek Filipiuk" }
+}

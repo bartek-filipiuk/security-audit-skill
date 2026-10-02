@@ -1,0 +1,48 @@
+{
+  "name": "ledgerly",
+  "version": "0.4.2",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "worker": "tsx src/server/jobs/worker.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "3.0.12",
+    "@ai-sdk/react": "2.0.40",
+    "@aws-sdk/client-s3": "3.890.0",
+    "@aws-sdk/s3-request-presigner": "3.890.0",
+    "@tanstack/react-query": "5.90.2",
+    "@trpc/client": "11.8.0",
+    "@trpc/server": "11.8.0",
+    "@trpc/tanstack-react-query": "11.8.0",
+    "ai": "6.0.40",
+    "better-auth": "1.6.27",
+    "drizzle-orm": "0.45.2",
+    "hono": "4.12.25",
+    "next": "16.3.0",
+    "pg-boss": "10.1.0",
+    "postgres": "3.4.7",
+    "posthog-js": "1.268.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "resend": "6.1.0",
+    "server-only": "0.0.1",
+    "stripe": "22.3.1",
+    "svix": "1.76.1",
+    "zod": "4.1.5"
+  },
+  "devDependencies": {
+    "@types/node": "22.18.0",
+    "@types/react": "19.2.2",
+    "drizzle-kit": "0.31.4",
+    "tsx": "4.20.5",
+    "typescript": "5.9.2",
+    "vitest": "4.1.8"
+  }
+}

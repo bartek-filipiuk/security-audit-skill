@@ -1,17 +1,31 @@
 # Finding & Non-Issue File Formats
 
 All agents write to `.security-audit/` using these formats.
-One file per finding/non-issue. Filename: `{category}-{NNN}.md` (e.g., `injection-001.md`).
+One file per finding/non-issue. Filename: `{category}-{NNN}.md` (e.g., `injection-101.md`). NNN comes from the writer's number range so parallel agents never overwrite each other: Phase 2 auditor k uses k01–k99 for findings and non-issues alike, verifier EXPAND uses 8NN, COMBINE chains use 9NN.
+`node $SKILL_DIR/scripts/audit-state.mjs` validates these files (enums, required sections, proof labels, remediation consistency). Frontmatter supports `key: value`, one nested block (`remediation:`), `- item` lists and `["a", "b"]` arrays; no multi-line `|` / `>` values.
+
+**Canonical category set** (single source of truth — keep `report-template.md` and the agent prompts in sync with this): the 12 audit categories `auth, injection, rate-limit, exposure, config, upload, dependency, crypto, concurrency, docs-vs-reality, business-logic, logging` (mapping to checklist §2.1–§2.12), plus `test-gap` (Phase 4 test-quality findings) and `chain` (cross-domain chains discovered in COMBINE). Note `docs-vs-reality` (§2.10) is a valid finding category — it was previously missing from the enum. Classes without their own category go where the fix lives: SSRF → `injection`, CSRF and tenant-scope bugs → `auth`, secrets in git history → `exposure`.
 
 ## Finding Format
 
 ```markdown
 ---
 id: {category}-{NNN}
-category: auth | injection | exposure | config | upload | rate-limit | dependency | crypto | concurrency | business-logic | logging
+category: auth | injection | rate-limit | exposure | config | upload | dependency | crypto | concurrency | docs-vs-reality | business-logic | logging | test-gap | chain
 severity: CRITICAL | HIGH | MEDIUM | LOW
-status: raw | verified | rejected
+status: raw | verified | rejected   # the audit verdict only; never `fixed` (remediation state lives below)
 source_agent: recon | auditor-{name} | verifier
+proof: dynamic | static  # REQUIRED for verified HIGH/CRITICAL: dynamic = exploit was run (see ## Proof), static = code reading only
+rejection_reason: ""  # When status=rejected. Starts with a code: dead_code | unreachable | defensive_failure | best_practice | duplicate_of_{id} | no_evidence; optional " — short reason" after it
+prerequisite_count: 0  # Number of admin/config steps required before exploitable
+remediation:           # OPTIONAL — added by Phase 6 (fix or --verify-fixes), only on verified findings
+  status: open         # fixed | partial | open | wont_fix | cannot_verify
+  fixed_at: ""         # YYYY-MM-DD when fixed
+  fix_commit: ""       # optional
+  fix_evidence: []     # ["path:line"] proof the fix is live in current code (REQUIRED for `fixed`)
+  regression_test: ""  # "path:line" or empty
+  verification: ""     # one line: what now blocks the exploit (REQUIRED rationale for `wont_fix`)
+  public_safe: false   # true ONLY when status: fixed; audit-state.mjs recomputes it for remediation.json
 ---
 
 ## Title
@@ -36,6 +50,9 @@ source_agent: recon | auditor-{name} | verifier
 2. [concrete step]
 3. [expected result]
 
+## Proof
+[HIGH/CRITICAL. proof: dynamic → the exact command run (PoC in `.security-audit/poc/`) and the relevant output. proof: static → one line on why it could not be run.]
+
 ## Chained With
 - [other finding IDs, if applicable, or "none"]
 
@@ -44,6 +61,12 @@ source_agent: recon | auditor-{name} | verifier
 
 ## Test Coverage
 tested | untested | test exists but insufficient
+
+## Rejection Note
+[When status=rejected: explain why. Reference the specific REJECT gate check that failed (6a/6b/6c/6d). If duplicate, reference the canonical finding ID.]
+
+## Remediation
+[Added by Phase 6 when fixed: what changed + why, mirroring the `remediation:` frontmatter block. The Exploit Steps above are treated as sensitive — downstream public surfaces (e.g. a public security page) redact them unless `remediation.public_safe: true`.]
 ```
 
 ## Non-Issue Format
@@ -51,7 +74,7 @@ tested | untested | test exists but insufficient
 ```markdown
 ---
 id: non-{category}-{NNN}
-category: auth | injection | exposure | config | upload | rate-limit | dependency | crypto | concurrency | business-logic | logging
+category: auth | injection | rate-limit | exposure | config | upload | dependency | crypto | concurrency | docs-vs-reality | business-logic | logging | test-gap | chain
 source_agent: auditor-{name}
 ---
 
@@ -64,6 +87,14 @@ source_agent: auditor-{name}
 ## Evidence
 - **File**: `path/to/file.py:42`
 - **Code or config**: [relevant snippet showing the protection is in place]
+```
+
+A non-issue without the control's file:line is not allowed. When something could not be checked, add a row to `.security-audit/not-assessed.md` instead:
+
+```markdown
+| Category | Check | Why not assessed |
+|---|---|---|
+| dependency | CVE scan | osv-scanner and docker unavailable (prepass: NOT RUN) |
 ```
 
 ## Recon Output Format (.security-audit/recon.md)
@@ -79,8 +110,17 @@ source_agent: auditor-{name}
 - Deployment: [method]
 
 ## Entry Points
-| # | Route/Handler | File | Auth Required | Method |
-|---|--------------|------|---------------|--------|
+| # | Kind | Route/Handler | File:line | Method |
+|---|------|--------------|-----------|--------|
+(start from prepass.md; add what it cannot see)
+
+## Authorization Map (claims to verify)
+| # | Entry point | Authn at | Authz at | Scope at (id from session or request?) |
+|---|-------------|----------|----------|-----------------------------------------|
+Levels: proxy | layout | page | handler | action | procedure | DAL | query | none-found, each with file:line.
+
+### Proximity-only entry points
+[entry points whose only control is in proxy/middleware, a layout or a page]
 
 ## Auth System
 [description: JWT/sessions/OAuth/API keys, where validated, middleware chain]
@@ -89,8 +129,11 @@ source_agent: auditor-{name}
 - Total: [N]
 - Pinned: [N/N] ([%])
 - Lockfile: [yes/no]
-- Advisory mechanism: [Dependabot/npm audit/none]
-- Notable: [any concerning deps]
+- Advisory mechanism: [Dependabot/Renovate/none]
+- Pre-pass advisories: [N vulnerable packages, highest CVSS, prod vs dev-only] (from prepass.md, never from memory)
+
+## Not assessed
+[pre-pass tools that were NOT RUN or FAILED, and anything else recon could not map]
 
 ## Security Claims
 | # | Source | Claim | To Verify In |

@@ -13,6 +13,14 @@ Skip categories that don't apply to the detected stack.
 - [ ] Session ID generation: verify session IDs use cryptographic RNG (not sequential, not timestamp-based, not `mt_rand()`). Check for `HttpOnly` and `Secure` flags on session cookies
 - [ ] Account lockout: failed login attempts tracked and rate-limited. Verify lockout mechanism exists (time-based delay, account lock after N failures, or progressive backoff)
 - [ ] Cookie-based auth checks: authorization decisions must use server-side session data, NOT client-controllable cookies. Search for `$_COOKIE` / `req.cookies` in auth logic
+- [ ] BOLA on read: route handlers accepting ID parameters (`:id`, `{id}`, `<id>`) must verify the authenticated user owns the fetched object before returning it. Search for `findOne`/`findById`/`get` with route param but WITHOUT ownership filter (e.g., missing `UserId: authenticatedUser.id` in query)
+- [ ] BOLA on write: PUT/PATCH/DELETE on `/:id` resources must include ownership filter in the UPDATE/DELETE query itself, not just in a preceding SELECT. Search for `update`/`delete` with `req.params.id` or `req.body.id` without owner scope
+- [ ] BFLA — admin routes: endpoints with "admin" in path must have admin-specific middleware/decorator, not just generic auth. Search for routes containing `/admin` without role verification
+- [ ] BFLA — HTTP method consistency: if GET on a resource requires auth, verify POST/PUT/DELETE on the same resource also requires auth (at same or higher level). Search for method handlers on same path with different protection levels
+- [ ] BFLA — state-changing without auth: POST/PUT/DELETE endpoints that modify data (checkout, upgrade, transfer, delete) must have explicit auth middleware. Search for state-changing routes without any auth decorator/middleware
+- [ ] Tenant scope on every query, not only on `/:id` routes: list, search, export, report, dashboard and job queries filter by the owner/tenant column. Resolve every pre-pass Data Scope Scan candidate (UNSCOPED / PARENT-ONLY) to a finding or to a non-issue citing where scoping happens
+- [ ] Owner/tenant id comes from the session, never from body, query, params, a tool argument or a job payload without a membership check (`searchParams.get("org")`, `input.orgId`, `job.data.userId`)
+- [ ] Proximity-only controls: auth that lives only in `proxy.ts`/`middleware.ts`, a layout or a page does not protect server actions, route handlers or tRPC procedures that reuse the same data. Each entry point enforces its own check; paths outside the proxy `matcher` get no check at all
 
 ## 2.2 Input Validation & Injection
 
@@ -46,6 +54,7 @@ Skip categories that don't apply to the detected stack.
 - [ ] API responses don't over-expose fields (no password hashes, internal IDs, admin flags returned to non-admins)
 - [ ] Logs don't contain secrets, tokens, or passwords
 - [ ] .env / credentials files in .gitignore
+- [ ] Pre-pass secret scan (gitleaks, whole git history): every real credential that was ever committed is a finding until rotated, even if the file is gone. Fixtures and placeholders are non-issues
 
 ## 2.5 Security Headers & Transport
 
@@ -70,7 +79,7 @@ Skip if no upload endpoints found in recon.
 ## 2.7 Dependency Security
 
 - [ ] All dependencies pinned to specific versions (lockfile present and committed)
-- [ ] No dependencies with known critical/high CVEs (check advisories for major deps)
+- [ ] Known advisories come from the pre-pass dependency scan (osv-scanner), never from memory. Prod tree + plausibly reachable code path → finding (cite the lockfile line and where the feature is used); dev-only → recommendation unless it runs in CI/build on untrusted input or a dev server is exposed. Scan NOT RUN → not-assessed, not "no CVEs"
 - [ ] No unnecessary dependencies (large attack surface from unused packages)
 - [ ] Transitive dependency risks: critical path depending on single-maintainer package?
 - [ ] Dependency update mechanism exists (Dependabot, Renovate, or documented process)

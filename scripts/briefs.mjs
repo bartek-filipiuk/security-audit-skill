@@ -1,0 +1,86 @@
+#!/usr/bin/env node
+// Writes one brief per Phase 2 auditor: only its checklist sections plus the stack patterns for the
+// languages the project actually contains. The coordinator passes the brief's path instead of pasting
+// the checklist into every prompt, which keeps the coordinator's context small on big projects.
+//   node briefs.mjs [--dir .security-audit] [--brief name=2.1,2.3 ...]
+// Without --brief it writes the default five: auth, injection, infra, concurrency, upload.
+
+import { spawnSync } from "node:child_process";
+import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const REF = join(dirname(fileURLToPath(import.meta.url)), "..", "references");
+export const DEFAULT_BRIEFS = {
+  auth: ["2.1", "2.3", "2.10", "2.11"],
+  injection: ["2.2", "2.4"],
+  infra: ["2.5", "2.7", "2.8", "2.12"],
+  concurrency: ["2.9"],
+  upload: ["2.6"],
+};
+
+// First-column labels in stack-patterns.md, per language family.
+const LANG_ROWS = {
+  js: /^(JS\/TS|JS|React|Vue|Angular|EJS|Handlebars|Next\.js.*|tRPC|Hono|Better-Auth|AI SDK.*|AI tools|pg-boss.*|Stripe.*|Drizzle)$/,
+  php: /^(PHP.*|Drupal.*|PHP\/Twig)$/,
+  python: /^(Python.*|Django)$/,
+  go: /^Go( templates)?$/,
+  ruby: /^(Ruby|Rails)$/,
+  java: /^(Java.*)$/,
+};
+const GENERIC = /^(All|All languages|General|Detection|Config|Method inconsistency|Unprotected mutations)$/;
+const EXT = { js: /\.(?:[cm]?[jt]sx?)$/, php: /\.(php|module|inc|theme|install)$/, python: /\.py$/, go: /\.go$/, ruby: /\.rb$/, java: /\.(java|kt)$/ };
+
+export function detectLanguages(root) {
+  const r = spawnSync("git", ["-C", root, "ls-files"], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  const files = r.status === 0 ? r.stdout.split("\n") : [];
+  return Object.keys(EXT).filter((l) => files.some((f) => EXT[l].test(f) && !/node_modules|vendor\//.test(f)));
+}
+
+function checklistSections(numbers) {
+  const ck = readFileSync(join(REF, "audit-checklist.md"), "utf8");
+  return numbers.map((n) => {
+    const m = ck.match(new RegExp(`^## ${n.replace(".", "\\.")} [\\s\\S]*?(?=^## |(?![\\s\\S]))`, "m"));
+    return m ? m[0].trim() : `(checklist section ${n} not found)`;
+  });
+}
+
+export function patternsFor(langs) {
+  const sp = readFileSync(join(REF, "stack-patterns.md"), "utf8");
+  const isLang = (label) => Object.values(LANG_ROWS).some((re) => re.test(label));
+  // Language rows only for languages present; generic rows and plain regex rows always.
+  const rowOk = (label) => GENERIC.test(label) || langs.some((l) => LANG_ROWS[l]?.test(label)) || !isLang(label);
+  const out = [];
+  for (const part of sp.split(/^## /m).slice(1)) {
+    const [title, ...rest] = part.split("\n");
+    if (/PHP/.test(title) && !langs.includes("php")) continue;
+    if (/JS\/TS|JS frameworks/.test(title) && !langs.includes("js")) continue;
+    const rows = rest.filter((l) => l.startsWith("|"));
+    if (rows.length < 3) continue;
+    const first = (r) => r.split("|")[1]?.trim() ?? "";
+    const keep = rows.slice(2).filter((r) => rowOk(first(r)));
+    if (keep.length) out.push(`## ${title}\n${rows[0]}\n${rows[1]}\n${keep.join("\n")}`);
+  }
+  return out.join("\n\n");
+}
+
+export function writeBriefs(dir, briefs = DEFAULT_BRIEFS, langs = detectLanguages(resolve(dir, ".."))) {
+  mkdirSync(join(dir, "briefs"), { recursive: true });
+  const patterns = patternsFor(langs);
+  const written = {};
+  for (const [name, numbers] of Object.entries(briefs)) {
+    const body = `# Brief: ${name} auditor\n\nLanguages detected: ${langs.join(", ") || "none"}.\n\n## Your checklist\n\n${checklistSections(numbers).join("\n\n")}\n\n# Stack patterns\n\n${patterns}\n`;
+    writeFileSync(join(dir, "briefs", `${name}.md`), body);
+    written[name] = body.length;
+  }
+  return written;
+}
+
+if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
+  const args = process.argv.slice(2);
+  const dir = resolve(args.indexOf("--dir") >= 0 ? args[args.indexOf("--dir") + 1] : ".security-audit");
+  const custom = args.flatMap((a, i) => (args[i - 1] === "--brief" ? [a] : []));
+  const briefs = custom.length ? Object.fromEntries(custom.map((c) => { const [n, s] = c.split("="); return [n, s.split(",")]; })) : DEFAULT_BRIEFS;
+  const sizes = writeBriefs(dir, briefs);
+  console.log(`briefs: ${Object.entries(sizes).map(([n, b]) => `${n} (${Math.round(b / 1000)}k chars)`).join(", ")} -> ${join(dir, "briefs")}`);
+}

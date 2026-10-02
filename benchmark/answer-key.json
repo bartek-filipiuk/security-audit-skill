@@ -1,0 +1,469 @@
+{
+  "version": 1,
+  "app": "ledgerly",
+  "note": "Ground truth for benchmark/app. Never copy this file into the audited directory. A finding matches an entry when it cites one of `files` (path suffix) and its title or body contains one of `keywords` (case-insensitive). Keep keywords out of file names: a keyword that appears in a cited path matches every finding on that file.",
+  "seeded": [
+    {
+      "id": "B01",
+      "class": "BOLA read via server action",
+      "severity": "CRITICAL",
+      "files": [
+        "src/app/(app)/invoices/actions.ts"
+      ],
+      "keywords": [
+        "bola",
+        "idor",
+        "ownership",
+        "authoriz",
+        "tenant",
+        "cross-org",
+        "cross-tenant",
+        "any invoice",
+        "orgid",
+        "scope",
+        "organization",
+        "access control"
+      ],
+      "detect": "llm+scope-scan",
+      "why": "getInvoice() is a public server action (imported by a client component) that selects by id with no session or org check."
+    },
+    {
+      "id": "B02",
+      "class": "BOLA write via tRPC mutation",
+      "severity": "HIGH",
+      "files": [
+        "src/server/trpc/routers/project.ts"
+      ],
+      "keywords": [
+        "bola",
+        "idor",
+        "ownership",
+        "authoriz",
+        "tenant",
+        "cross-org",
+        "cross-tenant",
+        "orgid",
+        "scope",
+        "organization",
+        "access control"
+      ],
+      "detect": "llm+scope-scan",
+      "why": "project.update filters only by id; any org member can edit another org's project, including flipping isPublic (chains with B05)."
+    },
+    {
+      "id": "B03",
+      "class": "Tenant id taken from request (export of another org's customers)",
+      "severity": "CRITICAL",
+      "files": [
+        "src/app/api/export/route.ts"
+      ],
+      "keywords": [
+        "org",
+        "tenant",
+        "idor",
+        "bola",
+        "query param",
+        "searchparams",
+        "membership",
+        "authoriz",
+        "export"
+      ],
+      "detect": "llm",
+      "why": "?org= overrides the session's active organization without a membership check; exports names, emails, phones, tax ids."
+    },
+    {
+      "id": "B04",
+      "class": "Unauthenticated admin endpoint (auth only in proxy matcher / page)",
+      "severity": "HIGH",
+      "files": [
+        "src/app/api/admin/stats/route.ts"
+      ],
+      "keywords": [
+        "unauth",
+        "no auth",
+        "missing auth",
+        "authentication",
+        "admin",
+        "proxy",
+        "middleware",
+        "matcher",
+        "public"
+      ],
+      "detect": "llm+entrypoints",
+      "why": "Route has no session/role check; proxy matcher covers /admin but not /api/admin; leaks recent signups with emails."
+    },
+    {
+      "id": "B05",
+      "class": "RSC serialization of full DB row to a public client component",
+      "severity": "HIGH",
+      "files": [
+        "src/app/p/[slug]/page.tsx",
+        "src/components/public-project-view.tsx"
+      ],
+      "keywords": [
+        "internalnotes",
+        "internal notes",
+        "serializ",
+        "rsc",
+        "client component",
+        "over-expos",
+        "overexpos",
+        "exposure",
+        "props",
+        "payload",
+        "budget",
+        "clientcontactemail",
+        "s3key"
+      ],
+      "detect": "llm+scope-scan",
+      "why": "The whole projects row (internalNotes, budgetCents, clientContactEmail, orgId) and documents (s3Key) are passed to a 'use client' component on a public page."
+    },
+    {
+      "id": "B06",
+      "class": "Cross-tenant cache leak (unstable_cache key without org)",
+      "severity": "HIGH",
+      "files": [
+        "src/server/queries/dashboard.ts"
+      ],
+      "keywords": [
+        "cache",
+        "unstable_cache",
+        "key",
+        "cross-tenant",
+        "cross-org",
+        "tenant",
+        "leak"
+      ],
+      "detect": "llm",
+      "why": "getUsageThisMonth caches under ['usage-month'] with a zero-arg closure, so every org gets the first org's usage."
+    },
+    {
+      "id": "B07",
+      "class": "Secret API key shipped to the browser (NEXT_PUBLIC_)",
+      "severity": "HIGH",
+      "files": [
+        "src/lib/ai-client.ts",
+        "src/components/assistant-panel.tsx",
+        ".env.example"
+      ],
+      "keywords": [
+        "next_public",
+        "client bundle",
+        "browser",
+        "api key",
+        "secret",
+        "anthropic"
+      ],
+      "detect": "llm",
+      "why": "NEXT_PUBLIC_ANTHROPIC_API_KEY is inlined into the client bundle and used with dangerous-direct-browser-access."
+    },
+    {
+      "id": "B08",
+      "class": "Stripe webhook without signature verification",
+      "severity": "CRITICAL",
+      "files": [
+        "src/app/api/webhooks/stripe/route.ts"
+      ],
+      "keywords": [
+        "signature",
+        "constructevent",
+        "webhook",
+        "forge",
+        "verif",
+        "stripe-signature"
+      ],
+      "detect": "llm",
+      "why": "Parses request.json() and grants a paid plan from metadata; anyone can POST a fake checkout.session.completed."
+    },
+    {
+      "id": "B09",
+      "class": "SSRF with response body returned",
+      "severity": "HIGH",
+      "files": [
+        "src/server/trpc/routers/integration.ts"
+      ],
+      "keywords": [
+        "ssrf",
+        "server-side request",
+        "internal",
+        "metadata",
+        "169.254",
+        "fetch"
+      ],
+      "detect": "llm",
+      "why": "testWebhook fetches any URL (redirects followed) and returns 2 KB of the response to the caller."
+    },
+    {
+      "id": "B10",
+      "class": "LLM tool trusts model-supplied tenant id",
+      "severity": "HIGH",
+      "files": [
+        "src/server/ai/tools.ts"
+      ],
+      "keywords": [
+        "orgid",
+        "prompt injection",
+        "tool",
+        "model-controlled",
+        "llm",
+        "tenant",
+        "cross-org",
+        "agent",
+        "organization",
+        "access control"
+      ],
+      "detect": "llm",
+      "why": "searchInvoices takes orgId as a tool parameter instead of ctx.orgId; a prompt can read any org's invoices and customer emails."
+    },
+    {
+      "id": "B11",
+      "class": "Presigned upload key and content type from the client",
+      "severity": "HIGH",
+      "files": [
+        "src/app/api/uploads/route.ts"
+      ],
+      "keywords": [
+        "key",
+        "presign",
+        "prefix",
+        "overwrite",
+        "path",
+        "content-type",
+        "contenttype",
+        "s3",
+        "r2",
+        "projectid"
+      ],
+      "detect": "llm",
+      "why": "Object key comes from the body, so a user can overwrite other orgs' objects and upload text/html; projectId is not checked against the org."
+    },
+    {
+      "id": "B12",
+      "class": "Mass assignment of role at sign-up (Better-Auth additionalFields input defaults to true)",
+      "severity": "CRITICAL",
+      "files": [
+        "src/lib/auth.ts"
+      ],
+      "keywords": [
+        "role",
+        "additionalfields",
+        "input",
+        "mass assignment",
+        "privilege",
+        "admin",
+        "sign-up",
+        "signup"
+      ],
+      "detect": "llm",
+      "why": "role is an additionalField without input:false; signUp.email({ role: 'admin' }) passes requireAdmin()."
+    },
+    {
+      "id": "B13",
+      "class": "Background job emails one org's data to every user",
+      "severity": "HIGH",
+      "files": [
+        "src/server/jobs/digest.ts"
+      ],
+      "keywords": [
+        "recipient",
+        "every user",
+        "all users",
+        "member",
+        "tenant",
+        "cross-org",
+        "emaildigest",
+        "scope",
+        "leak",
+        "organization",
+        "access control"
+      ],
+      "detect": "llm",
+      "why": "Recipients are all users with emailDigest=true, not members of the org; each org's overdue invoices go to everyone."
+    },
+    {
+      "id": "B14",
+      "class": "Vulnerable framework version (Next.js image optimizer AVIF RCE) reachable via remotePatterns",
+      "severity": "CRITICAL",
+      "files": [
+        "pnpm-lock.yaml",
+        "package.json",
+        "next.config.ts"
+      ],
+      "keywords": [
+        "ghsa-2xp9-vwfh-vxw4",
+        "avif",
+        "16.3.0",
+        "next@16",
+        "image optim",
+        "vulnerable version",
+        "outdated"
+      ],
+      "detect": "tool:osv",
+      "why": "next@16.3.0 < 16.3.3; images.remotePatterns allows *.r2.dev, which any attacker can host."
+    },
+    {
+      "id": "B15",
+      "class": "Live secret in git history",
+      "severity": "HIGH",
+      "files": [
+        ".env"
+      ],
+      "keywords": [
+        "history",
+        "commit",
+        "sk_live",
+        "stripe-access-token",
+        "gitleaks",
+        "rotate"
+      ],
+      "detect": "tool:gitleaks",
+      "why": "setup.mjs commits a .env with a Stripe live-format key and then deletes it; only a history scan sees it."
+    },
+    {
+      "id": "B16",
+      "class": "CORS reflects any origin with credentials and SameSite=None session cookies",
+      "severity": "HIGH",
+      "files": [
+        "src/server/api/index.ts",
+        "src/lib/auth.ts"
+      ],
+      "keywords": [
+        "cors",
+        "origin",
+        "credentials",
+        "samesite",
+        "cross-origin",
+        "cross-site"
+      ],
+      "detect": "llm",
+      "why": "Any website can read a logged-in user's invoices from /api/public with fetch(..., { credentials: 'include' })."
+    }
+  ],
+  "decoys": [
+    {
+      "id": "D01",
+      "files": [
+        "src/app/(app)/projects/actions.ts"
+      ],
+      "keywords": [
+        "bola",
+        "idor",
+        "ownership",
+        "authoriz",
+        "tenant",
+        "scope",
+        "organization",
+        "access control"
+      ],
+      "why": "getProject/deleteProject are scoped by orgId."
+    },
+    {
+      "id": "D02",
+      "files": [
+        "src/server/trpc/routers/invoice.ts"
+      ],
+      "keywords": [
+        "bola",
+        "idor",
+        "ownership",
+        "authoriz",
+        "tenant",
+        "scope",
+        "organization",
+        "access control"
+      ],
+      "why": "list and byId are scoped by ctx.orgId."
+    },
+    {
+      "id": "D03",
+      "files": [
+        "src/app/api/webhooks/resend/route.ts"
+      ],
+      "keywords": [
+        "signature",
+        "webhook",
+        "verif",
+        "forge"
+      ],
+      "why": "svix signature verified on the raw body before any write."
+    },
+    {
+      "id": "D04",
+      "files": [
+        "src/server/queries/dashboard.ts"
+      ],
+      "keywords": [
+        "getorgstats",
+        "org-stats"
+      ],
+      "why": "unstable_cache includes the orgId argument in the key."
+    },
+    {
+      "id": "D05",
+      "files": [
+        "src/lib/analytics.ts"
+      ],
+      "keywords": [
+        "posthog"
+      ],
+      "why": "PostHog project key is public by design."
+    },
+    {
+      "id": "D06",
+      "files": [
+        "src/server/services/rates.ts"
+      ],
+      "keywords": [
+        "ssrf",
+        "fetch"
+      ],
+      "why": "Hardcoded host; base currency is allow-listed."
+    },
+    {
+      "id": "D07",
+      "files": [
+        "src/app/api/documents/[id]/download/route.ts"
+      ],
+      "keywords": [
+        "bola",
+        "idor",
+        "ownership",
+        "authoriz",
+        "tenant",
+        "scope",
+        "organization",
+        "access control"
+      ],
+      "why": "Document looked up by id AND orgId before presigning."
+    },
+    {
+      "id": "D08",
+      "files": [
+        "src/server/api/keys.ts"
+      ],
+      "keywords": [
+        "timing",
+        "api key",
+        "hash",
+        "compare",
+        "scope"
+      ],
+      "why": "Keys are hashed, compared with timingSafeEqual, and looked up by prefix by design."
+    }
+  ],
+  "known_extras": [
+    {
+      "files": [
+        "pnpm-lock.yaml",
+        "package.json"
+      ],
+      "keywords": [
+        "hono",
+        "postcss",
+        "sharp",
+        "vitest"
+      ],
+      "why": "Real advisories in pinned dependency versions reported by osv-scanner; valid findings, not scored."
+    }
+  ]
+}

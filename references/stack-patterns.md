@@ -2,6 +2,22 @@
 
 Use these grep/ripgrep patterns during Phase 2 to find relevant code.
 Adapt based on the stack identified in Phase 1. Not exhaustive — use judgment.
+The pre-pass (`prepass.md`) already enumerates entry points and unscoped Drizzle queries; use the patterns below to go further.
+
+## Entry Points and Attacker-Controlled Input (JS/TS frameworks)
+
+Express-style patterns (`req.body`, `app.get`) find nothing in these frameworks. Search for the input sources instead.
+
+| Framework | Entry point | Attacker-controlled input |
+|-----------|-------------|---------------------------|
+| Next.js App Router | `app/**/route.ts` exports `GET`/`POST`/…; every export of a `"use server"` file (a public POST, callable without the UI); `page.tsx` server components | `request.json()`, `request.formData()`, `searchParams`, `params`, `headers()`, `cookies()`, server action arguments |
+| Next.js proxy/middleware | `proxy.ts` / `middleware.ts` and its `config.matcher` | Paths outside the matcher get no check; a cookie-presence check is not authorization |
+| tRPC | `name: somethingProcedure.input(...).query/mutation(...)` | `input`; `publicProcedure` has no auth, `protectedProcedure` only checks login |
+| Hono | `app.get/post/...`, `app.route()`, `basePath()`, `app.use()` order | `c.req.param()`, `c.req.query()`, `c.req.json()`, `c.req.header()` |
+| Better-Auth | `betterAuth({ user: { additionalFields } })`, plugins, `trustedOrigins`, `advanced.defaultCookieAttributes` | sign-up body fields: `additionalFields` default to `input: true`, so `role`/`plan` without `input: false` is mass assignment |
+| AI SDK / Agent SDK / MCP | `tool({ inputSchema, execute })`, `tool("name", …)`, `server.tool(…)` | every tool argument (prompt injection, including content the model reads) |
+| pg-boss / BullMQ | `boss.work(name, handler)`, `new Worker(name, …)` | `job.data`, as trusted as whoever can enqueue it |
+| Stripe webhooks | `app/api/**/webhook*/route.ts` | the whole body unless `stripe.webhooks.constructEvent(rawBody, sig, secret)` runs first |
 
 ## SQL Injection
 
@@ -197,3 +213,31 @@ Adapt based on the stack identified in Phase 1. Not exhaustive — use judgment.
 | PHP | `rand\(`, `mt_rand\(`, `array_rand\(` for security purposes (should use `random_bytes`, `random_int`) |
 | Python | `random\.random\(`, `random\.randint\(` for security (should use `secrets` module) |
 | Java | `java\.util\.Random` for security (should use `SecureRandom`) |
+
+## BOLA (Broken Object Level Authorization)
+
+| Language | Patterns to search |
+|----------|-------------------|
+| JS/TS | `req\.params\.\w+.*find(One|ById)` without `UserId` in same query, `req\.body\.id.*update\(`, `req\.params\.id.*delete\(` |
+| Python/Django | `get_object_or_404\(.*pk=` without `owner=request.user`, `\.objects\.get\(id=` without `.filter(owner=` |
+| Python/Flask | `request\.args\.get.*query\.get\(` without ownership check |
+| Rails | `\.find\(params\[` without `.where(user_id: current_user.id)` scope |
+| PHP | `->find\(\$_` or `->get\(\$_` without `where.*user_id` |
+| Drizzle | `\.from\(\w+\)\.where\(eq\(\w+\.id,`, `\.update\(\w+\)`, `\.delete\(\w+\)`, `db\.query\.\w+\.find(First\|Many)` without the table's `orgId`/`userId` in the same statement (pre-pass Data Scope Scan lists them) |
+| Next.js server actions | `"use server"` functions taking an id with no `getSession()`/ownership check inside the action itself |
+| tRPC | `protectedProcedure`/`orgProcedure` that filter only by `input.id` |
+| AI tools | `inputSchema` containing `orgId`/`userId`/`tenantId`: the model chooses the tenant |
+| General | For each `/:id` endpoint: is there a `where` clause, `filter`, or explicit comparison between resource.ownerId and authenticated user? |
+
+## BFLA (Broken Function Level Authorization)
+
+| Pattern | What to look for |
+|---------|-----------------|
+| JS/TS | `app\.(get|post|put|delete)\(.*admin` → verify `isAuthorized`, `isAdmin`, or role-check middleware in same route definition |
+| Python/Flask | `@app.route.*admin` → verify `@admin_required` or `@role_required` decorator |
+| Django | `path.*admin` → verify `@user_passes_test`, `@permission_required`, or `IsAdminUser` permission class |
+| Rails | Routes with `admin` namespace → verify `before_action :require_admin` |
+| Java/Spring | `@RequestMapping.*admin` → verify `@PreAuthorize("hasRole('ADMIN')")` |
+| Next.js | Auth only in the proxy `matcher`, a layout or a page while `app/api/**/route.ts` or server actions skip it (`/admin` matched, `/api/admin` not) |
+| Method inconsistency | For same path: compare middleware on GET vs POST vs PUT vs DELETE. Different protection = BFLA |
+| Unprotected mutations | POST/PUT/DELETE routes with no auth middleware at all — especially: checkout, payment, upgrade, transfer, delete-account |

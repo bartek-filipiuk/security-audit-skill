@@ -1,0 +1,280 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    dependencies:
+      '@ai-sdk/anthropic':
+        specifier: 3.0.12
+        version: 3.0.12
+      '@ai-sdk/react':
+        specifier: 2.0.40
+        version: 2.0.40
+      '@aws-sdk/client-s3':
+        specifier: 3.890.0
+        version: 3.890.0
+      '@aws-sdk/s3-request-presigner':
+        specifier: 3.890.0
+        version: 3.890.0
+      '@tanstack/react-query':
+        specifier: 5.90.2
+        version: 5.90.2
+      '@trpc/client':
+        specifier: 11.8.0
+        version: 11.8.0
+      '@trpc/server':
+        specifier: 11.8.0
+        version: 11.8.0
+      '@trpc/tanstack-react-query':
+        specifier: 11.8.0
+        version: 11.8.0
+      ai:
+        specifier: 6.0.40
+        version: 6.0.40
+      better-auth:
+        specifier: 1.6.27
+        version: 1.6.27
+      drizzle-orm:
+        specifier: 0.45.2
+        version: 0.45.2
+      hono:
+        specifier: 4.12.25
+        version: 4.12.25
+      next:
+        specifier: 16.3.0
+        version: 16.3.0
+      pg-boss:
+        specifier: 10.1.0
+        version: 10.1.0
+      postgres:
+        specifier: 3.4.7
+        version: 3.4.7
+      posthog-js:
+        specifier: 1.268.0
+        version: 1.268.0
+      react:
+        specifier: 19.2.8
+        version: 19.2.8
+      react-dom:
+        specifier: 19.2.8
+        version: 19.2.8
+      resend:
+        specifier: 6.1.0
+        version: 6.1.0
+      server-only:
+        specifier: 0.0.1
+        version: 0.0.1
+      stripe:
+        specifier: 22.3.1
+        version: 22.3.1
+      svix:
+        specifier: 1.76.1
+        version: 1.76.1
+      zod:
+        specifier: 4.1.5
+        version: 4.1.5
+    devDependencies:
+      '@types/node':
+        specifier: 22.18.0
+        version: 22.18.0
+      '@types/react':
+        specifier: 19.2.2
+        version: 19.2.2
+      drizzle-kit:
+        specifier: 0.31.4
+        version: 0.31.4
+      tsx:
+        specifier: 4.20.5
+        version: 4.20.5
+      typescript:
+        specifier: 5.9.2
+        version: 5.9.2
+      vitest:
+        specifier: 4.1.8
+        version: 4.1.8
+
+packages:
+
+  '@ai-sdk/anthropic@3.0.12':
+    resolution: {integrity: sha512-AcdJRget/uhPPb2G1/WVBmKtheCWiU5fCS85YoDHzBkPg/+bcRg8g723Itl/3Nrk4Cz8gtmN0lpLCSL0U9amzw==}
+
+  '@ai-sdk/react@2.0.40':
+    resolution: {integrity: sha512-25g8yLM58yLLTzIc+ItEqJrmXekl+ku67XzrawlIDOvDefDIXHmvg7rswQj8aE4lIZmxEmYmOr8h2gw687kAKA==}
+
+  '@aws-sdk/client-s3@3.890.0':
+    resolution: {integrity: sha512-pARwZGpoLJ9by7Or0fBtk+g1dB0E9Ricw81/IdePi4doKrzNjNbequJHXur4oGFESywh/yIUSDC97C+quFB1kg==}
+
+  '@aws-sdk/s3-request-presigner@3.890.0':
+    resolution: {integrity: sha512-d3h1HDUKLsW3YBXUPR9r8LTRxVRzHxOY0sKItnqhpgGuL8mAtYrY5HjAbzRUiNQwAAQWChvpnGgsvhXC07MtDQ==}
+
+  '@next/env@16.3.0':
+    resolution: {integrity: sha512-Tc1X39Dnzm9f68ZuLWknrjO5MRgc+3Rt9I+DrXJ/tOZAtJyHi2LbopOej5R1hB5PVv97KjRZENEa8VhppvBd6Q==}
+
+  '@tanstack/react-query@5.90.2':
+    resolution: {integrity: sha512-oMBkryZ7L57m+rMD5frOzI0pkORVlQSYi6XFgKMOBwnBPsSyS2XDMt+VXsbyC3DUfZmJnHBBV8bPopOzWeTXvg==}
+
+  '@trpc/client@11.8.0':
+    resolution: {integrity: sha512-B8ZP8oxXCDUc4z96Vg51UQeDBPJtF09msOs3LdloJ37K8ba+lXWxhhyT02iSsigzidnyCGG68btXl6r8D+Y5/g==}
+
+  '@trpc/server@11.8.0':
+    resolution: {integrity: sha512-uyjVspyDDOOoisvufqsgPgLU0OfkV5InUZyqHIAmIeYYTN0tJ1xTalcdt/LEdnTVB7qgMQQWZyrHtmZiVU7Ahg==}
+
+  '@trpc/tanstack-react-query@11.8.0':
+    resolution: {integrity: sha512-QK87LL7NnTRFCf5VFx/wPCz9RB3PZ+7xaaD8LabILPjfwGFqB/PzLEYRA7bhfizYV6hrc7A51qBITq5e7d68tg==}
+
+  '@types/node@22.18.0':
+    resolution: {integrity: sha512-ei6UHBUS+YgprKpLMy8pY50jTaRg7qtPvWUSakYGeUcfc6UP6DkKYOxJ6pKIVCphNwMIaYRmjpmRXs54qTPm2g==}
+
+  '@types/react@19.2.2':
+    resolution: {integrity: sha512-dDscDoa5AO8Nffvb4W3vz8VRxpPXozgmrgDe5Lg7pTMCJxX4PFhRk9yyiUtUxj2cPhgoHPo2DoWl7sLlqoKZow==}
+
+  ai@6.0.40:
+    resolution: {integrity: sha512-8VwbKh1hBaaqf91Dv6a87rejU2YiqBqb27N6PRROQeEhootJZIy2H3doGkPmxxLeRfhCQSZOEPlFJ6nxNQW1Gw==}
+
+  better-auth@1.6.27:
+    resolution: {integrity: sha512-ZDYrHniTROJhzl3bYSyR0kQd9gwH6qZ1vGjPDK63uEG1x7D4sMzoZIYag5CRQY/4SW1AmhRztXRuYPGtazIESg==}
+
+  drizzle-kit@0.31.4:
+    resolution: {integrity: sha512-97IlBGKL9D3MKKIqgBKtdBJtJ0P5wcFD8spvwI+XJI5bP/DXCmpoK34l9XE/OY28+CuLA8rr1lnSXLtEo34Zbw==}
+
+  drizzle-orm@0.45.2:
+    resolution: {integrity: sha512-+WeROzx9hUPjoVV0wh70jmjim2v9UrGZixaG0u1RHnfMZIm0fU2Thj5+eB0thNb39yHkkLsOhLK5wu23vG3pcw==}
+
+  hono@4.12.25:
+    resolution: {integrity: sha512-Esz5MGo/PgKy5s3bbfn1tm0ZpiDKdb4DYjkAzOEvsDV9zZkwWNXS9dhDZXTxZBfINt2L6vwraSPd7slo5pLybw==}
+
+  next@16.3.0:
+    resolution: {integrity: sha512-tUVkfTkrUXGl7LUqmS/MQnSrSFY1GEp/gshE4XSNwGTG7eylsbYZsvmgbwjlqRAVJf2lD8vLZKvPmdxk49KpSQ==}
+
+  pg-boss@10.1.0:
+    resolution: {integrity: sha512-OBabP9WiX9bkO4Om1WsaSkvivHnE5/OPSu2ysLaa+rv5COTeYIwYHr1HuTznGEgIV2mFkIaLD6BC5qJTaubdzg==}
+
+  postcss@8.4.31:
+    resolution: {integrity: sha512-/5DYwyCO4pkwIbfGa1IcN4whJTAQzOWyXETBkaTu9BPmzR2gWkhKLj+MEKJRYhunZC2zKVv/HgArBZdxvKVLmA==}
+
+  postgres@3.4.7:
+    resolution: {integrity: sha512-WHwgfzLeZzRWGNQ/zh467zxaM4K4ako1Z6c9CtE48rnvAkKRmLeoHdUIYZ1yH7DQuUGBZmH8vcVEKGqu0rf1JA==}
+
+  posthog-js@1.268.0:
+    resolution: {integrity: sha512-9dnh5mMKM7xfh/vOerTW+ih5HDcsH975HtpjuBub0sivIZSkwr77+nIDj30yzvF7jncO68Q/7amY7lJBi0ZDYw==}
+
+  react@19.2.8:
+    resolution: {integrity: sha512-LibdHtDPow6/q9UK8Njo3rdjxuuVLtaBiR0vEbHbfZrcLSnSZyoTyBfJ5dHLzCJ5FgBS8FFRVdWet+pUX59HuA==}
+
+  react-dom@19.2.8:
+    resolution: {integrity: sha512-d/Kmpvuf8JxWtsbB605wXXsPbsfUVclpHLZbWdg2wn4FOIF1FsZCHYffHnUc49ZJx9uj5pmbmbZdhRQljFGoeg==}
+
+  resend@6.1.0:
+    resolution: {integrity: sha512-j3uBH83jv+KG4ddPIbYCdUO1mVSMRLb7HoeaKM0KOT/c2DVn0OlKAs/2enlcWDhvW5t28XddVPqFpoHqpJ9XWQ==}
+
+  scheduler@0.27.0:
+    resolution: {integrity: sha512-Wk4fN8hn8G8dYLR4ZjywFHZ/wbQooEqsEB5RMMJEv6oDRqed7cv/sBn9qvimfn/t4b6t3V9ytKq5XpmddwuO+A==}
+
+  server-only@0.0.1:
+    resolution: {integrity: sha512-RbQGNJaJX8191VqCF3QX9AHphh5dNdIt7b7/6L40DXG4GmJkdVIMSS8XGGIGM0zhEFX1tZU05XBgtyx93Q7r5Q==}
+
+  sharp@0.34.5:
+    resolution: {integrity: sha512-jqov1DMcJQljgYV3IP5YU1JnhxVssnaINLy7z0vVUY/Bigd6fMuW0oNtXjb9ysz7APnDNegfoY70YX+GwasI2A==}
+
+  stripe@22.3.1:
+    resolution: {integrity: sha512-bHMZCZQyAs3pHLxb6xpFIp1nnnzGIOpqwO4arFlqL9WMTk55sxSYyg62GHg4YjmlWgPc1Q4Fb7I1XVe/bDe4HA==}
+
+  styled-jsx@5.1.6:
+    resolution: {integrity: sha512-OlW/poVEJ2oFIBf51KxBjugbR/b+jueqCW1zcXLhjRWy2co8pDPsbl11csImi5fwWQsl0BiXAoeMH2wui9lgRQ==}
+
+  svix@1.76.1:
+    resolution: {integrity: sha512-GM/B93Y9Tt/C5X7PdmZH43TAPZz9OzP8mcPqD4Xj5Q+jwOE1yt0t3kZGjfHTsg/vexAxq+ARed/CA+wzBvTy/g==}
+
+  tsx@4.20.5:
+    resolution: {integrity: sha512-vwPJb8QKzuxQt1R3q1j3T42uI+DOmRLYahkh0hGRBNTWdaDqkSI0Y/HL4IHFJpI/qg15ccO1aACdj42Sl2sH0w==}
+
+  typescript@5.9.2:
+    resolution: {integrity: sha512-vu/OocnFLc4l49YT7P3BLIQje2MjLmQO1rFVM4vVHOto6OZL2t83jjJRf5TQKmr+zSFldctnLjDj+ooRe71r6Q==}
+
+  vitest@4.1.8:
+    resolution: {integrity: sha512-cN205SXyzJ1VEuqKlpQIQogBtxjZ5snnmc3ibnza1tcgrMN6wRjsdWtxB91NYU61CJ4En4ggMjuMFDMaBqkLZA==}
+
+  zod@4.1.5:
+    resolution: {integrity: sha512-XF9ksKgfio1gAZzzRDvXyqrc/qJtGrfMMXs6F6HAtc6XfwEBqgK1fIcPpbsgq4plLiZmgMOoqBlLd3MkiKU8XA==}
+
+snapshots:
+
+  '@ai-sdk/anthropic@3.0.12': {}
+
+  '@ai-sdk/react@2.0.40': {}
+
+  '@aws-sdk/client-s3@3.890.0': {}
+
+  '@aws-sdk/s3-request-presigner@3.890.0': {}
+
+  '@next/env@16.3.0': {}
+
+  '@tanstack/react-query@5.90.2': {}
+
+  '@trpc/client@11.8.0': {}
+
+  '@trpc/server@11.8.0': {}
+
+  '@trpc/tanstack-react-query@11.8.0': {}
+
+  '@types/node@22.18.0': {}
+
+  '@types/react@19.2.2': {}
+
+  ai@6.0.40: {}
+
+  better-auth@1.6.27: {}
+
+  drizzle-kit@0.31.4: {}
+
+  drizzle-orm@0.45.2: {}
+
+  hono@4.12.25: {}
+
+  next@16.3.0:
+    dependencies:
+      '@next/env': 16.3.0
+      postcss: 8.4.31
+      react: 19.2.8
+      react-dom: 19.2.8
+      styled-jsx: 5.1.6
+    optionalDependencies:
+      sharp: 0.34.5
+
+  pg-boss@10.1.0: {}
+
+  postcss@8.4.31: {}
+
+  postgres@3.4.7: {}
+
+  posthog-js@1.268.0: {}
+
+  react@19.2.8: {}
+
+  react-dom@19.2.8: {}
+
+  resend@6.1.0: {}
+
+  scheduler@0.27.0: {}
+
+  server-only@0.0.1: {}
+
+  sharp@0.34.5: {}
+
+  stripe@22.3.1: {}
+
+  styled-jsx@5.1.6: {}
+
+  svix@1.76.1: {}
+
+  tsx@4.20.5: {}
+
+  typescript@5.9.2: {}
+
+  vitest@4.1.8: {}
+
+  zod@4.1.5: {}
