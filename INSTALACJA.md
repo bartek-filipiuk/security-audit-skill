@@ -1,6 +1,6 @@
 # Security Audit — instalacja
 
-Wersja 1.0.0
+Wersja 1.1.0
 
 ## Wymagania
 
@@ -11,11 +11,22 @@ Wersja 1.0.0
 
 ## Instalacja
 
+Rozpakuj paczkę i przenieś folder `security-audit` do `~/.claude/skills`:
+
 ```bash
+unzip security-audit-1.1.0.zip -d /tmp/secaudit
 mkdir -p ~/.claude/skills
-unzip security-audit-1.0.0.zip -d ~/.claude/skills/
-# skill leży teraz w ~/.claude/skills/security-audit
+mv /tmp/secaudit/security-audit ~/.claude/skills/
 ```
+
+Alternatywnie jedną komendą, z linkiem z maila (wymaga Node 20+):
+
+```bash
+npx @devince/apps install <link do pobrania z maila>
+```
+
+Ta komenda pobiera paczkę, sprawdza archiwum i układa skill oraz mod w `~/.claude/skills`. Jej kod jest
+publiczny: github.com/bartek-filipiuk/devince-apps-cli.
 
 Sprawdzenie, że skrypty działają (kilka sekund, bez tokenów):
 

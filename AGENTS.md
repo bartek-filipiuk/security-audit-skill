@@ -59,8 +59,9 @@ formats, stack patterns), `scripts/` (deterministic pre-pass, state validation, 
 
 1. Bump the version in `INSTALACJA.md` and `LICENCJA.md`, add the entry under Done in `ROADMAP.md` and
    in the landing's `src/roadmap.ts`.
-2. Build the ZIP: repo files minus `CLAUDE.md` files, `.gitignore`, `benchmark/results.jsonl`,
-   `ROADMAP.md`, `AGENTS.md`, `marketing/`; folder name `security-audit`; unpack and run the tests.
+2. Build the ZIP with `scripts/package.sh <out-dir>` (it excludes the repo-only files, puts
+   `devince-install.json` at the archive root for `npx @devince/apps install`, and refuses private strings).
+   Unpack the result and run the tests from inside it.
 3. Upload to the store (`POST /app-assets`), point the product's `downloadFiles` at the new asset,
    then `POST /products/<id>/notify-buyers` so buyers get a fresh link. Credentials are not in this repo.
 

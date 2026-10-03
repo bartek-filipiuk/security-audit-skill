@@ -1,6 +1,6 @@
 # Licencja
 
-Security Audit, wersja 1.0.0. Autor: Bartek Filipiuk.
+Security Audit, wersja 1.1.0. Autor: Bartek Filipiuk.
 
 Możesz używać tego skilla bez ograniczeń: we własnych projektach, w pracy i w projektach klientów,
 na dowolnej liczbie projektów i maszyn, oraz modyfikować go na własne potrzeby.
