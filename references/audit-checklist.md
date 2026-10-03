@@ -28,7 +28,7 @@ Skip categories that don't apply to the detected stack.
 - [ ] XSS: User content escaped on render. Search for `dangerouslySetInnerHTML`, `innerHTML`, `v-html`, `|safe`, `raw()`, `bypassSecurityTrust`, unescaped template vars
 - [ ] XSS via file content: files read from disk (subtitles, templates, configs) injected into HTML responses without encoding. Search for `fs.readFile` → `res.send`/template interpolation paths
 - [ ] SVG injection: if SVG uploads accepted, verify SVG content sanitized (can contain `<script>`, `onload=`, external entities). SVGs served with `Content-Type: image/svg+xml` execute JS in browser
-- [ ] CSP bypass: if legacy pages exist with custom sanitizers (regex-based), check for regex bypass vectors. Also check if CSP header is set per-page or has unsafe-inline
+- [ ] CSP bypass: if legacy pages exist with custom sanitizers (regex-based), note that a regex sanitizer is incomplete by construction and recommend a maintained sanitizer. Also check if CSP header is set per-page or has unsafe-inline
 - [ ] Command injection: No user input in shell commands. Search for `exec`, `spawn`, `system`, `subprocess`, `os.popen`
 - [ ] Path traversal: File-serving endpoints validate filenames (no `../`). Search for path join with user input
 - [ ] Deserialization: No unsafe deserialization of user input (pickle, yaml.load, JSON.parse on unvalidated blobs)
@@ -118,7 +118,7 @@ For every security claim found in Phase 1.4:
 - [ ] Verify in code. Record: IMPLEMENTED / PARTIAL / MISSING / INCORRECT
 - [ ] Flag claims that are technically true but misleading
 
-## 2.11 Business Logic & Authorization Bypass
+## 2.11 Business Logic & Authorization Gaps
 
 - [ ] Mass assignment: model creation endpoints accept only whitelisted fields (no `role`, `isAdmin`, `privilege` from user input). Search for ORM `.create(req.body)` without field filtering
 - [ ] Numeric input validation: quantities, amounts, prices validated as positive before arithmetic. Search for math on user-supplied numbers without `> 0` guard

@@ -156,7 +156,7 @@ Project root: <abs path>. Audit dir (write ONLY here): <abs path>/.security-audi
 - Never read, print or edit secret files (.env and similar). Never write a key, token, code, phone number or a person's text into any file; use placeholders.
 - Modify nothing outside .security-audit/: no source edits, no state-changing git, no writes to the project's database or data directories. Run helper scripts with explicit arguments and with cwd inside .security-audit/; never run a project script without arguments from the project root.
 - Tests: <exact command with the right runtime>. The project's test suite may write generated files; workspace-check.mjs reports that at the end.
-- Servers only under `timeout`, bound to 127.0.0.1, without loading secrets; network only to 127.0.0.1. Scratch files and databases go to .security-audit/tests/tmp.
+- Start no servers and make no network requests. The only code the audit runs is the project's own test runner, the regression tests under .security-audit/tests/ and the skill's scripts. Scratch files and databases go to .security-audit/tests/tmp.
 - Do not read .security-audit/history/ or any earlier audit.
 - <project-specific rules>
 - Reply compactly: counts, ids with one-line titles, and anything you could not do. Details belong in the files.

@@ -39,7 +39,7 @@ For each finding F:
 - **Any injection found** → check if the same data is used in a second context later (second-order injection: stored safely in DB, but fetched and used unsafely in shell/template/LDAP)
 - **NoSQL query found** → check if operator objects from user input (`$gt`, `$ne`, `$where`) reach query filters. If one endpoint is vulnerable, check all endpoints using the same DB collection
 - **BOLA on read found** → check ALL mutation endpoints (POST/PUT/DELETE) on the same resource path — if read has no owner check, writes almost certainly don't either
-- **Admin route without auth found** → search for path variations that bypass middleware prefix (e.g., `/admin-api/` vs `/admin/`, `/rest/admin/` vs `/api/admin/`)
+- **Admin route without auth found** → check whether other path prefixes reach the same handlers outside the middleware matcher (e.g., `/admin-api/` vs `/admin/`, `/rest/admin/` vs `/api/admin/`)
 
 ### 2. TRACE (fill template)
 Read the actual code. Fill this completely:
