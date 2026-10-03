@@ -22,7 +22,7 @@ mv /tmp/secaudit/security-audit ~/.claude/skills/
 Alternatywnie jedną komendą, z linkiem z maila (wymaga Node 20+):
 
 ```bash
-npx @devince/apps install <link do pobrania z maila>
+npx devince-apps install <link do pobrania z maila>
 ```
 
 Ta komenda pobiera paczkę, sprawdza archiwum i układa skill oraz mod w `~/.claude/skills`. Jej kod jest

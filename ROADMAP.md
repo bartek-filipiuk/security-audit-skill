@@ -20,10 +20,10 @@ Rules that apply to every item:
 - **R03 Exact benchmark scoring.** Match findings to the answer key by file and line, not keywords.
   Done when: every Ledgerly match is exact and the scorer reports no loose matches.
 
-- **R19 One-command install.** `npx @devince/apps install <link from the e-mail>` downloads the package
+- **R19 One-command install.** `npx devince-apps install <link from the e-mail>` downloads the package
   and puts the skill and the mod in `~/.claude/skills`, verifying the archive first. Done when: a buyer
   goes from the e-mail to `/security-audit` with one command, and the installer refuses a tampered archive.
-- **R20 Buy from the terminal.** `npx @devince/apps buy security-audit` opens the checkout, waits for
+- **R20 Buy from the terminal.** `npx devince-apps buy security-audit` opens the checkout, waits for
   the payment and installs. Built product-agnostic: a product table plus an install manifest in the
   archive, so the next product reuses it unchanged. Done when: the flow works end to end on a test
   purchase and the CLI never trusts anything but the store's signed download token.
