@@ -1,9 +1,9 @@
 ---
 name: security-audit
 description: >-
-  Use when asked to audit, pentest, or review the security of a codebase
+  Use when asked to audit or review the security of a codebase
   or application. Triggers on security audit, vulnerability assessment,
-  find vulnerabilities, pentest this, check for security issues, review
+  find vulnerabilities, check for security issues, review
   auth implementation, assess test quality, audit only part of the code
   (login/SSO/auth, payments, webhooks, a path, or the top N riskiest
   places via --scope), or security-audit --info.

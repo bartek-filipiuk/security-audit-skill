@@ -1,9 +1,8 @@
 # Roadmap
 
 No dates. Four lanes, read left to right: Now, Next, Later, Ideas. Each item has a stable id
-(R01…), one line on the value for the user and one line on the done criterion. The public copy is
-https://security-audit.dev/roadmap (`src/roadmap.ts` in the landing repo); keep the two in sync.
-Tasks live in devince-crm under the same ids.
+(R01…), one line on the value for the user and one line on the done criterion. The same list is on
+https://security-audit.dev/roadmap; keep the two in sync. Contributions welcome: see AGENTS.md.
 
 Rules that apply to every item:
 - A stack profile ships only with its own benchmark app (seeded bugs and decoys), scored the same way as Ledgerly.
@@ -57,8 +56,8 @@ Rules that apply to every item:
 
 ## Done
 
-- **devince-apps 0.2.0** (2026-10-03): R19 one-command install and R20 buy from the terminal and from
-  Claude Code (`buy --agree`, `claim`). Public repo bartek-filipiuk/devince-apps-cli, npm `devince-apps`.
+- **Open source** (2026-10-03): MIT license, public repository, head-to-head with the Claude Security plugin
+  in `benchmark/COMPARISON.md`. (R19 and R20 were the paid store's installer; retired with it.)
 
 - **1.1.0** (2026-10-03): defensive finding format (impact and regression test instead of attack steps),
   `audit-live` mod, buyer guide with Discord.

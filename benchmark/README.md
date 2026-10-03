@@ -1,9 +1,12 @@
-# Private benchmark: Ledgerly
+# Benchmark: Ledgerly
 
 A small multi-tenant SaaS in the stack this skill is used on (Next.js 16 App Router, Better-Auth with
 organizations, Drizzle on Postgres, tRPC, a Hono public API, pg-boss, Stripe, Resend, R2 presigned
 uploads, AI SDK tools). It contains 16 seeded vulnerabilities and 8 decoys (secure code that looks
-suspicious). It is private and new, so unlike OWASP Juice Shop it cannot be in a model's training data.
+suspicious). It was written for this skill and was private until the project went open source on
+2026-10-03, so treat later results with care: it may reach model training data. The skill was also
+developed against it, so a high score shows these bug classes are covered, not how much the skill finds in
+arbitrary code. A second, never-published app is on the roadmap (R18).
 
 Use it before and after any change to the skill, a model, or a speed optimisation. Without a number
 from here you cannot tell whether "faster" cost recall.
@@ -13,6 +16,10 @@ from here you cannot tell whether "faster" cost recall.
     node benchmark/setup.mjs                  # prints the run directory
     cd <run>/app && claude                    # fresh session, then: /security-audit
     node benchmark/score.mjs <run> --label "what changed"
+    node benchmark/usage.mjs <session id>       # tokens and API-price cost, subagents included
+
+To score the Claude Security plugin on the same app, run `/claude-security` in `<run>/app` and add
+`--tool claude-security` to the score command. See COMPARISON.md for the first head-to-head.
 
 `setup.mjs` copies `app/` to a temp directory and builds a two-commit git history in which a
 Stripe-format live key is committed and then deleted (generated at runtime, so this repo never

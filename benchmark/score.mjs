@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 // Scores one benchmark run against answer-key.json and appends a line to results.jsonl.
-//   node benchmark/score.mjs <run-dir> [--label "what changed"] [--no-save]
+//   node benchmark/score.mjs <run-dir> [--label "what changed"] [--tool security-audit|claude-security] [--no-save]
 // <run-dir> is what setup.mjs printed: it holds meta.json and app/.security-audit/.
 // Matching: a finding counts for a key entry when it cites one of the entry's files (path suffix)
 // and its text contains one of the entry's keywords. ponytail: keyword matching, not semantic
 // judgment; read the "unmatched" list by hand after each run.
 
-import { appendFileSync, existsSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { appendFileSync, existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadAudit, titleOf } from "../scripts/audit-state.mjs";
@@ -72,21 +72,50 @@ export function score(findings, key) {
   };
 }
 
+// The Claude Security plugin (Anthropic) writes app/CLAUDE-SECURITY-<timestamp>/CLAUDE-SECURITY-RESULTS.jsonl.
+// Its findings are verified before they are written, so each line counts as a verified finding. The
+// schema is not documented field by field, so the whole JSON line is the text the matcher reads.
+export function loadClaudeSecurity(appDir) {
+  const dirs = readdirSync(appDir).filter((n) => n.startsWith("CLAUDE-SECURITY-")).sort();
+  if (!dirs.length) return null;
+  const dir = join(appDir, dirs[dirs.length - 1]);
+  const jsonl = join(dir, "CLAUDE-SECURITY-RESULTS.jsonl");
+  if (!existsSync(jsonl)) return null;
+  const rows = readFileSync(jsonl, "utf8").split("\n").filter((l) => l.trim()).map((l) => JSON.parse(l));
+  const findings = rows.map((o, i) => {
+    const pick = (...keys) => keys.map((k) => o[k]).find((v) => typeof v === "string" && v.trim());
+    const title = pick("title", "name", "summary") ?? String(pick("description") ?? "").slice(0, 120);
+    const id = String(pick("id", "finding_id") ?? `F${i + 1}`);
+    const text = JSON.stringify(o);
+    return { stem: id, data: { id, status: "verified", severity: String(pick("severity") ?? "").toUpperCase(), title }, body: `## Title\n${title}\n`, text };
+  });
+  return { dir, findings, report: join(dir, "CLAUDE-SECURITY-RESULTS.md") };
+}
+
 // realpath on both sides: the skill is usually run through a symlink (~/.claude/skills/...).
 if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   const args = process.argv.slice(2);
-  const runDir = resolve(args.find((a) => !a.startsWith("--") && args[args.indexOf(a) - 1] !== "--label") ?? ".");
+  const runDir = resolve(args.find((a) => !a.startsWith("--") && !["--label", "--tool"].includes(args[args.indexOf(a) - 1])) ?? ".");
   const label = args.indexOf("--label") >= 0 ? args[args.indexOf("--label") + 1] : "";
   const auditDir = join(runDir, "app", ".security-audit");
-  if (!existsSync(join(auditDir, "findings"))) {
-    console.error(`No findings in ${auditDir}. Run the audit first (see setup.mjs output).`);
-    process.exit(1);
+  const tool = args.includes("--tool") ? args[args.indexOf("--tool") + 1] : "security-audit";
+  let findings, report;
+  if (tool === "claude-security") {
+    const cs = loadClaudeSecurity(join(runDir, "app"));
+    if (!cs) { console.error(`No CLAUDE-SECURITY-*/CLAUDE-SECURITY-RESULTS.jsonl in ${join(runDir, "app")}.`); process.exit(1); }
+    ({ findings, report } = cs);
+  } else {
+    if (!existsSync(join(auditDir, "findings"))) {
+      console.error(`No findings in ${auditDir}. Run the audit first (see setup.mjs output).`);
+      process.exit(1);
+    }
+    findings = loadAudit(auditDir).findings;
+    report = join(auditDir, "report.md");
   }
   const key = JSON.parse(readFileSync(join(here, "answer-key.json"), "utf8"));
   const meta = existsSync(join(runDir, "meta.json")) ? JSON.parse(readFileSync(join(runDir, "meta.json"), "utf8")) : {};
-  const r = score(loadAudit(auditDir).findings, key);
+  const r = score(findings, key);
 
-  const report = join(auditDir, "report.md");
   const minutes = meta.started_at && existsSync(report)
     ? +((statSync(report).mtimeMs - Date.parse(meta.started_at)) / 60000).toFixed(1)
     : null;
@@ -109,7 +138,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     const { seeded, decoyFp, ...summary } = r;
     appendFileSync(
       join(here, "results.jsonl"),
-      JSON.stringify({ date: new Date().toISOString(), label, skill_sha: meta.skill_sha, skill_dirty: meta.skill_dirty, minutes, ...summary, per_bug: Object.fromEntries(seeded.map((s) => [s.id, s.result])) }) + "\n",
+      JSON.stringify({ date: new Date().toISOString(), tool, label, skill_sha: meta.skill_sha, skill_dirty: meta.skill_dirty, minutes, ...summary, per_bug: Object.fromEntries(seeded.map((s) => [s.id, s.result])) }) + "\n",
     );
     console.log(`\nSaved to ${join(here, "results.jsonl")}`);
   }

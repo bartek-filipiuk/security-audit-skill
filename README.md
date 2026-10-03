@@ -1,40 +1,52 @@
-# security-audit-skill
+# security-audit
 
-Claude Code skill for evidence-based, multi-agent security auditing of any codebase.
+A Claude Code skill that audits the security of your own code and hands back a report: what to fix, what is
+verified safe (with the control's file:line) and what could not be checked. Open source, MIT.
 
-## Installation
+Project page: https://security-audit.dev
 
-Copy or symlink to your Claude Code skills directory:
+## Install
 
 ```bash
-# Copy
-cp -r . ~/.claude/skills/security-audit/
-
-# Or symlink
-ln -s "$(pwd)" ~/.claude/skills/security-audit
+git clone https://github.com/bartek-filipiuk/security-audit-skill ~/.claude/skills/security-audit
 ```
 
-## Usage
+Update with `git -C ~/.claude/skills/security-audit pull`. Check the scripts (seconds, no tokens):
+`cd ~/.claude/skills/security-audit && node --test scripts/`.
 
-In any project, ask Claude Code:
+Requirements: Claude Code, Node 20+. For dependency and secret scanning, either `osv-scanner` and `gitleaks` on
+`PATH` or a running docker daemon; without them the report lists those two checks as not run. Tested on Linux.
+
+Optional live progress panel (a Claude Code mod, 2.1.287+): `cp -r ~/.claude/skills/security-audit/audit-live
+~/.claude/skills/`. It only reads `.security-audit/`; see `audit-live/README.md`.
+
+## Use
+
+In your project, in Claude Code:
 
 ```
-/security-audit
+/security-audit                     # whole project
+/security-audit --scope top20       # the 20 riskiest places, a cheap first run
+/security-audit --scope auth        # areas: auth, admin, payments, webhooks, files, ai, jobs, api
+/security-audit --scope src/app/api # a path
+/security-audit --verify-fixes      # recompute what is fixed, change nothing
 ```
 
-or naturally:
+Install the project's dependencies first, so the regression tests the audit writes can run. The report is
+`.security-audit/report.html`; the directory is gitignored because it names unfixed weaknesses.
 
-```
-zrób security audit tego projektu
-audit this project for security issues
-find vulnerabilities in this codebase
-```
+Cost: a full run on the benchmark app (45 entry points) took 32 minutes and 23.8M tokens, about 11.70 USD at
+API prices (Opus 5.5, effort xhigh); a 160-entry-point project took 2 h 11 min. Start big projects with
+`--scope top20`.
 
-Partial audits: `/security-audit --scope auth` (areas: auth, admin, payments, webhooks, files, ai, jobs, api), `--scope src/app/api` (a path), or `--scope top20` (the 20 riskiest hotspots). The pre-pass ranks hotspots on every run; scoped runs say so in the report.
+## How it compares
 
-A full Parallel run is expensive: on a 161-entry-point project it took about 2 h and 4.8M subagent tokens (see "Cost on Big Projects" in SKILL.md). Start big projects with `--scope top20` or one domain.
-
-At the end, `.security-audit/report.html` shows what to fix (red), what is verified safe with evidence (green) and what was not assessed (grey). It names unfixed weaknesses and stays private.
+Anthropic's free [Claude Security plugin](https://code.claude.com/docs/en/claude-security) does a similar
+multi-agent scan. On the benchmark app both found the seeded bugs (16 of 16 here, 15 of 16 for the plugin) with
+no decoy false positives; the plugin was faster. This skill adds dependency advisories (osv-scanner), secrets in
+the whole git history (gitleaks), regression tests that fail today as proof, a verified-safe list, a
+not-assessed list and a review of the project's tests. The plugin adds SARIF, branch-diff scans and reviewed
+patches. Use both. Details and caveats: [benchmark/COMPARISON.md](benchmark/COMPARISON.md).
 
 ## How it works
 
@@ -83,9 +95,6 @@ All agents communicate via `.security-audit/` directory:
 
 The directory is added to `.gitignore` before anything is written: it names unfixed weaknesses with file and line.
 
-```
-```
-
 ## Structure
 
 ```
@@ -111,9 +120,11 @@ scripts/
   workspace-check.mjs             # What changed in the project while the audit ran
   selftest.test.mjs               # node --test scripts/
 benchmark/
-  app/                            # Ledgerly: private seeded-bug app in the target stack
+  app/                            # Ledgerly: seeded-bug app in the target stack
   answer-key.json                 # Ground truth (never copied into the audited dir)
-  setup.mjs, score.mjs            # Create a run, score it; results.jsonl keeps history
+  setup.mjs, score.mjs            # Create a run, score it (also Claude Security output); results.jsonl keeps history
+  usage.mjs                       # Tokens and API-price cost of a session, subagents included
+  COMPARISON.md                   # Head-to-head with the Claude Security plugin
 ```
 
 Requirements: Node 20+. For dependency and secret scanning, either `osv-scanner` and `gitleaks` on PATH or a running docker daemon (official images are pulled on first use). Without them the pre-pass says NOT RUN and the report lists the gap.
@@ -125,12 +136,12 @@ Requirements: Node 20+. For dependency and secret scanning, either `osv-scanner`
 - **Anti-hallucination**: 12 hard rules + mandatory 4-part REJECT gate (evidence, reachability, direction, dedup); no "secure" without the control's file:line
 - **Proof labels**: every HIGH/CRITICAL is marked `test` (a regression test fails today) or `static` (code reading only)
 - **Measurement-driven**: Deep Dive iterates (max 3) and stops on set-convergence (no new findings / status changes / chains); score is a reporting metric
-- **Separate verification**: different agent verifies findings (79% false positive reduction pattern)
+- **Separate verification**: a different agent re-reads the code for every finding and rejects what it cannot confirm
 - **Cross-domain chain detection**: verifier sees findings from ALL auditors, detects multi-step chains
-- **Stack-agnostic**: auto-detects language/framework, adapts checklist and patterns
+- **Stack-aware**: most precise on Next.js App Router, tRPC, Hono, Drizzle, Better-Auth, AI SDK and plain Node; other languages run on general rules
 - **Persistent**: findings survive sessions — resume, re-run, extend anytime
 - **Hotspots first**: the pre-pass ranks entry points and auth/CORS/env config by risk signals; auditors start there
-- **Measured**: a private seeded-bug benchmark (`benchmark/`) scores recall, verifier drops and decoy false positives per skill change
+- **Measured**: a seeded-bug benchmark (`benchmark/`) scores recall, verifier drops and decoy false positives per change
 
 ## Audit categories
 
@@ -147,7 +158,13 @@ Requirements: Node 20+. For dependency and secret scanning, either `osv-scanner`
 11. Business Logic
 12. Logging & Monitoring
 
-## Roadmap and live progress
+## Roadmap, contributing, security
 
-- [ROADMAP.md](ROADMAP.md): stack profiles (PHP, Python, Go, Rust), stack detection and the `--stack` flag.
-- [audit-live/](audit-live/): an optional Claude Code mod that shows the audit's progress live. Copy that folder to `~/.claude/skills/audit-live`.
+- [ROADMAP.md](ROADMAP.md): stack profiles (PHP, Python, Go, Rust), branch-diff audits, SARIF, a second benchmark.
+- [AGENTS.md](AGENTS.md): how to contribute (people and agents): rules, benchmark before and after, tests.
+- [SECURITY.md](SECURITY.md): report a weakness in the skill itself privately.
+
+The skill is a code review tool, not a guarantee and not a pentest. No findings does not mean no
+vulnerabilities; that is why the report has a not-assessed list.
+
+License: MIT.
