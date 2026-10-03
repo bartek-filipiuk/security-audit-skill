@@ -46,6 +46,16 @@ const isGit = run("git", ["-C", root, "rev-parse", "--is-inside-work-tree"]).std
 const gitTop = isGit ? run("git", ["-C", root, "rev-parse", "--show-toplevel"]).stdout.trim() : root;
 const commit = isGit ? run("git", ["-C", root, "rev-parse", "--short", "HEAD"]).stdout.trim() : "";
 
+// The package name reads better than a directory called "app"; fall back to the directory.
+function packageName(root) {
+  try {
+    const name = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).name;
+    return typeof name === "string" && name.trim() ? name.replace(/^@[^/]+\//, "") : null;
+  } catch {
+    return null;
+  }
+}
+
 // The mark is taken once per run, before any agent (or the project's own tests) can write anything.
 const markPath = join(toolsDir, "workspace-mark.json");
 if (!existsSync(markPath)) {
@@ -80,7 +90,7 @@ writeFileSync(join(toolsDir, "hotspots.json"), JSON.stringify(hotspots, null, 2)
 if (scoped) writeFileSync(join(toolsDir, "scope.json"), JSON.stringify(scoped, null, 2));
 else rmSync(join(toolsDir, "scope.json"), { force: true });
 writeFileSync(join(toolsDir, "summary.json"), JSON.stringify({
-  generated_at: new Date().toISOString(), project: basename(root), commit,
+  generated_at: new Date().toISOString(), project: packageName(root) ?? basename(root), commit,
   scope: scoped && { label: scoped.label, entries: scoped.entries.length, total: scoped.total },
   entry_points: entries.length, scope_candidates: scope.sites.filter((s) => s.status !== "scoped").length,
   deps: { status: deps.status, rows: deps.rows }, secrets: { status: secrets.status, rows: secrets.rows },
