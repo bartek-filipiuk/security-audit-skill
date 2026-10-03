@@ -51,21 +51,21 @@ Continue to Hard Rules and Mode Selection below.
 These gates govern the pipeline. Violating them invalidates the audit. (Most apply to every agent; the full REJECT gate in Rule 4 is scoped to Phase 3 — see the rule.)
 
 1. **No assumed vulnerabilities.** Cannot point to file:line → not a finding.
-2. **No severity inflation.** No concrete exploit path → LOW at best.
-3. **Every finding requires ALL of:** file path, line number, code snippet, numbered exploit steps.
+2. **No severity inflation.** No concrete impact → LOW at best.
+3. **Every finding requires ALL of:** file path, line number, code snippet, and an Impact section: who can do what they should not.
 4. **REJECT gate is mandatory in Phase 3 (Deep Dive Verification).** The verifier applies the 4-part gate — evidence, reachability, direction, dedup — before any finding is counted as `verified`. Category auditors run only a lighter evidence + reachability **pre-flight** and record candidates as `status: raw`; they MUST NOT self-reject. Over-reporting by auditors is intended — rejection is the verifier's job (this is what preserves detection ≠ verification).
 5. **If documentation is absent**, do not penalize — audit the code as-is.
 6. **Run the tests.** Report results honestly.
 7. **Record Non-Issues.** Areas examined and found secure must be documented.
 8. **Dead code is not a finding.** No route, no caller, no entry point = unreachable. Note as non-issue with cleanup recommendation.
 9. **Defensive failures are not vulnerabilities.** A security control that is too strict (blocks legitimate access) is a functionality bug, not a security vulnerability → **REJECT** with `rejection_reason: defensive_failure` and surface it under Recommended Actions. (One terminal outcome — do not also "cap at LOW"; that double-path made the rating non-reproducible.)
-10. **Prerequisite chains affect severity.** Count the admin/config steps required *before* the vuln is exploitable (privileged setup steps, not attacker exploitation steps), then downgrade: **2–3 prerequisites → −1 level, 4+ → −2 levels, floor at LOW.** CRITICAL is exempt from downgrade **because for RCE / data-loss impact dominates likelihood** — state this rationale so raters apply it consistently. Document the full prerequisite chain.
+10. **Prerequisite chains affect severity.** Count the admin/config steps required *before* the weakness is reachable (privileged setup steps, not the steps of the person who triggers it), then downgrade: **2–3 prerequisites → −1 level, 4+ → −2 levels, floor at LOW.** CRITICAL is exempt from downgrade **because for RCE / data-loss impact dominates likelihood** — state this rationale so raters apply it consistently. Document the full prerequisite chain.
 11. **No reassurance without evidence.** A non-issue cites the file:line of the control that makes the code safe. "No grep hits", a tool that did not run, or a pattern the scanner does not understand is a coverage gap: record it in `.security-audit/not-assessed.md`, never as a non-issue.
 12. **Finding frontmatter is the single source of truth.** `remediation.json` is generated from it by `scripts/audit-state.mjs`, never written by hand. Run the script after every phase that writes findings; it must exit 0 before the report is assembled.
 
 **Principles shared with all agents:**
 - Never trust documentation or test names. Read source code and test bodies.
-- If you cannot write concrete exploit steps, it is a recommendation, not a finding.
+- If you cannot say who can do what they should not, it is a recommendation, not a finding.
 - Separate agent verifies findings — detection ≠ verification.
 - Verify reachability before analyzing impact. Cross-reference with the recon entry point table.
 
@@ -98,13 +98,13 @@ All agents read from and write to `.security-audit/` in the project root. This i
 .security-audit/
 ├── prepass.md               # Phase 0 output: entry points, Drizzle scope scan, dependency advisories, secret scan
 ├── tools/                   # raw tool output (osv.json, gitleaks.json with values redacted, entry-points.json, scope-scan.json)
-├── recon.md                 # Phase 1 output: attack surface map, authorization map, triage
+├── recon.md                 # Phase 1 output: exposed surface map, authorization map, triage
 ├── findings/                # One file per finding (raw → verified/rejected; remediation state in its frontmatter)
 │   ├── auth-001.md
 │   └── ...
 ├── non-issues/              # Areas examined and found secure, each citing the control's file:line
 ├── not-assessed.md          # Coverage gaps: checks that could not be done, and why
-├── poc/                     # Phase 3 proof-of-concept tests/scripts for HIGH/CRITICAL (never in the source tree)
+├── tests/                   # Phase 3 regression tests for HIGH/CRITICAL, in the project's own runner (never in the source tree)
 ├── briefs/                  # Phase 2 per-auditor briefs (scripts/briefs.mjs)
 ├── test-quality.md          # Phase 4 output
 ├── summary.md               # Phase 5: the coordinator's own text (summary, top risks, actions)
@@ -125,7 +125,7 @@ File formats are defined in `references/finding-format.md`. All agents use the s
 Run this yourself before dispatching anything. It takes seconds.
 
 ```bash
-# Exploit steps must never reach git: ignore the directory before anything is written into it.
+# Audit files name unfixed weaknesses: ignore the directory before anything is written into it.
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   git check-ignore -q .security-audit/report.md || {
     [ -s .gitignore ] && [ -n "$(tail -c1 .gitignore)" ] && echo >> .gitignore
@@ -136,11 +136,11 @@ fi
 node "$SKILL_DIR/scripts/prepass.mjs" --new-run   # add: --scope <targets> for a partial audit
 ```
 
-- **`--new-run`** moves a previous audit into `.security-audit/history/<date>/` (agents never read it, so the new run cannot anchor on old results), recreates `findings/`, `non-issues/`, `poc/`, and records the workspace state that `workspace-check.mjs` compares against at the end. Re-running prepass later in the same audit is done without `--new-run`.
+- **`--new-run`** moves a previous audit into `.security-audit/history/<date>/` (agents never read it, so the new run cannot anchor on old results), recreates `findings/`, `non-issues/`, `tests/`, and records the workspace state that `workspace-check.mjs` compares against at the end. Re-running prepass later in the same audit is done without `--new-run`.
 - **Read the project's own agent rules** (`CLAUDE.md`, `AGENTS.md`, `docs/RISK.md` or similar) for anything that limits what may run: secrets files, runtime version, data directories, servers. Add them to the rules block below.
 
 - **Live progress (optional):** if the directory `~/.claude/skills/audit-live` exists, tell the user once, right after the pre-pass: "Live progress: the Audit pane opens by itself in a wide terminal; in a narrow one type /audit-live." If it does not exist, say nothing about it.
-- **Tracked warning:** tell the user that earlier audit files (with exploit steps) are in git history and whether the remote is public. Offer `git rm -r --cached .security-audit` plus a commit. Do not run it without their consent.
+- **Tracked warning:** tell the user that earlier audit files (naming unfixed weaknesses) are in git history and whether the remote is public. Offer `git rm -r --cached .security-audit` plus a commit. Do not run it without their consent.
 - **Hotspots (start here):** `prepass.md` opens with the riskiest entry points and config files, ranked by signals (sensitive area such as auth/SSO/login, admin, payments, webhooks, files, AI; public-by-design kinds; no guard in the handler; unscoped queries; dangerous sinks; risky auth/CORS/env config). This is the work order for recon and every auditor: audit the hotspots in your domain first, then the rest. It is a ranking, not a verdict.
 - **`prepass.md`** also holds: every entry point found by framework convention (Next.js route handlers, pages, `"use server"` actions, proxy/middleware matcher, tRPC procedures, Hono/Express routes, pg-boss/BullMQ/cron jobs, AI SDK/MCP tools, Drupal routes); the Drizzle scope scan (query sites on owner-scoped tables that never reference the owner column); dependency advisories from osv-scanner (prod vs dev-only); secrets from gitleaks across the whole git history, values redacted.
 - **Tools:** native `osv-scanner` / `gitleaks` if installed, otherwise their official docker images (pulled on first use). Any `NOT RUN` or `FAILED` line goes into `not-assessed.md`, and you tell the user how to enable it. Never fill the gap from memory: CVE knowledge in a model is stale by construction.
@@ -156,7 +156,7 @@ Project root: <abs path>. Audit dir (write ONLY here): <abs path>/.security-audi
 - Never read, print or edit secret files (.env and similar). Never write a key, token, code, phone number or a person's text into any file; use placeholders.
 - Modify nothing outside .security-audit/: no source edits, no state-changing git, no writes to the project's database or data directories. Run helper scripts with explicit arguments and with cwd inside .security-audit/; never run a project script without arguments from the project root.
 - Tests: <exact command with the right runtime>. The project's test suite may write generated files; workspace-check.mjs reports that at the end.
-- Servers only under `timeout`, bound to 127.0.0.1, without loading secrets; network only to 127.0.0.1. Scratch files and databases go to .security-audit/poc/tmp.
+- Servers only under `timeout`, bound to 127.0.0.1, without loading secrets; network only to 127.0.0.1. Scratch files and databases go to .security-audit/tests/tmp.
 - Do not read .security-audit/history/ or any earlier audit.
 - <project-specific rules>
 - Reply compactly: counts, ids with one-line titles, and anything you could not do. Details belong in the files.
@@ -233,16 +233,16 @@ This is the most critical phase. Use the prompt from `agents/deep-dive-verifier.
 
 **Provide each shard verifier:** the rules block; the paths of `recon.md`, `prepass.md` and its shard's finding files; the Shard mode section of the verifier prompt; likely overlaps you noticed (cross-shard ones go to COMBINE, not rejected inside a shard); the loop rules: max 3 iterations, stop on set-convergence, never exit with a finding still `raw`.
 
-**PROVE method.** Prefer in-process proof: run the auditors' existing PoCs, or call the store/handler functions directly with a scratch database. Verifiers do not write new network attack tooling. Where an in-process PoC demonstrates the behaviour, the finding gets `proof: dynamic`; otherwise `proof: static` with one line why.
+**Test method.** For HIGH/CRITICAL the verifier writes one regression test in the project's own runner under `.security-audit/tests/`, asserting the correct behaviour, and runs it once against a scratch database: a failing test confirms the finding (`proof: test`). No standalone scripts and no requests to any host. Where the runner cannot reach the code or real secrets would be needed, `proof: static` with one line why. The tests are the starting point of Phase 6.
 
-**If a verifier is stopped by a safety classifier:** do not retry the same approach and do not switch models to get around it. Make sure the stopped agent has really ended (its completion notification arrived, or stop it), re-dispatch its shard with static verification plus existing in-process PoCs, and tell the user what happened.
+**If a verifier stops before its shard is done** (its completion notification arrives with files still `raw`): make sure it has really ended, re-dispatch the remaining files in verify-only mode, and tell the user what happened.
 
 **Before re-dispatching any work over the same files, confirm the earlier agent has ended.** A "stopped" verifier in a real run kept writing while its replacements ran.
 
 **COMBINE pass (one agent, after all shards):** the COMBINE mode section of the verifier prompt. It reads every shard's `chain-notes-*.md`, decides cross-shard duplicates with rule 6d (a docs-vs-reality finding whose only remedy is its partner's code fix is a duplicate), verifies candidate chains against the code, writes `chain-9NN.md` findings, and runs `audit-state.mjs --final`. Start Phase 4 at the same time as COMBINE.
 
 **Wait for completion.** Then:
-1. Run `node "$SKILL_DIR/scripts/audit-state.mjs" --final --summary`. It fails on any finding still `raw`, on invalid categories/severities/rejection codes, on verified findings without file:line or numbered exploit steps, and on HIGH/CRITICAL without a proof label. Raw findings → re-dispatch a verify-only pass; format problems → fix the files. Repeat until it exits 0.
+1. Run `node "$SKILL_DIR/scripts/audit-state.mjs" --final --summary`. It fails on any finding still `raw`, on invalid categories/severities/rejection codes, on verified findings without file:line or an Impact section, and on HIGH/CRITICAL without a proof label. Raw findings → re-dispatch a verify-only pass; format problems → fix the files. Repeat until it exits 0.
 2. Dedup rule (applied by shards and COMBINE), keyed on **(vulnerability class, sink file:line)**, not sink alone:
    - **Same class + same sink** → duplicate. Keep the most complete analysis as canonical, reject the rest with `rejection_reason: duplicate_of_{canonical_id}`.
    - **Same sink, DIFFERENT class** (e.g. a SQLi and a missing-authorization/BOLA defect on the same query line) → **distinct, keep both** (different fixes).
@@ -265,7 +265,7 @@ Dispatch a single agent with the prompt from `agents/test-quality-auditor.md`, i
 
 ### Phase 5: Report Assembly (you, the coordinator)
 
-You write only `.security-audit/summary.md`, following the top of `references/report-template.md`: the title, Project Summary (from recon's reply), Executive Summary (counts and score from `audit-state.mjs --summary`, the test-quality verdict, Top 3 risks each with its proof label `dynamic` or `static`), and Recommended Actions (prioritized; include best-practice notes from rejected findings and the production checks from Not Assessed). Everything else is generated, so you never read every finding into your context:
+You write only `.security-audit/summary.md`, following the top of `references/report-template.md`: the title, Project Summary (from recon's reply), Executive Summary (counts and score from `audit-state.mjs --summary`, the test-quality verdict, Top 3 risks each with its proof label `test` or `static`), and Recommended Actions (prioritized; include best-practice notes from rejected findings and the production checks from Not Assessed). Everything else is generated, so you never read every finding into your context:
 
 ```bash
 node "$SKILL_DIR/scripts/audit-state.mjs" --final --write --source baseline-from-audit   # Phase 5.5, remediation.json
@@ -276,7 +276,7 @@ node "$SKILL_DIR/scripts/report-html.mjs"        # → report.html
 
 If `workspace-check` reports changes, tell the user which files changed, the likely cause (usually the project's own test run), and whether any tracked file changed.
 
-`.security-audit/report.html` is one self-contained file: verdict bar, "To fix" (red, by severity, with proof labels and the fix first), "Verified safe" (green, each item with the control's file:line), "Not assessed" (grey), hotspots, dependencies, secrets, and what the verifier filtered out. It contains exploit steps: it stays in the gitignored directory and is never published (a public page must redact unfixed findings, see `public_safe`).
+`.security-audit/report.html` is one self-contained file: verdict bar, "To fix" (red, by severity, with proof labels and the fix first), "Verified safe" (green, each item with the control's file:line), "Not assessed" (grey), hotspots, dependencies, secrets, and what the verifier filtered out. It names unfixed weaknesses with file and line: it stays in the gitignored directory and is never published (a public page must redact unfixed findings, see `public_safe`).
 
 **Present the Executive Summary to the user immediately**, with the absolute path to `report.html`. Offer to show full findings on request.
 
@@ -298,11 +298,11 @@ This guarantees the after-state artifact always exists after any audit. `--verif
 
 Read `references/remediation.md`. The after-state **baseline** is already written by Phase 5.5; this phase goes further — actually **fixing** findings (only when the user asks), one at a time with verification, and updating the after-state (`remediation:` blocks + `remediation.json`) as each is resolved. `--verify-fixes` recomputes the state from current code without changing anything.
 
-Fixes one finding at a time (highest severity first), TDD where practical (start from the PoC in `.security-audit/poc/` when the finding has `proof: dynamic`), verifying each fix is live in the current code before marking it done. Records a **structured, machine-readable after-state**:
+Fixes one finding at a time (highest severity first), TDD where practical (start from the regression test in `.security-audit/tests/` when the finding has `proof: test`), verifying each fix is live in the current code before marking it done. Records a **structured, machine-readable after-state**:
 - a `remediation:` block on each finding file (`status: fixed|partial|open|wont_fix|cannot_verify`, `fix_evidence`, `regression_test`); top-level `status` stays `verified`;
 - then `node "$SKILL_DIR/scripts/audit-state.mjs" --write --source fix-applied` regenerates `.security-audit/remediation.json`, the single artifact downstream tooling reads. `--verify-fixes` does the same with `--source verified-only`.
 
-**`public_safe` is `true` ONLY when a finding is `fixed`.** Downstream public surfaces (e.g. a public security page) use it to decide whether a finding's exploit detail may be shown — never publish a working exploit for an unfixed bug. `fixed` requires evidence the fix is present in current code (cited `file:line`); "I changed something" is not "fixed".
+**`public_safe` is `true` ONLY when a finding is `fixed`.** Downstream public surfaces (e.g. a public security page) use it to decide whether a finding's details may be shown — never publish the details of an unfixed weakness. `fixed` requires evidence the fix is present in current code (cited `file:line`); "I changed something" is not "fixed".
 
 ---
 
@@ -326,7 +326,7 @@ Only count findings with `status: verified`. The score is a **reporting metric**
 |-------|-------|-------|-----|
 | 1 | Recon Scanner | sonnet | Mechanical: file reading, pattern matching — cost over quality |
 | 2 | Category Auditors | sonnet | Pattern matching, checklist verification — cost over quality |
-| 3 | Deep Dive Verifier | inherit (omit `model`) | Judgment: exploit verification, chain detection, REJECT decisions — run on the strongest model in the session |
+| 3 | Deep Dive Verifier | inherit (omit `model`) | Judgment: confirmation, chain detection, REJECT decisions — run on the strongest model in the session |
 | 4 | Test Quality | sonnet | Structured analysis of test files |
 
 Pin `model` only where cost matters more than quality. Phase 3 shards and COMBINE inherit the session model. If a verifier is stopped by a safety classifier, follow the Phase 3 rule: change the method, never the model.

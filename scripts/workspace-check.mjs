@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // What changed in the project while the audit ran? Agents may only write inside .security-audit/,
-// but the project's own test suite, a stray command or a PoC can touch other files (in one real run
+// but the project's own test suite, a stray command or a regression test can touch other files (in one real run
 // the project's `npm test` regenerated 50 gitignored pages). Compares against the mark prepass.mjs took at start.
 //   node workspace-check.mjs [--dir .security-audit]
 // Prints a short report and writes <dir>/tools/workspace-check.json. Informational: exit 0.

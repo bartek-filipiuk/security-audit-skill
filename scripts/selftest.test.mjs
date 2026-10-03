@@ -58,7 +58,7 @@ id: auth-001
 category: auth
 severity: HIGH
 status: verified
-proof: dynamic
+proof: test
 remediation:
   status: fixed
   fix_evidence:
@@ -72,20 +72,18 @@ getInvoice server action reads any organization's invoice
 ## Evidence
 - **File**: \`src/app/(app)/invoices/actions.ts:11\`
 
-## Exploit Steps
-1. Sign in as a member of org B.
-2. Call the getInvoice action with an invoice id from org A.
+## Impact
+A member of organization B can read any invoice of organization A by id.
 
-## Proof
-$ node .security-audit/poc/auth-001.mjs
-status 200, invoice number INV-0042 from org A
+## Regression Test
+.security-audit/tests/auth-001.test.ts: expects getInvoice to throw for a foreign org id; fails today with invoice INV-0042 returned.
 `;
 
 test("audit-state accepts a well-formed finding and rejects drift", () => {
   const dir = auditDir({
     "auth-001": verifiedHigh,
     "injection-001": `---\nid: injection-001\ncategory: injection\nseverity: HIGH\nstatus: fixed\n---\n## Title\nx\n`,
-    "exposure-001": `---\nid: exposure-001\ncategory: "2.4 Data Exposure"\nseverity: MEDIUM\nstatus: verified\nremediation:\n  status: open\n  public_safe: true\n---\n## Title\ny\n## Evidence\n\`a.ts:1\`\n## Exploit Steps\n1. do it\n`,
+    "exposure-001": `---\nid: exposure-001\ncategory: "2.4 Data Exposure"\nseverity: MEDIUM\nstatus: verified\nremediation:\n  status: open\n  public_safe: true\n---\n## Title\ny\n## Evidence\n\`a.ts:1\`\n## Impact\nanyone reads it\n`,
     "auth-002": `---\nid: auth-002\ncategory: auth\nseverity: HIGH\nstatus: rejected\nrejection_reason: duplicate_of_auth-999\n---\n`,
     "auth-003": `---\nid: auth-003\ncategory: auth\nseverity: LOW\nstatus: rejected\nrejection_reason: best_practice — fine as is\n---\n`,
     "auth-004": `---\nid: auth-004\ncategory: auth\nseverity: CRITICAL\nstatus: raw\n---\n`,
@@ -95,6 +93,7 @@ test("audit-state accepts a well-formed finding and rejects drift", () => {
   const about = (id) => errors.filter((e) => e.includes(`/${id}.md`));
   assert.deepEqual(about("auth-001"), []);
   assert.deepEqual(about("auth-003"), []);
+  assert.ok(errors.some((e) => e.includes('"## Impact"')) === false, "a verified finding with an Impact section passes the impact check");
   assert.ok(about("injection-001").some((e) => e.includes("legacy")));
   assert.ok(about("exposure-001").some((e) => e.includes("category")));
   assert.ok(about("exposure-001").some((e) => e.includes("public_safe")));
@@ -204,11 +203,11 @@ test("report.md is assembled from summary.md and the finding files", async () =>
     { "auth-001": verifiedHigh, "auth-002": `---\nid: auth-002\ncategory: auth\nseverity: LOW\nstatus: rejected\nrejection_reason: best_practice — fine\n---\n## Title\nx\n` },
     { "non-auth-001": `---\nid: non-auth-001\ncategory: auth\n---\n## Area Examined\nLogin rate limit\n## Evidence\n\`src/a.ts:9\`\n` },
   );
-  writeFileSync(join(dir, "summary.md"), "# Security Audit Report\n\n## Executive Summary\n- Top 3 risks: auth-001 (dynamic)\n");
+  writeFileSync(join(dir, "summary.md"), "# Security Audit Report\n\n## Executive Summary\n- Top 3 risks: auth-001 (test)\n");
   const md = renderReportMd(dir);
   assert.match(md, /^# Security Audit Report/);
   assert.match(md, /### \[F1\] getInvoice server action reads any organization's invoice/);
-  assert.match(md, /\*\*Proof\*\*: dynamic/);
+  assert.match(md, /\*\*Proof\*\*: test/);
   assert.match(md, /\| 1 \| non-auth-001 \| Login rate limit \| src\/a\.ts:9 \|/);
   assert.match(md, /\| auth-002 \| best_practice — fine \|/);
 });

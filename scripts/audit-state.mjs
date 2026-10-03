@@ -19,7 +19,7 @@ export const SEVERITIES = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
 export const STATUSES = ["raw", "verified", "rejected"];
 export const REJECTIONS = ["dead_code", "unreachable", "defensive_failure", "best_practice", "no_evidence"];
 export const REMEDIATION = ["fixed", "partial", "open", "wont_fix", "cannot_verify"];
-export const PROOFS = ["dynamic", "static"];
+export const PROOFS = ["test", "static"];
 
 // Minimal YAML subset: `key: value` lines, one level of nesting, `- item` block lists,
 // JSON-style or bare flow arrays.
@@ -130,13 +130,13 @@ export function validate({ findings, nonIssues }, { final = false } = {}) {
 
     if (fm.status === "verified") {
       if (!/`?[\w./()[\]@-]+\.\w+:\d+/.test(f.body)) err(f, "verified finding cites no file:line");
-      const steps = section(f.body, "Exploit Steps");
-      if (!steps || !/^\s*1\.\s*\S/m.test(steps)) err(f, 'verified finding needs "## Exploit Steps" with numbered steps');
+      const impact = section(f.body, "Impact");
+      if (!impact || !/\S/.test(impact)) err(f, 'verified finding needs an "## Impact" section: who can do what they should not');
       if (["CRITICAL", "HIGH"].includes(fm.severity) && !PROOFS.includes(fm.proof))
-        err(f, `${fm.severity} finding needs proof: dynamic | static`);
+        err(f, `${fm.severity} finding needs proof: test | static`);
     }
     if (fm.proof !== undefined && !PROOFS.includes(fm.proof)) err(f, `proof "${fm.proof}" not in: ${PROOFS.join(", ")}`);
-    if (fm.proof === "dynamic" && !section(f.body, "Proof")) err(f, 'proof: dynamic needs a "## Proof" section with the command and its output');
+    if (fm.proof === "test" && !section(f.body, "Regression Test")) err(f, 'proof: test needs a "## Regression Test" section with the test path and its output');
 
     if (fm.remediation !== undefined) {
       const r = fm.remediation;

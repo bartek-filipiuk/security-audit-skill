@@ -30,5 +30,5 @@ Modes: Standard (<20 endpoints) | Triage (20-50) | Parallel (>50) | partial: --s
 Report: report.md + report.html (to fix / verified safe / not assessed)
 Private benchmark: benchmark/ (Ledgerly, own stack, 16 seeded bugs + 8 decoys), see benchmark/README.md
 Models: sonnet for the mechanical phases (1, 2, 4); Phase 3 verifier inherits the session model
-Proof labels: HIGH/CRITICAL are marked dynamic (exploit was run locally) or static (code reading)
+Proof labels: HIGH/CRITICAL are marked test (a regression test fails today) or static (code reading)
 ```

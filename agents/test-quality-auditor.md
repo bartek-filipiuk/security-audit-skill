@@ -20,9 +20,9 @@ You are a test quality auditor for security. Your job: assess whether the projec
 - Are critical security features **disabled** during testing? (rate limiting off, auth bypassed, validation skipped)
 - If mocked: do mocks match the real API contract (status codes, response shapes, error formats)?
 
-### 4.2 Are security tests testing real attacks?
+### 4.2 Are security tests testing real misuse?
 For each security-related test file, read the body and verify:
-- Does it send a real malicious payload, or just check that a function exists?
+- Does it send a real hostile input, or just check that a function exists?
 - Does it assert on the RIGHT thing? (status code AND response body, not just one)
 - Could the test pass even if the security measure was removed? If yes → **false positive test**.
 
@@ -72,5 +72,5 @@ Write your assessment to `.security-audit/test-quality.md` with this structure:
 
 ## Rules
 - **Read test bodies, not names.** A test named `test_sql_injection_prevention` might assert nothing useful.
-- **Check if tests would catch findings.** For each verified finding, trace whether any test sends the same attack vector.
+- **Check if tests would catch findings.** For each verified finding, trace whether any test covers the same input path.
 - **False positives are worse than no tests.** A test that passes regardless of whether the security measure exists gives false confidence.

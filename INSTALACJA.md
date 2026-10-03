@@ -35,7 +35,7 @@ To szybki przebieg po 20 najbardziej ryzykownych miejscach. Pełny audyt: `/secu
 Inne zakresy: `--scope auth`, `--scope payments`, `--scope src/api`. Po poprawkach: `/security-audit --verify-fixes`.
 
 Raport: `.security-audit/report.html` w katalogu projektu. Katalog jest automatycznie dopisywany do `.gitignore`,
-bo zawiera kroki ataku. Nie publikuj go.
+bo wskazuje niepoprawione słabości z plikiem i linią. Nie publikuj go.
 
 ## Podgląd postępu na żywo (opcjonalnie)
 
@@ -58,4 +58,4 @@ Gdy wychodzi nowa wersja, dostajesz mailem nowy link do pobrania. Rozpakuj paczk
 
 Pomoc w używaniu i rozmowy o wynikach: https://discord.gg/ctbj9SgT9N (serwer WrocDevs, kanał #security-audit-skill)
 
-Zasada: nie wklejamy kroków ataku ani sekretów ze swoich raportów.
+Zasada: nie wklejamy fragmentów raportów z niepoprawionymi słabościami ani sekretów.

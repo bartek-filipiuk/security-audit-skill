@@ -34,7 +34,7 @@ Partial audits: `/security-audit --scope auth` (areas: auth, admin, payments, we
 
 A full Parallel run is expensive: on a 161-entry-point project it took about 2 h and 4.8M subagent tokens (see "Cost on Big Projects" in SKILL.md). Start big projects with `--scope top20` or one domain.
 
-At the end, `.security-audit/report.html` shows what to fix (red), what is verified safe with evidence (green) and what was not assessed (grey). It contains exploit steps and stays private.
+At the end, `.security-audit/report.html` shows what to fix (red), what is verified safe with evidence (green) and what was not assessed (grey). It names unfixed weaknesses and stays private.
 
 ## How it works
 
@@ -52,7 +52,7 @@ A deterministic pre-pass (seconds) followed by a 5-phase agent pipeline (Recon �
 prepass.mjs (no LLM) → entry points by framework convention, Drizzle scope scan,
                        osv-scanner advisories, gitleaks over git history → prepass.md
         ↓
-Recon Scanner (Sonnet) → maps attack surface + authorization map, writes .security-audit/recon.md
+Recon Scanner (Sonnet) → maps exposed surface + authorization map, writes .security-audit/recon.md
         ↓
 Category Auditors (Sonnet, parallel) → audit by domain, write findings/
         ↓
@@ -71,17 +71,17 @@ All agents communicate via `.security-audit/` directory:
 .security-audit/
 ├── prepass.md        # Deterministic pre-pass output
 ├── tools/            # Raw scanner output (secrets redacted)
-├── recon.md          # Attack surface + authorization map
+├── recon.md          # Exposed surface + authorization map
 ├── findings/         # One file per finding (raw → verified/rejected)
 ├── non-issues/       # Areas examined and found secure (with the control's file:line)
 ├── not-assessed.md   # Coverage gaps
-├── poc/              # Proofs of concept for HIGH/CRITICAL
+├── tests/            # Regression tests for HIGH/CRITICAL
 ├── test-quality.md   # Test coverage assessment
 ├── report.md         # Final report
 └── remediation.json  # Generated from finding frontmatter
 ```
 
-The directory is added to `.gitignore` before anything is written: it contains working exploit steps.
+The directory is added to `.gitignore` before anything is written: it names unfixed weaknesses with file and line.
 
 ```
 ```
@@ -91,7 +91,7 @@ The directory is added to `.gitignore` before anything is written: it contains w
 ```
 SKILL.md                          # Main skill — coordinator workflow
 agents/
-  recon-scanner.md                # Phase 1: map attack surface
+  recon-scanner.md                # Phase 1: map exposed surface
   category-auditor.md             # Phase 2: audit by category (parallel)
   deep-dive-verifier.md           # Phase 3: verify, expand, chain findings
   test-quality-auditor.md         # Phase 4: assess test quality
@@ -120,13 +120,13 @@ Requirements: Node 20+. For dependency and secret scanning, either `osv-scanner`
 
 ## Key features
 
-- **Evidence-based**: every finding requires file:line, code snippet, and numbered exploit steps
+- **Evidence-based**: every finding requires file:line, code snippet, and an Impact section (who can do what they should not)
 - **Deterministic first**: entry points, tenant-scope candidates, CVEs and secrets in git history come from scripts and scanners, not from model memory
 - **Anti-hallucination**: 12 hard rules + mandatory 4-part REJECT gate (evidence, reachability, direction, dedup); no "secure" without the control's file:line
-- **Proof labels**: every HIGH/CRITICAL is marked `dynamic` (exploit run locally) or `static` (code reading only)
+- **Proof labels**: every HIGH/CRITICAL is marked `test` (a regression test fails today) or `static` (code reading only)
 - **Measurement-driven**: Deep Dive iterates (max 3) and stops on set-convergence (no new findings / status changes / chains); score is a reporting metric
 - **Separate verification**: different agent verifies findings (79% false positive reduction pattern)
-- **Cross-domain chain detection**: verifier sees findings from ALL auditors, detects multi-step exploits
+- **Cross-domain chain detection**: verifier sees findings from ALL auditors, detects multi-step chains
 - **Stack-agnostic**: auto-detects language/framework, adapts checklist and patterns
 - **Persistent**: findings survive sessions — resume, re-run, extend anytime
 - **Hotspots first**: the pre-pass ranks entry points and auth/CORS/env config by risk signals; auditors start there
@@ -141,7 +141,7 @@ Requirements: Node 20+. For dependency and secret scanning, either `osv-scanner`
 5. Security Headers & Transport
 6. File Upload
 7. Dependency Security
-8. Cryptography (including JWT algorithm attacks)
+8. Cryptography (including JWT algorithm confusion)
 9. Concurrency & Race Conditions
 10. Documentation vs Reality
 11. Business Logic

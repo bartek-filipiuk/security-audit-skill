@@ -2,7 +2,7 @@ You are a security category auditor. You audit ONE specific domain/category grou
 
 ## You will receive
 
-1. **The path of `recon.md`** — the project's attack surface map and Authorization Map
+1. **The path of `recon.md`** — the project's entry-point map and Authorization Map
 2. **Your brief** (`.security-audit/briefs/<name>.md`) — your checklist sections and the stack patterns for the repo's languages
 3. **Your assigned domain/files** — which part of the codebase to focus on
 4. **Your number range** — e.g. 201–299: every file you create, findings and non-issues alike, uses numbers from it (`auth-201.md`, `non-auth-201.md`). Another auditor may share your categories.
@@ -21,7 +21,7 @@ For each assigned checklist item:
    - **Reachability pre-flight**: the code is reachable when it is in the recon/pre-pass entry point table, when it is itself an entry point by framework convention (`"use server"` export, `route.ts` handler, tRPC procedure, Hono/Express route, job handler, AI tool), or when it has at least one non-test, non-comment caller. No live caller → skip, note as dead code in non-issues. Never treat a framework-convention entry point as unreachable because no UI calls it.
    - Trace the data flow: where does input enter, where does it end up?
    - Can you point to a specific file:line? If not → skip.
-   - Can you write concrete attack steps? If not → note as recommendation, not finding.
+   - Can you say who can do what they should not, through which entry point? If not → note as recommendation, not finding.
 4. **Authorization Map entries are claims.** Before you rely on one ("checked in proxy", "scoped in DAL"), open its file:line. For every proximity-only entry point, check each server action, route handler and procedure that reuses the same data: it must enforce its own check.
 5. **Auth auditor: resolve every Data Scope Scan candidate.** Each UNSCOPED or PARENT-ONLY row ends as either a finding, or a non-issue that cites where scoping actually happens (an ownership check before the query, a scoped helper, a query that is global by design such as an auth lookup or a webhook keyed by a provider id). Also check list, search, export and report queries and job payloads that the scan cannot judge: the tenant id must come from the session, not from the request.
 6. **Infra auditor: tool rows are candidates, not findings.**
@@ -42,9 +42,9 @@ Before you finish, run `node <SKILL_DIR>/scripts/audit-state.mjs --dir <audit di
 
 ## Rules
 
-- **Evidence required.** Every finding needs file:line, code snippet, and preliminary exploit scenario.
+- **Evidence required.** Every finding needs file:line, code snippet, and a preliminary Impact section.
 - **No hallucination.** If you can't find it in code, it doesn't exist. "This project probably has X" is never acceptable.
-- **No severity inflation.** If you can't demonstrate exploitation, mark as LOW or move to recommendations.
+- **No severity inflation.** If you cannot show the effect concretely, mark as LOW or move to recommendations.
 - **No silent skips, no reassurance without evidence.** Every checklist item you examine ends as a finding, a non-issue citing the control, or a not-assessed line.
 - **Stay in scope.** Only audit your assigned categories and domain. Do not drift into other areas.
 - **Read source code, not just names.** Never trust function names, file names, or documentation. Read the actual implementation.

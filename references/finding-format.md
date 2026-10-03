@@ -15,16 +15,16 @@ category: auth | injection | rate-limit | exposure | config | upload | dependenc
 severity: CRITICAL | HIGH | MEDIUM | LOW
 status: raw | verified | rejected   # the audit verdict only; never `fixed` (remediation state lives below)
 source_agent: recon | auditor-{name} | verifier
-proof: dynamic | static  # REQUIRED for verified HIGH/CRITICAL: dynamic = exploit was run (see ## Proof), static = code reading only
+proof: test | static  # REQUIRED for verified HIGH/CRITICAL: test = a regression test fails today (see ## Regression Test), static = code reading only
 rejection_reason: ""  # When status=rejected. Starts with a code: dead_code | unreachable | defensive_failure | best_practice | duplicate_of_{id} | no_evidence; optional " — short reason" after it
-prerequisite_count: 0  # Number of admin/config steps required before exploitable
+prerequisite_count: 0  # Number of admin/config steps required before the weakness is reachable
 remediation:           # OPTIONAL — added by Phase 6 (fix or --verify-fixes), only on verified findings
   status: open         # fixed | partial | open | wont_fix | cannot_verify
   fixed_at: ""         # YYYY-MM-DD when fixed
   fix_commit: ""       # optional
   fix_evidence: []     # ["path:line"] proof the fix is live in current code (REQUIRED for `fixed`)
   regression_test: ""  # "path:line" or empty
-  verification: ""     # one line: what now blocks the exploit (REQUIRED rationale for `wont_fix`)
+  verification: ""     # one line: what now prevents the behaviour (REQUIRED rationale for `wont_fix`)
   public_safe: false   # true ONLY when status: fixed; audit-state.mjs recomputes it for remediation.json
 ---
 
@@ -45,13 +45,11 @@ remediation:           # OPTIONAL — added by Phase 6 (fix or --verify-fixes), 
 - **Sanitization**: [what exists between source and sink]
 - **Verdict**: SAFE | VULNERABLE | PARTIAL
 
-## Exploit Steps
-1. [concrete step]
-2. [concrete step]
-3. [expected result]
+## Impact
+[One to three sentences: who can do what they should not, through which entry point, and what data or action is affected. Describe the effect, not a procedure.]
 
-## Proof
-[HIGH/CRITICAL. proof: dynamic → the exact command run (PoC in `.security-audit/poc/`) and the relevant output. proof: static → one line on why it could not be run.]
+## Regression Test
+[HIGH/CRITICAL. proof: test → the test's path under `.security-audit/tests/`, what it asserts, and the relevant output of the failing run. proof: static → one line on why no test was written.]
 
 ## Chained With
 - [other finding IDs, if applicable, or "none"]
@@ -66,7 +64,7 @@ tested | untested | test exists but insufficient
 [When status=rejected: explain why. Reference the specific REJECT gate check that failed (6a/6b/6c/6d). If duplicate, reference the canonical finding ID.]
 
 ## Remediation
-[Added by Phase 6 when fixed: what changed + why, mirroring the `remediation:` frontmatter block. The Exploit Steps above are treated as sensitive — downstream public surfaces (e.g. a public security page) redact them unless `remediation.public_safe: true`.]
+[Added by Phase 6 when fixed: what changed + why, mirroring the `remediation:` frontmatter block. The Evidence and Impact above are treated as sensitive — downstream public surfaces (e.g. a public security page) redact them unless `remediation.public_safe: true`.]
 ```
 
 ## Non-Issue Format

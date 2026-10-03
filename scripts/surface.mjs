@@ -1,4 +1,4 @@
-// Static attack-surface scan for the security-audit pre-pass. No dependencies.
+// Static entry-point scan for the security-audit pre-pass. No dependencies.
 // 1. Entry points by framework convention (Next.js App/Pages Router, server actions, proxy/middleware,
 //    tRPC, Hono/Express, pg-boss/BullMQ/cron, AI SDK / MCP tools, Drupal routing.yml).
 // 2. Drizzle scope scan: query sites on tables that carry an owner/tenant column but whose statement
@@ -229,9 +229,9 @@ export function scanEntryPoints(files) {
 
     // LLM tools (AI SDK `name: tool({`, Claude Agent SDK / MCP `tool("name"`)
     const toolLines = new Set();
-    for (const m of text.matchAll(/(\w+)\s*:\s*tool\(\s*\{/g)) { toolLines.add(lineAt(m.index)); add(f, lineAt(m.index), "ai-tool", m[1], "model-invoked", "args are attacker-controlled via prompt"); }
+    for (const m of text.matchAll(/(\w+)\s*:\s*tool\(\s*\{/g)) { toolLines.add(lineAt(m.index)); add(f, lineAt(m.index), "ai-tool", m[1], "model-invoked", "args come from the prompt"); }
     for (const m of text.matchAll(/(?:\.(?:tool|registerTool)|\btool)\(\s*["'`]([\w.-]+)["'`]/g)) {
-      if (!toolLines.has(lineAt(m.index))) add(f, lineAt(m.index), "ai-tool", m[1], "model-invoked", "args are attacker-controlled via prompt");
+      if (!toolLines.has(lineAt(m.index))) add(f, lineAt(m.index), "ai-tool", m[1], "model-invoked", "args come from the prompt");
     }
   }
   return out;

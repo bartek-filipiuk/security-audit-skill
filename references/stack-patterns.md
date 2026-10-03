@@ -4,11 +4,11 @@ Use these grep/ripgrep patterns during Phase 2 to find relevant code.
 Adapt based on the stack identified in Phase 1. Not exhaustive — use judgment.
 The pre-pass (`prepass.md`) already enumerates entry points and unscoped Drizzle queries; use the patterns below to go further.
 
-## Entry Points and Attacker-Controlled Input (JS/TS frameworks)
+## Entry Points and Externally Controlled Input (JS/TS frameworks)
 
 Express-style patterns (`req.body`, `app.get`) find nothing in these frameworks. Search for the input sources instead.
 
-| Framework | Entry point | Attacker-controlled input |
+| Framework | Entry point | Externally controlled input |
 |-----------|-------------|---------------------------|
 | Next.js App Router | `app/**/route.ts` exports `GET`/`POST`/…; every export of a `"use server"` file (a public POST, callable without the UI); `page.tsx` server components | `request.json()`, `request.formData()`, `searchParams`, `params`, `headers()`, `cookies()`, server action arguments |
 | Next.js proxy/middleware | `proxy.ts` / `middleware.ts` and its `config.matcher` | Paths outside the matcher get no check; a cookie-presence check is not authorization |

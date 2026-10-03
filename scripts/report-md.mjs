@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import { loadAudit, section, titleOf } from "./audit-state.mjs";
 
 const ORDER = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
-const FIELDS = ["Evidence", "TRACE", "Exploit Steps", "Proof", "Chained With", "Recommendation", "Test Coverage"];
+const FIELDS = ["Evidence", "TRACE", "Impact", "Regression Test", "Chained With", "Recommendation", "Test Coverage"];
 const cell = (s) => String(s ?? "").replace(/\|/g, "\\|").replace(/\n/g, " ");
 const firstLoc = (t) => t?.match(/`?([\w./()[\]@-]+\.\w+:\d+[\d,-]*)`?/)?.[1] ?? "";
 

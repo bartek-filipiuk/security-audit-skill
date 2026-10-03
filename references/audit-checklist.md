@@ -61,7 +61,7 @@ Skip categories that don't apply to the detected stack.
 - [ ] CORS: Origin allowlist (not wildcard `*` in production), appropriate methods/headers
 - [ ] Security headers present: X-Content-Type-Options, X-Frame-Options, Content-Security-Policy
 - [ ] HTTPS enforced (HSTS, redirect HTTP->HTTPS) if applicable
-- [ ] CSP trusted domains: if CSP uses domain allowlist, verify listed domains don't host user-controlled content (CDNs like jsdelivr/unpkg, pastebins, JSONP endpoints). These allow CSP bypass via attacker-hosted scripts
+- [ ] CSP trusted domains: if CSP uses domain allowlist, verify listed domains don't host user-controlled content (CDNs like jsdelivr/unpkg, pastebins, JSONP endpoints). Scripts hosted there run under the policy
 
 ## 2.6 File Upload
 
@@ -74,13 +74,13 @@ Skip if no upload endpoints found in recon.
 - [ ] ALL endpoints that accept files share the same validation (no bypass via alternate endpoint)
 - [ ] Null byte injection: if file paths validated by extension, verify null bytes stripped BEFORE validation (not after). `file.pdf%00.exe` may pass `.pdf` check but execute as `.exe`
 - [ ] Upload size config: verify upload middleware has explicit `limits.fileSize` configured (not just frontend validation). Search for multer/busboy/formidable config
-- [ ] Extension vs content validation: verify file type checked by content/magic bytes, not just filename extension. Extension-only check allows renaming malicious files
+- [ ] Extension vs content validation: verify file type checked by content/magic bytes, not just filename extension. Extension-only check allows renaming disguised files
 
 ## 2.7 Dependency Security
 
 - [ ] All dependencies pinned to specific versions (lockfile present and committed)
 - [ ] Known advisories come from the pre-pass dependency scan (osv-scanner), never from memory. Prod tree + plausibly reachable code path → finding (cite the lockfile line and where the feature is used); dev-only → recommendation unless it runs in CI/build on untrusted input or a dev server is exposed. Scan NOT RUN → not-assessed, not "no CVEs"
-- [ ] No unnecessary dependencies (large attack surface from unused packages)
+- [ ] No unnecessary dependencies (more exposed code from unused packages)
 - [ ] Transitive dependency risks: critical path depending on single-maintainer package?
 - [ ] Dependency update mechanism exists (Dependabot, Renovate, or documented process)
 - [ ] No dependencies pulled from non-standard registries without verification

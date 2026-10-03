@@ -3,8 +3,8 @@
 // safe (green), what was not assessed (grey), plus hotspots, dependency advisories and secrets.
 //   node report-html.mjs [--dir .security-audit] [--out <dir>/report.html]
 // Built from the finding files only (no LLM), so it always matches the data. Every string from the
-// audit is escaped: findings are written by a model that read attacker-influenced code. A CSP with a
-// script hash blocks anything that slips through. The file contains exploit steps: keep it private.
+// audit is escaped: findings are written by a model that read untrusted code. A CSP with a
+// script hash blocks anything that slips through. The file names unfixed weaknesses: keep it private.
 // ponytail: system font stacks, because the file must open offline and stay small.
 
 import { createHash } from "node:crypto";
@@ -19,7 +19,7 @@ const CATEGORY = {
   exposure: "Data exposure & secrets", config: "Headers, CORS & configuration", upload: "File upload & storage",
   dependency: "Dependencies", crypto: "Cryptography", concurrency: "Concurrency & races",
   "docs-vs-reality": "Documentation vs reality", "business-logic": "Business logic", logging: "Logging & monitoring",
-  "test-gap": "Test gaps", chain: "Attack chains",
+  "test-gap": "Test gaps", chain: "Chains",
 };
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -77,7 +77,7 @@ function load(dir) {
       status: legacyFixed ? "verified" : fm.status, remediation: legacyFixed ? "fixed" : rem.status || "open",
       fixEvidence: rem.fix_evidence ?? [], proof: fm.proof, rejection: String(fm.rejection_reason ?? ""),
       title: titleOf(fm, f.body) || f.stem, loc: firstLoc(sec("Evidence") ?? f.body),
-      evidence: sec("Evidence"), trace: sec("TRACE"), steps: sec("Exploit Steps"), proofText: sec("Proof"),
+      evidence: sec("Evidence"), trace: sec("TRACE"), impact: sec("Impact"), proofText: sec("Regression Test"),
       chain: sec("Chained With"), fix: sec("Recommendation"), rejectionNote: sec("Rejection Note"),
     };
   });
@@ -100,8 +100,8 @@ const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 function proofChip(f) {
   if (!["CRITICAL", "HIGH"].includes(f.severity)) return "";
-  return f.proof === "dynamic"
-    ? `<span class="chip chip-proof">Demonstrated</span>`
+  return f.proof === "test"
+    ? `<span class="chip chip-proof">Failing test</span>`
     : `<span class="chip chip-static">Code reading only</span>`;
 }
 
@@ -115,8 +115,8 @@ function findingRow(f) {
 ${block("How to fix", f.fix)}
 ${block("Evidence", f.evidence)}
 ${block("Data flow", f.trace)}
-${block("Exploit steps", f.steps)}
-${block("Proof", f.proofText)}
+${block("Impact", f.impact)}
+${block("Regression test", f.proofText)}
 ${f.chain && !/^none\b/i.test(f.chain.trim()) ? block("Chained with", f.chain) : ""}
 <p class="meta">${esc(f.id)} · ${esc(CATEGORY[f.category] ?? f.category)}</p>
 </div></details>`;
@@ -124,7 +124,7 @@ ${f.chain && !/^none\b/i.test(f.chain.trim()) ? block("Chained with", f.chain) :
 
 function render(d) {
   const toFix = d.items.filter((f) => f.status === "verified" && !["fixed", "wont_fix"].includes(f.remediation))
-    .sort((a, b) => sevRank(a.severity) - sevRank(b.severity) || (b.proof === "dynamic") - (a.proof === "dynamic") || a.id.localeCompare(b.id));
+    .sort((a, b) => sevRank(a.severity) - sevRank(b.severity) || (b.proof === "test") - (a.proof === "test") || a.id.localeCompare(b.id));
   const fixed = d.items.filter((f) => f.status === "verified" && f.remediation === "fixed");
   const accepted = d.items.filter((f) => f.status === "verified" && f.remediation === "wont_fix");
   const rejected = d.items.filter((f) => f.status === "rejected");
@@ -294,9 +294,9 @@ ${d.scope ? `<p class="scope"><strong>Partial audit.</strong> Scope: ${esc(d.sco
 <nav aria-label="Sections"><ol>${nav.map(([id, label, n]) => `<li><a href="#${id}">${esc(label)} <b>${n}</b></a></li>`).join("")}</ol></nav>
 <main>
 <h2 id="fix">To fix</h2>
-<p class="lede">Verified findings, most severe first. “Demonstrated” means the exploit was run against a local instance or test; “code reading only” means it was confirmed by tracing the code.</p>
+<p class="lede">Verified findings, most severe first. “Failing test” means a regression test in the project’s own runner fails today; “code reading only” means it was confirmed by tracing the code.</p>
 ${toFix.length ? `<h3>Fix first</h3>
-<ol class="first">${toFix.slice(0, 3).map((f) => `<li><div><a href="#${esc(f.id)}">${inline(f.title)}</a><small>${esc(f.severity.toLowerCase())}${["CRITICAL", "HIGH"].includes(f.severity) ? ` · ${f.proof === "dynamic" ? "demonstrated" : "code reading only"}` : ""} · ${esc(f.loc)}</small></div></li>`).join("")}</ol>
+<ol class="first">${toFix.slice(0, 3).map((f) => `<li><div><a href="#${esc(f.id)}">${inline(f.title)}</a><small>${esc(f.severity.toLowerCase())}${["CRITICAL", "HIGH"].includes(f.severity) ? ` · ${f.proof === "test" ? "failing test" : "code reading only"}` : ""} · ${esc(f.loc)}</small></div></li>`).join("")}</ol>
 ${bySev.map(([s, list]) => `<h3>${esc(s.toLowerCase())} · ${list.length}</h3>${list.map(findingRow).join("\n")}`).join("\n")}` : `<p class="empty">No open findings.</p>`}
 ${fixed.length ? `<h3>Fixed · ${fixed.length}</h3><ul class="good">${fixed.map((f) => `<li>${ICON.check}<div><strong>${inline(f.title)}</strong><span class="why">${esc(f.severity.toLowerCase())} · fix in ${esc(f.fixEvidence.join(", ") || "code (no evidence recorded)")}</span></div></li>`).join("")}</ul>` : ""}
 ${accepted.length ? `<h3>Accepted risk · ${accepted.length}</h3><ul class="gap">${accepted.map((f) => `<li>${ICON.dash}<div><strong>${inline(f.title)}</strong><span class="why">${esc(f.severity.toLowerCase())}</span></div></li>`).join("")}</ul>` : ""}
@@ -325,7 +325,7 @@ ${d.summary.secrets.rows.length ? `<div class="tablewrap"><table><thead><tr><th>
 <p class="lede">Candidates the verifier rejected after reading the code. Kept for the record; none of them needs action.</p>
 ${rejected.length ? `<div class="tablewrap"><table><thead><tr><th>Finding</th><th>Reason</th></tr></thead><tbody>${rejected.map((f) => `<tr><td>${inline(f.title)}<br><span class="mono">${esc(f.id)}</span></td><td>${esc(f.rejection.split(/\s+[—-]\s+/)[0])}</td></tr>`).join("")}</tbody></table></div>` : `<p class="empty">Nothing was rejected.</p>`}
 </main>
-<footer>Generated from <code>.security-audit/</code> by report-html.mjs. Contains exploit steps for open issues: keep it private, never publish or commit it. A public page must redact unfixed findings (see public_safe in remediation.json).</footer>
+<footer>Generated from <code>.security-audit/</code> by report-html.mjs. Names unfixed weaknesses with file and line: keep it private, never publish or commit it. A public page must redact unfixed findings (see public_safe in remediation.json).</footer>
 </div>
 <script>${script}</script>
 </body>

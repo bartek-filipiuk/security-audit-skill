@@ -7,7 +7,7 @@ The coordinator writes only the top of this template to `.security-audit/summary
 
 ## Project Summary
 - Stack: [auto-detected from Phase 1]
-- Attack surface: [entry points count, auth method, file handling, external services]
+- Exposed surface: [entry points count, auth method, file handling, external services]
 - Dependencies: [total count, pinned %, advisory mechanism]
 - Lines of code audited: [estimate]
 - Test suite: [X tests, pass/fail/skip counts, runner, config notes]
@@ -18,7 +18,7 @@ The coordinator writes only the top of this template to `.security-audit/summary
 - High: [count] | Medium: [count] | Low: [count]
 - Deep Dive score: [final metric value] (after [N] iterations)
 - Test quality: [STRONG / ADEQUATE / WEAK / UNRELIABLE]
-- Top 3 risks: [one-line each, with its proof label: dynamic (demonstrated) or static (code reading only)]
+- Top 3 risks: [one-line each, with its proof label: test (a regression test fails today) or static (code reading only)]
 - Not assessed: [count, or "none"]
 
 ## Findings
@@ -33,8 +33,8 @@ The coordinator writes only the top of this template to `.security-audit/summary
   - Sink: [where consumed: DB, response, file, exec, log] (file:line)
   - Sanitization: [what exists between source and sink]
   - Verdict: SAFE / VULNERABLE / PARTIAL
-- **Exploit scenario**: concrete numbered attack steps
-- **Proof** (HIGH/CRITICAL): dynamic — [command + observed result] | static — [why it was not run]
+- **Impact**: who can do what they should not, and what is affected
+- **Regression test** (HIGH/CRITICAL): test — [path + what fails today] | static — [why none was written]
 - **Chained with**: [other finding IDs, if applicable]
 - **Recommendation**: specific fix
 - **Test coverage**: tested / untested / test exists but insufficient
