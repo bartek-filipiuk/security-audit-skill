@@ -25,6 +25,10 @@ cd ~/.claude/skills/security-audit && node --test scripts/
 
 ## Pierwszy audyt
 
+Przed audytem zainstaluj zależności projektu i upewnij się, że jego testy się uruchamiają
+(na przykład `pnpm install && pnpm test`). Audyt pisze testy regresji w runnerze Twojego projektu;
+bez zainstalowanych zależności nie uruchomi ich i każde znalezisko dostanie etykietę „static”.
+
 W katalogu swojego projektu, w Claude Code:
 
 ```
