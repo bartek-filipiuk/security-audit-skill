@@ -23,6 +23,15 @@ const CATEGORY = {
 };
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+// The package name reads better than a directory called "app"; fall back to the directory.
+function packageName(root) {
+  try {
+    const name = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).name;
+    return typeof name === "string" && name.trim() ? name.replace(/^@[^/]+\//, "") : null;
+  } catch {
+    return null;
+  }
+}
 const firstLoc = (text) => text?.match(/`?([\w./()[\]@-]+\.\w+:\d+(?:[-,]\d+)*)`?/)?.[1] ?? "";
 
 // Minimal markdown: fenced code, lists, inline code, bold. Input is escaped before any markup is added.
@@ -87,7 +96,7 @@ function load(dir) {
   }));
   const reportPath = join(dir, "report.md");
   return {
-    project: summary?.project ?? basename(dirname(resolve(dir))),
+    project: summary?.project ?? packageName(dirname(resolve(dir))) ?? basename(dirname(resolve(dir))),
     commit: summary?.commit ?? "",
     date: (existsSync(reportPath) ? statSync(reportPath).mtime : new Date()).toISOString().slice(0, 10),
     scope: summary?.scope ?? null,

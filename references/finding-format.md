@@ -46,7 +46,7 @@ remediation:           # OPTIONAL — added by Phase 6 (fix or --verify-fixes), 
 - **Verdict**: SAFE | VULNERABLE | PARTIAL
 
 ## Impact
-[One to three sentences: who can do what they should not, through which entry point, and what data or action is affected. Describe the effect, not a procedure.]
+[One to three sentences: who can do what they should not, through which entry point, and what data or action is affected. Name the actor by role ("anyone", "a signed-in user", "a member of another organization") and describe the effect, not a procedure.]
 
 ## Regression Test
 [HIGH/CRITICAL. proof: test → the test's path under `.security-audit/tests/`, what it asserts, and the relevant output of the failing run. proof: static → one line on why no test was written.]
