@@ -94,15 +94,19 @@ export function affectedFiles(graph, changed) {
 }
 
 // Project files a finding or non-issue cites (path suffixes are matched against the known files).
+// A suffix that fits several files ("route.ts", "page.tsx") names none of them: ignored.
 export function citedFiles(text, universe) {
   const out = new Set();
   for (const m of text.matchAll(/([\w.()[\]@+-]+(?:\/[\w.()[\]@+-]+)*\.[\w]+)(?::\d+)?/g)) {
     const p = m[1].replace(/^\.\//, "");
     if (p.startsWith(".security-audit/")) continue;
-    for (const f of universe) if (f === p || f.endsWith("/" + p)) out.add(f);
+    const hits = universe.filter((f) => f === p || f.endsWith("/" + p));
+    if (hits.length === 1 || hits.includes(p)) out.add(hits.includes(p) ? p : hits[0]);
   }
   return out;
 }
+
+const idOf = (it) => it.name.replace(/\.md$/, "");
 
 // Reads the previous run from an audit directory (before or after it is archived).
 export function loadPreviousRun(dir) {
@@ -134,7 +138,7 @@ export function planIncremental({ targets, entries, files, changed, universe, it
     return { ...base, mode: "full", reason: `${reaudit.length} of ${targets.length} targets are affected (more than ${Math.round(FULL_ABOVE * 100)}%), so a full audit costs about the same` };
   }
   const touched = new Set([...affected, ...reaudit.map((t) => t.file)]);
-  const carry = [];
+  let carry = [];
   const drop = [];
   for (const it of items) {
     const { data } = parseFrontmatter(it.text);
@@ -142,10 +146,28 @@ export function planIncremental({ targets, entries, files, changed, universe, it
     if (it.kind === "finding" && data.status === "raw") { drop.push({ ...it, why: "still raw in the previous run" }); continue; }
     const cites = [...citedFiles(it.text, universe)];
     const hit = cites.filter((f) => touched.has(f));
-    if (hit.length) drop.push({ ...it, why: `cites ${hit.slice(0, 3).join(", ")}` });
-    else carry.push({ ...it, cites });
+    if (hit.length) drop.push({ ...it, data, cites, why: `cites ${hit.slice(0, 3).join(", ")}` });
+    else carry.push({ ...it, data, cites });
   }
-  return { ...base, mode: "incremental", reason: "", carry, drop };
+  // A carried item may not point at one that is re-audited: a duplicate of it, or a chain built on it.
+  for (let changedSet = true; changedSet; ) {
+    changedSet = false;
+    const gone = new Set(drop.map(idOf));
+    const keep = [];
+    for (const it of carry) {
+      const dup = String(it.data.rejection_reason ?? "").match(/^duplicate_of_([\w-]+)/)?.[1];
+      const part = it.data.category === "chain" && [...gone].find((id) => new RegExp(`\\b${id}\\b`).test(it.text));
+      if (dup && gone.has(dup)) { drop.push({ ...it, why: `duplicate of re-audited ${dup}` }); changedSet = true; }
+      else if (part) { drop.push({ ...it, why: `chain built on re-audited ${part}` }); changedSet = true; }
+      else keep.push(it);
+    }
+    carry = keep;
+  }
+  // What a dropped finding said about unchanged files must be found again: its other cited files'
+  // targets are re-audited too. Not for chains, whose parts are findings of their own.
+  const extra = new Set(drop.filter((d) => d.data?.category !== "chain").flatMap((d) => d.cites ?? []));
+  const more = targets.filter((t) => extra.has(t.file) && !reaudit.includes(t));
+  return { ...base, reaudit: [...reaudit, ...more], mode: "incremental", reason: "", carry, drop: drop.map(({ data, ...d }) => d) };
 }
 
 // Adds carried_from / carried_run to the frontmatter. An item carried before keeps both: they name the

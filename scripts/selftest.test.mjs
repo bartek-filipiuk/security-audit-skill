@@ -372,3 +372,25 @@ test("report.md, report.html and the scorer mark carried findings", async () => 
   assert.equal(r.seeded.find((s) => s.id === "B01").carried, true);
   assert.equal(r.carried, 1);
 });
+
+test("planIncremental: ambiguous file names, dangling duplicates and chains, re-audit of a dropped finding's other files", async () => {
+  const { planIncremental, citedFiles } = await import("./incremental.mjs");
+  const universe = ["src/app/api/a/route.ts", "src/app/api/b/route.ts", "src/app/api/c/route.ts", "src/app/api/d/route.ts", "src/lib/x.ts"];
+  assert.deepEqual([...citedFiles("see `route.ts:4` and `src/lib/x.ts:1`", universe)], ["src/lib/x.ts"]);
+  const targets = universe.slice(0, 4).map((file) => ({ file, line: 1, kind: "route-handler" }));
+  const files = universe.map((path) => ({ path, text: "" }));
+  const fm = (id, extra = "") => `---\nid: ${id}\ncategory: ${id.split("-")[0]}\nseverity: HIGH\nstatus: ${extra ? "rejected" : "verified"}\n${extra}---\n`;
+  const items = [
+    { kind: "finding", name: "auth-101.md", text: fm("auth-101") + "`src/app/api/a/route.ts:3` and `src/app/api/b/route.ts:9`" },
+    { kind: "finding", name: "auth-102.md", text: fm("auth-102") + "`src/app/api/c/route.ts:2`, also every `route.ts`" },
+    { kind: "finding", name: "auth-103.md", text: fm("auth-103", "rejection_reason: duplicate_of_auth-101\n") + "`src/lib/x.ts:1`" },
+    { kind: "finding", name: "chain-901.md", text: fm("chain-901") + "auth-101 then auth-102 via `src/app/api/c/route.ts:2`" },
+  ];
+  const plan = planIncremental({ targets, entries: [], files, changed: ["src/app/api/a/route.ts"], universe, items });
+  assert.equal(plan.mode, "incremental");
+  assert.deepEqual(plan.carry.map((c) => c.name), ["auth-102.md"], "a bare route.ts does not tie auth-102 to the changed route");
+  assert.deepEqual(plan.drop.map((d) => d.name).sort(), ["auth-101.md", "auth-103.md", "chain-901.md"]);
+  assert.match(plan.drop.find((d) => d.name === "auth-103.md").why, /duplicate of re-audited auth-101/);
+  assert.match(plan.drop.find((d) => d.name === "chain-901.md").why, /chain built on re-audited auth-101/);
+  assert.deepEqual(plan.reaudit.map((t) => t.file), ["src/app/api/a/route.ts", "src/app/api/b/route.ts"], "b is re-audited because dropped auth-101 cited it; the dropped chain adds nothing");
+});
