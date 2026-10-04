@@ -30,7 +30,14 @@ In your project, in Claude Code:
 /security-audit --scope auth        # areas: auth, admin, payments, webhooks, files, ai, jobs, api
 /security-audit --scope src/app/api # a path
 /security-audit --verify-fixes      # recompute what is fixed, change nothing
+/security-audit --since last        # re-audit only what changed since the last audit
+/security-audit --since <commit>    # ... or since a commit; the rest of the report is carried over
 ```
+
+`--since` audits the entry points whose code changed (directly or through an imported file) and copies the
+previous run's findings and verified-safe items that cite no changed file, each marked with the commit it was
+read at. Without a usable previous full audit, or when a file that gates every route changed, it runs a full
+audit and says why.
 
 Install the project's dependencies first, so the regression tests the audit writes can run. The report is
 `.security-audit/report.html`; the directory is gitignored because it names unfixed weaknesses.
@@ -113,6 +120,7 @@ references/
 scripts/
   prepass.mjs                     # Phase 0: deterministic pre-pass (node, no deps; docker for scanners)
   surface.mjs                     # Entry point enumeration + Drizzle scope scan
+  incremental.mjs                 # --since: changed files -> re-audit targets, carried findings
   audit-state.mjs                 # Validates findings, generates remediation.json
   report-html.mjs                 # Renders report.html: to fix / verified safe / not assessed
   report-md.mjs                   # Assembles report.md from the coordinator's summary.md + audit files
