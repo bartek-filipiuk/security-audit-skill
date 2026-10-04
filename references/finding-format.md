@@ -18,6 +18,8 @@ source_agent: recon | auditor-{name} | verifier
 proof: test | static  # REQUIRED for verified HIGH/CRITICAL: test = a regression test fails today (see ## Regression Test), static = code reading only
 rejection_reason: ""  # When status=rejected. Starts with a code: dead_code | unreachable | defensive_failure | best_practice | duplicate_of_{id} | no_evidence; optional " — short reason" after it
 prerequisite_count: 0  # Number of admin/config steps required before the weakness is reachable
+carried_from: ""       # WRITTEN BY prepass --since only: commit at which this file's code was last read (incremental run); never set by an agent
+carried_run: ""        # with carried_from: the archived run it came from (history/<run>)
 remediation:           # OPTIONAL — added by Phase 6 (fix or --verify-fixes), only on verified findings
   status: open         # fixed | partial | open | wont_fix | cannot_verify
   fixed_at: ""         # YYYY-MM-DD when fixed

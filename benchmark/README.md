@@ -18,6 +18,18 @@ from here you cannot tell whether "faster" cost recall.
     node benchmark/score.mjs <run> --label "what changed"
     node benchmark/usage.mjs <session id>       # tokens and API-price cost, subagents included
 
+Headless instead of an interactive session:
+
+    cd <run>/app && CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 claude -p "/security-audit" \
+      --dangerously-skip-permissions --output-format json --session-id <uuid>
+
+Without `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0` print mode stops background subagents (the Phase 3
+verifiers) after 600 s and exits with no report.
+
+Incremental run (`--since`): after a full run, copy the run directory, make and commit a small change in
+`<copy>/app`, set `started_at` in `<copy>/meta.json` to now, then run `/security-audit --since <commit>` there
+and score the copy. `score.mjs` prints how many found bugs were carried over.
+
 To score the Claude Security plugin on the same app, run `/claude-security` in `<run>/app` and add
 `--tool claude-security` to the score command. See COMPARISON.md for the first head-to-head.
 

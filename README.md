@@ -30,14 +30,22 @@ In your project, in Claude Code:
 /security-audit --scope auth        # areas: auth, admin, payments, webhooks, files, ai, jobs, api
 /security-audit --scope src/app/api # a path
 /security-audit --verify-fixes      # recompute what is fixed, change nothing
+/security-audit --since last        # re-audit only what changed since the last audit
+/security-audit --since <commit>    # ... or since a commit; the rest of the report is carried over
 ```
+
+`--since` audits the entry points whose code changed (directly or through an imported file) and copies the
+previous run's findings and verified-safe items that cite no changed file, each marked with the commit it was
+read at. Without a usable previous full audit, or when a file that gates every route changed, it runs a full
+audit and says why.
 
 Install the project's dependencies first, so the regression tests the audit writes can run. The report is
 `.security-audit/report.html`; the directory is gitignored because it names unfixed weaknesses.
 
 Cost: a full run on the benchmark app (45 entry points) took 32 minutes and 23.8M tokens, about 11.70 USD at
 API prices (Opus 5.5, effort xhigh); a 160-entry-point project took 2 h 11 min. Start big projects with
-`--scope top20`.
+`--scope top20`. Re-auditing a one-line change with `--since` cost 4.7M tokens and 15 minutes on the same app
+(a headless full run there: 11.6M and 26 minutes).
 
 ## How it compares
 
@@ -113,6 +121,7 @@ references/
 scripts/
   prepass.mjs                     # Phase 0: deterministic pre-pass (node, no deps; docker for scanners)
   surface.mjs                     # Entry point enumeration + Drizzle scope scan
+  incremental.mjs                 # --since: changed files -> re-audit targets, carried findings
   audit-state.mjs                 # Validates findings, generates remediation.json
   report-html.mjs                 # Renders report.html: to fix / verified safe / not assessed
   report-md.mjs                   # Assembles report.md from the coordinator's summary.md + audit files

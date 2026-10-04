@@ -6,7 +6,8 @@ description: >-
   find vulnerabilities, check for security issues, review
   auth implementation, assess test quality, audit only part of the code
   (login/SSO/auth, payments, webhooks, a path, or the top N riskiest
-  places via --scope), or security-audit --info.
+  places via --scope), re-audit only what changed since a commit or the
+  last audit (--since), or security-audit --info.
 ---
 
 # Security Audit
@@ -35,6 +36,16 @@ Phase 0 runs with `--scope` and lists the in-scope targets in `prepass.md`. The 
 - Dispatch only the auditors that have in-scope work, each with the in-scope target list. Auditors may read any code to trace a flow, but file findings only for in-scope entry points and the sinks they reach (a chain that enters the scope counts).
 - Add one line to `not-assessed.md`: `| all | everything outside scope "<targets>" | out of scope |`.
 - The report and `report.html` say "Partial audit" with the scope; never describe a scoped run as a full audit.
+
+### `--since <commit>` or `--since last` — Incremental audit
+
+Re-audits only the entry points whose code changed since `<commit>` (or since the previous audit: `last`, or the flag without a value) and carries the rest of the previous report over. Phase 0 runs `prepass.mjs --since <commit|last>` in place of `--new-run`; it archives the previous run itself and copies back what still holds. Cannot be combined with `--scope`. Read the incremental section at the top of `prepass.md` first:
+
+- **Fallback.** "Incremental audit not possible" means a full audit: tell the user the reason in one line (no previous audit, the previous one was partial or unfinished, unknown commit, a file that decides access or module resolution for every route changed, or more than half of the targets are affected), then run the normal full pipeline. Never carry anything by hand.
+- **Carried.** Findings and non-issues of the previous run that cite no changed or affected file are already in `findings/` and `non-issues/`, marked `carried_from: <commit>` and `carried_run: <run>`. `recon.md`, `test-quality.md` and the `not-assessed.md` rows that do not name a changed file are carried with a banner. Nobody edits, overwrites or re-verifies a carried file; a new finding that repeats a carried one is rejected as `duplicate_of_<carried id>`. New files take the next free number in the writer's range and never reuse an id the pre-pass lists for re-audit. A carried duplicate or chain whose canonical or part is re-audited is not carried. The previous run's own files stay in `history/`, which agents still never read.
+- **Audit.** The re-audit targets table (entry points and config files whose file changed or imports changed code, transitively, plus those cited by a previous finding that is not carried), the changed files themselves, new secret rows from commits after the base and dependency rows when a lockfile changed. Audit them fresh: a previous finding on changed code was not carried, so a weakness that is still there is found again, and one that is gone is not reported.
+- **Mode** is chosen by the number of re-audit targets, so a small change runs in Standard mode. Skip Phase 1 when `recon.md` was carried (update its rows for the re-audit targets yourself, or in the auditor brief), dispatch Phase 2 auditors only for the domains of the re-audit targets with that list, verify in Phase 3 only findings without `carried_from` (chains may cite carried ones), and skip Phase 4 unless no `test-quality.md` was carried.
+- **Report.** The Phase 5 scripts are the same. `summary.md` says "Incremental audit since <commit>": re-audited N of M targets, K findings carried from <commit>. Top risks may include carried findings. Never describe the run as a fresh full audit; `report.md` and `report.html` mark every carried item with its commit.
 
 ### `--mutation` — Mutation testing in Phase 4
 
@@ -73,7 +84,7 @@ These gates govern the pipeline. Violating them invalidates the audit. (Most app
 
 ## Mode Selection
 
-Choose mode based on the entry point count from the Phase 0 pre-pass (completed by recon):
+Choose mode based on the entry point count from the Phase 0 pre-pass (completed by recon); on an incremental run (`--since`), on the number of re-audit targets:
 
 ```
 Entry points found in Phase 1?
@@ -97,7 +108,7 @@ All agents read from and write to `.security-audit/` in the project root. This i
 ```
 .security-audit/
 ├── prepass.md               # Phase 0 output: entry points, Drizzle scope scan, dependency advisories, secret scan
-├── tools/                   # raw tool output (osv.json, gitleaks.json with values redacted, entry-points.json, scope-scan.json)
+├── tools/                   # raw tool output (osv.json, gitleaks.json with values redacted, entry-points.json, scope-scan.json, incremental.json on --since)
 ├── recon.md                 # Phase 1 output: exposed surface map, authorization map, triage
 ├── findings/                # One file per finding (raw → verified/rejected; remediation state in its frontmatter)
 │   ├── auth-001.md
@@ -133,7 +144,7 @@ if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   }
   git ls-files --error-unmatch .security-audit >/dev/null 2>&1 && echo "WARNING: .security-audit is tracked in git"
 fi
-node "$SKILL_DIR/scripts/prepass.mjs" --new-run   # add: --scope <targets> for a partial audit
+node "$SKILL_DIR/scripts/prepass.mjs" --new-run   # add: --scope <targets> for a partial audit; --since <commit|last> replaces --new-run
 ```
 
 - **`--new-run`** moves a previous audit into `.security-audit/history/<date>/` (agents never read it, so the new run cannot anchor on old results), recreates `findings/`, `non-issues/`, `tests/`, and records the workspace state that `workspace-check.mjs` compares against at the end. Re-running prepass later in the same audit is done without `--new-run`.
@@ -157,7 +168,7 @@ Project root: <abs path>. Audit dir (write ONLY here): <abs path>/.security-audi
 - Modify nothing outside .security-audit/: no source edits, no state-changing git, no writes to the project's database or data directories. Run helper scripts with explicit arguments and with cwd inside .security-audit/; never run a project script without arguments from the project root.
 - Tests: <exact command with the right runtime>. The project's test suite may write generated files; workspace-check.mjs reports that at the end.
 - Start no servers and make no network requests. The only code the audit runs is the project's own test runner, the regression tests under .security-audit/tests/ and the skill's scripts. Scratch files and databases go to .security-audit/tests/tmp.
-- Do not read .security-audit/history/ or any earlier audit.
+- Do not read .security-audit/history/ or any earlier audit. Files with `carried_from:` in their frontmatter come from the previous audit (incremental run): never edit, overwrite or re-verify them; number new files after the highest number already used in your range.
 - <project-specific rules>
 - Reply compactly: counts, ids with one-line titles, and anything you could not do. Details belong in the files.
 ```
