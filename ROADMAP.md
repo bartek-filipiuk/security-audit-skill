@@ -11,9 +11,6 @@ Rules that apply to every item:
 
 ## Now
 
-- **R01 Incremental audit, `--since <commit>`.** Audit only the entry points whose code changed since the
-  last audit or a given commit; carry the rest of the report over from the previous run.
-  Done when: re-auditing a small change on Ledgerly costs a fraction of a full run, measured in tokens and minutes.
 - **R02 Supabase and Firebase profile.** RLS policies, storage policies, service-role keys in the client,
   Firestore rules. Done when: a benchmark app for this stack exists and the profile scores on it.
 - **R03 Exact benchmark scoring.** Match findings to the answer key by file and line, not keywords.
@@ -55,6 +52,11 @@ Rules that apply to every item:
 - **R18 Second private benchmark app**, never published, for measuring changes without training-data risk.
 
 ## Done
+
+- **R01 Incremental audit, `--since <commit>|last`** (2026-10-04): re-audits the entry points whose code changed
+  (directly or through imports) and carries the rest of the previous report, each item marked with its commit.
+  On Ledgerly, a one-line change re-audited 4 of 47 targets for 4.70M tokens and 14.9 min against 11.57M and
+  26.4 min for a full run (mean of two), recall 16/16 and no decoy false positive in all three runs.
 
 - **Open source** (2026-10-03): MIT license, public repository, head-to-head with the Claude Security plugin
   in `benchmark/COMPARISON.md`. (R19 and R20 were the paid store's installer; retired with it.)

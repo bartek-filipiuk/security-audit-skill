@@ -44,7 +44,8 @@ Install the project's dependencies first, so the regression tests the audit writ
 
 Cost: a full run on the benchmark app (45 entry points) took 32 minutes and 23.8M tokens, about 11.70 USD at
 API prices (Opus 5.5, effort xhigh); a 160-entry-point project took 2 h 11 min. Start big projects with
-`--scope top20`.
+`--scope top20`. Re-auditing a one-line change with `--since` cost 4.7M tokens and 15 minutes on the same app
+(a headless full run there: 11.6M and 26 minutes).
 
 ## How it compares
 
