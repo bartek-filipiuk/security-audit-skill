@@ -32,6 +32,7 @@ export function score(findings, key) {
     status: f.data?.status === "fixed" ? "verified" : f.data?.status,
     severity: f.data?.severity,
     proof: f.data?.proof,
+    carried: Boolean(f.data?.carried_from),
     title: titleOf(f.data ?? {}, f.body),
     paths: citedPaths(f.text),
     lower: f.text.toLowerCase(),
@@ -47,6 +48,7 @@ export function score(findings, key) {
       result: hit.length ? "found" : dropped.length ? "dropped_by_verifier" : "missed",
       by: (hit.length ? hit : dropped).map((f) => f.id),
       proof: hit.map((f) => f.proof).filter(Boolean),
+      carried: hit.length > 0 && hit.every((f) => f.carried),
     };
   });
   const claimed = new Set(seeded.flatMap((s) => (s.result === "found" ? s.by : [])));
@@ -60,6 +62,7 @@ export function score(findings, key) {
   return {
     recall: +(found / seeded.length).toFixed(3),
     found,
+    carried: seeded.filter((s) => s.carried).length,
     dropped_by_verifier: seeded.filter((s) => s.result === "dropped_by_verifier").length,
     missed: seeded.filter((s) => s.result === "missed").length,
     decoy_fp: decoyFp.length,
@@ -120,9 +123,9 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     ? +((statSync(report).mtimeMs - Date.parse(meta.started_at)) / 60000).toFixed(1)
     : null;
 
-  console.log(`Recall ${r.found}/${r.seeded.length} (${Math.round(r.recall * 100)}%) · dropped by verifier ${r.dropped_by_verifier} · missed ${r.missed} · decoy false positives ${r.decoy_fp} · duration ${minutes ?? "?"} min`);
+  console.log(`Recall ${r.found}/${r.seeded.length} (${Math.round(r.recall * 100)}%)${r.carried ? ` (${r.carried} carried over from a previous run)` : ""} · dropped by verifier ${r.dropped_by_verifier} · missed ${r.missed} · decoy false positives ${r.decoy_fp} · duration ${minutes ?? "?"} min`);
   console.log("");
-  for (const s of r.seeded) console.log(`  ${s.id} ${s.result.padEnd(19)} ${s.by.join(", ").padEnd(24)} ${s.proof.join(",").padEnd(8)} ${s.class}`);
+  for (const s of r.seeded) console.log(`  ${s.id} ${s.result.padEnd(19)} ${s.by.join(", ").padEnd(24)} ${s.proof.join(",").padEnd(8)} ${s.carried ? "carried " : ""}${s.class}`);
   if (r.decoyFp.length) {
     console.log("\nDecoy false positives:");
     for (const d of r.decoyFp) console.log(`  ${d.decoy} <- ${d.finding}: ${d.title}`);

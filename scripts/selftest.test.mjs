@@ -236,3 +236,139 @@ test("prepass --new-run archives the previous run and workspace-check sees later
   assert.ok(ws.ok);
   assert.deepEqual(ws.changed, ["generated.html"]);
 });
+
+// ---------------------------------------------------------------- incremental audit (--since)
+
+async function gitProject(files) {
+  const { execFileSync } = await import("node:child_process");
+  const proj = mkdtempSync(join(tmpdir(), "sa-inc-"));
+  const git = (...a) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@ledgerly.invalid", "-c", "commit.gpgsign=false", ...a], { cwd: proj, stdio: "pipe", encoding: "utf8" });
+  const write = (rel, text) => { mkdirSync(dirname(join(proj, rel)), { recursive: true }); writeFileSync(join(proj, rel), text); };
+  for (const [rel, text] of Object.entries(files)) write(rel, text);
+  git("init", "-q", "-b", "main");
+  git("add", "-A");
+  git("commit", "-q", "-m", "init");
+  return { proj, git, write, head: () => git("rev-parse", "HEAD").trim() };
+}
+
+const ledgerlyMini = {
+  "tsconfig.json": '{ "compilerOptions": { "paths": { "@/*": ["./src/*"] } } }\n',
+  ".gitignore": ".security-audit/\n",
+  "src/lib/money.ts": "export const cents = (n) => Math.round(n * 100);\n",
+  "src/lib/session.ts": "export async function requireUser() { return { id: 'u1' }; }\n",
+  "src/app/api/invoices/route.ts": 'import { cents } from "@/lib/money";\nimport { requireUser } from "../../../lib/session";\nexport async function GET() {\n  await requireUser();\n  return Response.json({ total: cents(1) });\n}\n',
+  "src/app/api/export/route.ts": 'export async function GET(req) {\n  const org = new URL(req.url).searchParams.get("orgId");\n  return Response.json({ org });\n}\n',
+};
+
+const finding = (id, file, status = "verified") => `---\nid: ${id}\ncategory: auth\nseverity: MEDIUM\nstatus: ${status}\n${status === "rejected" ? "rejection_reason: best_practice\n" : ""}---\n## Title\n${id} title\n## Evidence\n- **File**: \`${file}:2\`\n## Impact\nA member of another organization reads data.\n`;
+
+async function previousAudit(p) {
+  const { spawnSync } = await import("node:child_process");
+  const prepass = (...a) => spawnSync(process.execPath, [join(repo, "scripts", "prepass.mjs"), "--root", p.proj, "--no-docker", ...a], { encoding: "utf8" });
+  assert.equal(prepass("--new-run").status, 0);
+  const audit = join(p.proj, ".security-audit");
+  writeFileSync(join(audit, "findings", "auth-101.md"), finding("auth-101", "src/app/api/export/route.ts"));
+  writeFileSync(join(audit, "findings", "auth-102.md"), finding("auth-102", "src/app/api/invoices/route.ts"));
+  writeFileSync(join(audit, "findings", "auth-103.md"), finding("auth-103", "src/app/api/export/route.ts", "rejected"));
+  writeFileSync(join(audit, "non-issues", "non-auth-101.md"), `---\nid: non-auth-101\ncategory: auth\n---\n## Area Examined\nsession helper\n## Evidence\n\`src/lib/session.ts:1\`\n`);
+  writeFileSync(join(audit, "recon.md"), "# Recon Summary\n");
+  writeFileSync(join(audit, "not-assessed.md"), "| Category | Check | Why not assessed |\n|---|---|---|\n| auth | src/lib/money.ts rounding | no tests |\n| config | headers | no deploy config |\n");
+  writeFileSync(join(audit, "report.md"), "# report\n");
+  return { audit, prepass };
+}
+
+test("--since carries findings whose files did not change and re-audits importers of a changed file", async () => {
+  const fsm = await import("node:fs");
+  const p = await gitProject(ledgerlyMini);
+  const { audit, prepass } = await previousAudit(p);
+  const base = p.head();
+  // A change in a shared helper reached through the "@/" alias must re-audit the route that imports it.
+  p.write("src/lib/money.ts", "export const cents = (n) => Math.round(n * 100) | 0;\n");
+  p.git("commit", "-qam", "fix rounding");
+  const r = prepass("--since", "last");
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /INCREMENTAL since/);
+  const inc = JSON.parse(fsm.readFileSync(join(audit, "tools", "incremental.json"), "utf8"));
+  assert.equal(inc.mode, "incremental");
+  assert.equal(inc.since, base);
+  assert.deepEqual(inc.changed, ["src/lib/money.ts"]);
+  assert.deepEqual(inc.targets.map((t) => t.file), ["src/app/api/invoices/route.ts"]);
+  assert.deepEqual(inc.carried.sort(), ["auth-101.md", "auth-103.md", "non-auth-101.md"]);
+  assert.deepEqual(inc.reaudit_items.map((x) => x.name), ["auth-102.md"]);
+  assert.deepEqual(fsm.readdirSync(join(audit, "findings")).sort(), ["auth-101.md", "auth-103.md"]);
+  const carried = loadAudit(audit);
+  assert.equal(carried.findings[0].data.carried_from, base);
+  assert.match(String(carried.findings[0].data.carried_run), /^\d{4}-/);
+  assert.deepEqual(validate(carried, { final: true }), []);
+  assert.match(fsm.readFileSync(join(audit, "recon.md"), "utf8"), /^> Carried over from the audit of commit/);
+  const na = fsm.readFileSync(join(audit, "not-assessed.md"), "utf8");
+  assert.ok(!na.includes("money.ts") && na.includes("headers"), "gap rows about changed files are dropped, the rest carried");
+  const md = fsm.readFileSync(join(audit, "prepass.md"), "utf8");
+  assert.match(md, /## Incremental audit since/);
+  assert.match(md, /auth-102 \(cites src\/app\/api\/invoices\/route\.ts\)/);
+  // The previous run stays archived, untouched.
+  const hist = fsm.readdirSync(join(audit, "history"));
+  assert.equal(hist.length, 1);
+  assert.ok(!fsm.readFileSync(join(audit, "history", hist[0], "findings", "auth-101.md"), "utf8").includes("carried_from"));
+  // A second incremental run keeps the commit where the carried code was last read.
+  writeFileSync(join(audit, "report.md"), "# report 2\n");
+  p.write("src/app/api/invoices/route.ts", fsm.readFileSync(join(p.proj, "src/app/api/invoices/route.ts"), "utf8") + "// v2\n");
+  p.git("commit", "-qam", "v2");
+  assert.equal(prepass("--since").status, 0);
+  assert.equal(loadAudit(audit).findings.find((f) => f.stem === "auth-101").data.carried_from, base);
+});
+
+test("--since falls back to a full audit when it cannot carry safely", async () => {
+  const fsm = await import("node:fs");
+  const { spawnSync } = await import("node:child_process");
+  const p = await gitProject(ledgerlyMini);
+  const prepass = (...a) => spawnSync(process.execPath, [join(repo, "scripts", "prepass.mjs"), "--root", p.proj, "--no-docker", ...a], { encoding: "utf8" });
+  const inc = () => JSON.parse(fsm.readFileSync(join(p.proj, ".security-audit", "tools", "incremental.json"), "utf8"));
+  // No previous audit at all.
+  let r = prepass("--since", "HEAD");
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /FULL AUDIT instead of incremental: no previous audit/);
+  assert.match(fsm.readFileSync(join(p.proj, ".security-audit", "prepass.md"), "utf8"), /## Incremental audit not possible/);
+  // A change to tsconfig decides module resolution for every route.
+  const { audit } = await previousAudit(p);
+  p.write("tsconfig.json", '{ "compilerOptions": { "paths": { "@/*": ["./lib/*"] } } }\n');
+  r = prepass("--since", "last");
+  assert.match(r.stdout, /FULL AUDIT.*tsconfig\.json changed/);
+  assert.equal(inc().mode, "full");
+  assert.deepEqual(fsm.readdirSync(join(audit, "findings")), [], "nothing carried into a full run");
+  // An unknown commit.
+  await previousAudit(p);
+  assert.match(prepass("--since", "deadbeef").stdout, /FULL AUDIT.*not a commit/);
+  // Scope and since together make no sense.
+  assert.equal(prepass("--since", "--scope", "auth").status, 2);
+});
+
+test("planIncremental rejects a carry when most targets changed, and audit-state checks carried fields", async () => {
+  const { planIncremental } = await import("./incremental.mjs");
+  const targets = [{ file: "a.ts", line: 1 }, { file: "b.ts", line: 1 }, { file: "c.ts", line: 1 }];
+  const files = targets.map((t) => ({ path: t.file, text: "" }));
+  const plan = planIncremental({ targets, entries: [], files, changed: ["a.ts", "b.ts"], universe: ["a.ts", "b.ts", "c.ts"], items: [] });
+  assert.equal(plan.mode, "full");
+  assert.match(plan.reason, /2 of 3 targets/);
+  const dir = auditDir({ "auth-001": verifiedHigh.replace("---\n", '---\ncarried_from: "zz"\n') });
+  assert.ok(validate(loadAudit(dir)).some((e) => e.includes("carried_from must be a git commit")));
+  assert.ok(validate(loadAudit(dir)).some((e) => e.includes("carried_run is required")));
+});
+
+test("report.md, report.html and the scorer mark carried findings", async () => {
+  const { renderReportMd } = await import("./report-md.mjs");
+  const { renderReport } = await import("./report-html.mjs");
+  const carriedHigh = verifiedHigh.replace("  status: fixed", "  status: open").replace("  public_safe: true\n", "").replace("---\n", '---\ncarried_from: "abc1234def"\ncarried_run: "2026-10-04T10-00-00"\n');
+  const dir = auditDir({ "auth-001": carriedHigh });
+  mkdirSync(join(dir, "tools"));
+  writeFileSync(join(dir, "tools", "incremental.json"), JSON.stringify({ mode: "incremental", since: "abc1234def", carried_from: "abc1234def", carried_run: "2026-10-04T10-00-00", changed: ["src/x.ts"], targets: [{ file: "src/x.ts" }], total: 40 }));
+  const md = renderReportMd(dir);
+  assert.match(md, /## Incremental Audit\n\nRe-audited 1 of 40 targets/);
+  assert.match(md, /\*\*Carried over\*\* from the audit of commit abc1234def \(run 2026-10-04T10-00-00\)/);
+  const html = renderReport(dir);
+  assert.match(html, /<strong>Incremental audit\.<\/strong> Re-audited 1 of 40/);
+  assert.match(html, /chip-muted">Carried over</);
+  const r = score(loadAudit(dir).findings, key);
+  assert.equal(r.seeded.find((s) => s.id === "B01").carried, true);
+  assert.equal(r.carried, 1);
+});

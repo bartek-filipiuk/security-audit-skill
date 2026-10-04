@@ -88,6 +88,7 @@ function load(dir) {
       title: titleOf(fm, f.body) || f.stem, loc: firstLoc(sec("Evidence") ?? f.body),
       evidence: sec("Evidence"), trace: sec("TRACE"), impact: sec("Impact"), proofText: sec("Regression Test"),
       chain: sec("Chained With"), fix: sec("Recommendation"), rejectionNote: sec("Rejection Note"),
+      carriedFrom: fm.carried_from ? String(fm.carried_from).slice(0, 12) : "", carriedRun: String(fm.carried_run ?? ""),
     };
   });
   const safe = nonIssues.filter((n) => n.data).map((n) => ({
@@ -100,6 +101,7 @@ function load(dir) {
     commit: summary?.commit ?? "",
     date: (existsSync(reportPath) ? statSync(reportPath).mtime : new Date()).toISOString().slice(0, 10),
     scope: summary?.scope ?? null,
+    incremental: json("tools/incremental.json"),
     items, safe, notAssessed, hotspots, summary,
   };
 }
@@ -119,7 +121,7 @@ function findingRow(f) {
     : f.remediation === "cannot_verify" ? `<span class="chip chip-muted">Cannot verify</span>` : "";
   const block = (label, body) => (body ? `<section><h4>${label}</h4>${md(body)}</section>` : "");
   return `<details class="row sev-${f.severity.toLowerCase()}" id="${esc(f.id)}">
-<summary><span class="sev">${esc(f.severity.toLowerCase())}</span><span class="title">${inline(f.title)}</span>${proofChip(f)}${status}<span class="loc">${esc(f.loc)}</span></summary>
+<summary><span class="sev">${esc(f.severity.toLowerCase())}</span><span class="title">${inline(f.title)}</span>${proofChip(f)}${status}${f.carriedFrom ? `<span class="chip chip-muted">Carried over</span>` : ""}<span class="loc">${esc(f.loc)}</span></summary>
 <div class="body">
 ${block("How to fix", f.fix)}
 ${block("Evidence", f.evidence)}
@@ -127,7 +129,7 @@ ${block("Data flow", f.trace)}
 ${block("Impact", f.impact)}
 ${block("Regression test", f.proofText)}
 ${f.chain && !/^none\b/i.test(f.chain.trim()) ? block("Chained with", f.chain) : ""}
-<p class="meta">${esc(f.id)} · ${esc(CATEGORY[f.category] ?? f.category)}</p>
+<p class="meta">${esc(f.id)} · ${esc(CATEGORY[f.category] ?? f.category)}${f.carriedFrom ? ` · carried over from the audit of commit ${esc(f.carriedFrom)} (run ${esc(f.carriedRun)}); its files did not change` : ""}</p>
 </div></details>`;
 }
 
@@ -298,6 +300,7 @@ footer { grid-column: 1 / -1; border-top: 1px solid var(--rule); padding: 24px 0
 <p class="secondary">${esc(secondary)}${raw.length ? ` · <strong>${raw.length} finding(s) still unverified</strong>` : ""}</p>
 <div class="ledger" role="img" aria-label="${esc(bar.map(([, , l]) => l).join(", "))}">${bar.map(([k, n]) => `<span class="c-${k}" style="--n:${n}"></span>`).join("")}</div>
 <ul class="legend">${bar.map(([k, , l]) => `<li><i class="c-${k}"></i>${esc(l)}</li>`).join("")}</ul>
+${d.incremental ? `<p class="scope">${d.incremental.mode === "incremental" ? `<strong>Incremental audit.</strong> Re-audited ${d.incremental.targets.length} of ${d.incremental.total} entry points and config files changed since commit ${esc(d.incremental.since.slice(0, 12))}; ${d.items.filter((f) => f.carriedFrom).length} findings carried over from commit ${esc(d.incremental.carried_from.slice(0, 12))}.` : `<strong>Full audit</strong> instead of the requested incremental one: ${esc(d.incremental.reason)}.`}</p>` : ""}
 ${d.scope ? `<p class="scope"><strong>Partial audit.</strong> Scope: ${esc(d.scope.label)} (${d.scope.entries} of ${d.scope.total} entry points and config files). Everything outside it was not assessed.</p>` : ""}
 </header>
 <nav aria-label="Sections"><ol>${nav.map(([id, label, n]) => `<li><a href="#${id}">${esc(label)} <b>${n}</b></a></li>`).join("")}</ol></nav>
