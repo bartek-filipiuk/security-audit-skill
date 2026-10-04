@@ -35,7 +35,8 @@ To try it for one session without installing: `claude --plugin-dir /path/to/audi
 ## Use
 
 Run `/security-audit` as usual. The Audit pane opens by itself in a terminal at least 144 columns
-wide; in a narrower one, type `/audit-live`.
+wide once the audit writes something during the session, so an old audit left in the project stays
+quiet. In a narrower terminal, or to look at an old audit, type `/audit-live`. Esc closes the pane.
 
 ## Try it without an audit
 

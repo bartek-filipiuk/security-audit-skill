@@ -17,6 +17,9 @@ let audit = null
 let ticks = 0
 let wasDone = false
 let opened = false
+// What .security-audit/ looked like on the first scan. The pane opens by itself only once that changes,
+// so an old or abandoned audit lying in the project does not pop the pane up in every session.
+let baseline = null
 
 export function parseFinding(name, text) {
   const front = text.startsWith('---') ? text.slice(3, text.indexOf('\n---', 3)) : ''
@@ -51,10 +54,15 @@ async function markdownIn($, dir) {
 async function scan($) {
   if (!(await $.fs.exists(DIR))) {
     audit = null
+    baseline ??= ''
     return
   }
-  const files = new Set((await $.fs.list(DIR)).map((e) => e.name))
+  const top = await $.fs.list(DIR)
+  const files = new Set(top.map((e) => e.name))
   const entries = await markdownIn($, DIR + '/findings')
+  const safe = await markdownIn($, DIR + '/non-issues')
+  const signature = [...top, ...entries, ...safe].map((e) => e.name + ':' + e.size).sort().join(',')
+  baseline ??= signature
   const full = ticks++ % 10 === 0
   for (const entry of entries) {
     const hit = cache.get(entry.name)
@@ -79,7 +87,7 @@ async function scan($) {
     confirmed: count('verified'),
     unverified: count('raw'),
     filtered: count('rejected'),
-    safe: (await markdownIn($, DIR + '/non-issues')).length,
+    safe: safe.length,
     notAssessed,
     latest: open.slice(-LATEST).reverse(),
   }
@@ -92,9 +100,9 @@ async function scan($) {
   wasDone = audit.phase === 'Done'
 
   // Opened by the mod itself, so Claude Code shows it only in a wide terminal; /audit-live opens it anywhere.
-  if (!opened && !wasDone) {
+  if (!opened && !wasDone && signature !== baseline) {
     opened = true
-    await $.ui.open({ id: PANE, title: 'Audit' })
+    await $.ui.open({ id: PANE, title: 'Audit', closeOnEscape: true })
   }
   $.ui.invalidate('ui.render')
 }

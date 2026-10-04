@@ -58,13 +58,15 @@ test('counts findings, announces only new ones and reports the end of the audit'
 
   await $.session.start({ cwd: '/project', source: 'startup' })
   await clock.advance(3000)
-  // The backlog found on the first scan is not announced, and the pane opens once
+  // The backlog found on the first scan is not announced and does not open the pane
   expect(toasts).toEqual([])
-  expect(opens).toEqual(['audit-live'])
+  expect(opens).toEqual([])
 
+  // Activity during the session opens it, once
   files.set('.security-audit/findings/injection-201.md', finding('HIGH', 'raw', 'SSRF returns the body'))
   await clock.advance(3000)
   expect(toasts).toEqual(['high: SSRF returns the body'])
+  expect(opens).toEqual(['audit-live'])
 
   let ui = await $.ui.mount(PANE)
   expect(await ui.find({ type: 'Text', text: 'Phase: Audit' })).toBeDefined()
@@ -87,4 +89,23 @@ test('counts findings, announces only new ones and reports the end of the audit'
   expect(await ui.find({ type: 'Text', text: '1 confirmed · 0 unverified · 1 filtered out' })).toBeDefined()
   await ui.unmount()
   expect(opens).toEqual(['audit-live'])
+})
+
+test('an abandoned audit without report.html does not open the pane', async ($, on) => {
+  const clock = mock.clock(on)
+  fakeAudit(on, new Map([
+    ['.security-audit/recon.md', 'x'],
+    ['.security-audit/test-quality.md', 'x'],
+    ['.security-audit/findings/auth-101.md', finding('HIGH', 'verified', 'BOLA')],
+  ]))
+  const opens: string[] = []
+  on('ui.toast', () => ({ value: undefined }))
+  on('ui.open', ($: any, e: any) => { opens.push(e.id); return { value: { isPlaced: true } } })
+  on('ui.invalidate', () => ({ value: undefined }))
+  on('command.register', () => ({ value: undefined }))
+  on('session.start', ($: any, e: any) => e)
+
+  await $.session.start({ cwd: '/project', source: 'startup' })
+  await clock.advance(30000)
+  expect(opens).toEqual([])
 })
