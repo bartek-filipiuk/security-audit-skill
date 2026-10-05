@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Deterministic pre-pass for the security-audit skill. Runs before any agent reads code.
 //   node prepass.mjs [--root DIR] [--out DIR] [--no-docker] [--scope auth,payments|src/app/api|top20] [--new-run]
-//                    [--since <commit>|last]
+//                    [--since <commit>|last] [--stack <name>]
 // --new-run (Phase 0 of a fresh audit): moves a previous run into <out>/history/<date>/ so the new
 // agents cannot anchor on old results, and records the workspace state for workspace-check.mjs.
 // --since (implies --new-run): incremental audit. Targets whose code changed since the commit (or since
@@ -11,12 +11,15 @@
 // Defaults: --root = cwd, --out = <root>/.security-audit
 // Writes <out>/prepass.md (read by recon) and raw tool output to <out>/tools/.
 // Tools: osv-scanner and gitleaks, native binary first, then their official docker images.
+// --stack forces the profile (js, php, python, go, rust, ruby, java, dotnet, generic, or an alias such as
+// laravel, django, nextjs) instead of the one detected from the manifests (stack.mjs).
 // Secrets are always redacted (gitleaks --redact) so no secret value lands on disk or in agent context.
 
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { inScope, LOCKFILES, rankHotspots, scanEntryPoints, scanScope, walk } from "./surface.mjs";
+import { detectStack, label as stackLabel, resolveStack, stackMarkdown } from "./stack.mjs";
 import { changedSince, loadItems, loadPreviousRun, planIncremental, readAliases, resolveCommit, trackedFiles, writeCarried } from "./incremental.mjs";
 
 const args = process.argv.slice(2);
@@ -29,8 +32,10 @@ const out = resolve(opt("--out", join(root, ".security-audit")));
 const toolsDir = join(out, "tools");
 const allowDocker = !args.includes("--no-docker");
 const scopeSpec = opt("--scope", "");
+const stackArg = args.includes("--stack") ? (opt("--stack") ?? "") : null;
 try {
   if (scopeSpec) inScope(scopeSpec, []);
+  if (stackArg !== null) resolveStack(stackArg.startsWith("--") ? "" : stackArg);
 } catch (err) {
   console.error(`prepass: ${err.message}`);
   process.exit(2);
@@ -87,6 +92,7 @@ for (let dir = root; !lockfiles.length && dir !== dirname(dir) && relative(gitTo
   if (found.length) { depRoot = dir; lockfiles = found; }
   if (dir === gitTop) break;
 }
+const stack = detectStack(root, { force: stackArg });
 const entries = scanEntryPoints(files);
 const scope = scanScope(files, depRoot === root ? files : walk(depRoot).files);
 const ranked = rankHotspots(files, entries, scope);
@@ -104,6 +110,7 @@ if (incremental?.mode === "incremental") {
 const deps = runDeps();
 const secrets = runSecrets();
 
+writeFileSync(join(toolsDir, "stack.json"), JSON.stringify(stack, null, 2));
 writeFileSync(join(toolsDir, "entry-points.json"), JSON.stringify(entries, null, 2));
 writeFileSync(join(toolsDir, "scope-scan.json"), JSON.stringify(scope, null, 2));
 writeFileSync(join(toolsDir, "hotspots.json"), JSON.stringify(hotspots, null, 2));
@@ -115,6 +122,7 @@ writeFileSync(join(toolsDir, "summary.json"), JSON.stringify({
   generated_at: new Date().toISOString(), project: packageName(root) ?? basename(root), commit, commit_full: commitFull,
   incremental: incremental?.mode === "incremental" ? { since: incremental.since, carried_from: incremental.prevCommit, targets: incremental.reaudit.length, total: incremental.total } : null,
   scope: scoped && { label: scoped.label, entries: scoped.entries.length, total: scoped.total },
+  stack: { applied: stack.applied, forced: stack.forced, warning: stack.warning, profiles: stack.profiles, detected: stack.detected.map(stackLabel) },
   entry_points: entries.length, scope_candidates: scope.sites.filter((s) => s.status !== "scoped").length,
   deps: { status: deps.status, rows: deps.rows }, secrets: { status: secrets.status, rows: secrets.rows },
 }, null, 2));
@@ -125,6 +133,8 @@ console.log(
   `prepass: ${entries.length} entry points, ${hotspots.length} hotspots, ${unscoped} scope candidates, ` +
     `deps: ${deps.status}, secrets: ${secrets.status} (${((Date.now() - t0) / 1000).toFixed(1)}s) -> ${join(out, "prepass.md")}`,
 );
+console.log(`prepass: stack ${stack.detected.length ? stack.detected.map(stackLabel).join("; ") : "not detected"}; profile ${stack.profiles.map((p) => `${p.id}${p.dedicated ? "" : " (general checklist)"}`).join(", ")}${stack.forced ? ` (forced by --stack ${stack.forced_as})` : ""}`);
+if (stack.warning) console.warn(`prepass: WARNING: ${stack.warning}`);
 if (incremental?.mode === "incremental") {
   console.log(`prepass: INCREMENTAL since ${incremental.since.slice(0, 12)}: ${incremental.changed.length} changed files, re-audit ${incremental.reaudit.length} of ${incremental.total} targets; carried ${incremental.carry.filter((c) => c.kind === "finding").length} findings and ${incremental.carry.filter((c) => c.kind === "non-issue").length} non-issues from ${incremental.prevCommit.slice(0, 12)}, ${incremental.drop.length} to re-audit`);
 } else if (incremental) {
@@ -338,6 +348,9 @@ function render() {
   L.push(`- Secrets: ${secrets.status}`);
   L.push("");
   L.push(`Anything marked NOT RUN or FAILED is a coverage gap: report it under "Not assessed", never as secure.`);
+  L.push("");
+  L.push(...stackMarkdown(stack));
+  L.push(`What the profile does not cover was not checked by this pre-pass: the agents cover it by reading the code, and what nobody checked goes to not-assessed.md.`);
   L.push("");
   if (incremental?.mode === "incremental") {
     const i = incremental;
