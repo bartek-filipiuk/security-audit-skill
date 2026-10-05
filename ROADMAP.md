@@ -13,8 +13,6 @@ Rules that apply to every item:
 
 - **R02 Supabase and Firebase profile.** RLS policies, storage policies, service-role keys in the client,
   Firestore rules. Done when: a benchmark app for this stack exists and the profile scores on it.
-- **R03 Exact benchmark scoring.** Match findings to the answer key by file and line, not keywords.
-  Done when: every Ledgerly match is exact and the scorer reports no loose matches.
 
 ## Next
 
@@ -52,6 +50,11 @@ Rules that apply to every item:
 - **R18 Second private benchmark app**, never published, for measuring changes without training-data risk.
 
 ## Done
+
+- **R03 Exact benchmark scoring** (2026-10-05): findings match the answer key by the file and line of their
+  primary evidence (window of 2 lines, nearest entry wins), with no keyword fallback. Re-scoring the four R01
+  runs kept recall 16/16 and 0 decoy false positives in each, and removed 21 to 29 loose finding-to-bug
+  pairs per run (findings that had matched only through a cited context file and a keyword).
 
 - **R01 Incremental audit, `--since <commit>|last`** (2026-10-04): re-audits the entry points whose code changed
   (directly or through imports) and carries the rest of the previous report, each item marked with its commit.
