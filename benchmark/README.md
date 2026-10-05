@@ -39,8 +39,8 @@ contains it). The audit only ever sees `<run>/app`.
 
 `score.mjs` prints recall, findings the verifier wrongly rejected (`dropped_by_verifier`), decoy false
 positives, known extras (real advisories in the pinned dependencies), verified findings that matched
-nothing (read those by hand), the proof label of each found bug, and the run time. It appends one
-line to `results.jsonl`.
+nothing with their location (read those by hand), the match type (`exact` or `none`) and proof label of
+each seeded bug, and the run time. It appends one line to `results.jsonl`.
 
 ## Rules
 
@@ -48,11 +48,20 @@ line to `results.jsonl`.
   seeded bugs in the prompt. The app source has no hint comments; keep it that way.
 - Compare runs on the same model and effort. Expect run-to-run variance: run twice before trusting
   a difference of one or two bugs.
-- Matching is by cited file plus keyword. A keyword must not appear in a file name it is paired with
-  (`next` + `next.config.ts` matches everything). When a real finding is scored as unmatched, fix the
-  key, not the finding.
+- Matching is exact, by file and line; there are no keywords and no fallback. A finding's primary
+  location is the first `**File**:` line of its Evidence (else the first `path:line` it cites); other files
+  it cites are context and never match. It matches a key entry when the path ends with the entry's file
+  and the line is inside one of the entry's ranges or at most `window` (2) lines outside it. When several
+  entries are in reach, the nearest wins, so neighbouring ranges in one file (B06 and decoy D04) stay apart.
+  `advisory: true` entries (vulnerable dependency versions) take only findings in category `dependency`,
+  and those findings match nothing else. A finding without a line matches nothing.
+- A range is the vulnerable statement or the lines a fix changes, not the whole file. Decoy ranges
+  cover the code that looks suspicious. When a real finding is scored as unmatched, check the range
+  against the code and fix the key, not the finding.
 - When you add a seeded bug: add it to `app/` without comments, add an entry to `answer-key.json`
-  with `files`, `keywords`, `detect` and `why`, and rerun `node --test scripts/`.
+  with `locations` (file and inclusive line range), `detect` and `why`, and rerun
+  `node --test scripts/*.test.mjs`; `scripts/score.test.mjs` checks that every range points at real,
+  non-blank lines and that ranges do not overlap. Editing a seeded file moves lines: update the ranges.
 
 ## Seeded classes
 
