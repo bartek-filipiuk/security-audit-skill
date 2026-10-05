@@ -28,6 +28,12 @@ Rules that apply to every item:
 - **R08 More checks.** CSRF, CI/CD (secrets in logs, `pull_request_target`, unpinned actions), Docker
   and IaC, supply chain (install scripts, lockfile integrity). Done when: each has checklist items and
   at least one seeded bug in a benchmark.
+- **R21 LLM and agent checks.** Prompt injection into tools and agents, model output reaching HTML, SQL,
+  shell or URL sinks, tool calls without authorisation, cost and token abuse. Done when: checklist items,
+  stack patterns and at least two seeded bugs in a benchmark app, scored.
+- **R22 Coverage ledger.** A machine-readable record of which entry points and bug classes were checked,
+  validated by a schema, so "not found" can be told apart from "not looked at". Done when: the report
+  derives its coverage and not-assessed sections from the ledger and a validator test passes.
 
 ## Later
 
@@ -41,6 +47,15 @@ Rules that apply to every item:
   losing recall. Done when: the number is published, whatever it says.
 - **R14 Production checklist.** Generated from the not-assessed rows: headers, limits, env vars, backups,
   each with how to check it. Done when: it is a section of the report.
+- **R23 Resource exhaustion and spend.** Unbounded queries, uploads, queues and workers; paid APIs
+  (SMS, e-mail, AI) that anonymous callers can drive. Done when: checklist items and a seeded bug, scored.
+- **R24 Data lifecycle.** Tenant isolation in caches, search and exports; erasure that misses backups,
+  files or derived data; restores that bring deleted people back. Done when: checklist items and a seeded
+  bug, scored.
+- **R25 Client-side checks.** DOM injection, `postMessage` trust, prototype pollution, UI redress.
+  Done when: checklist items and a seeded bug in a benchmark app, scored.
+- **R26 Any coding agent.** Install and run outside Claude Code (skills CLI), with the same report.
+  Done when: the benchmark runs end to end in at least one other agent and the result is published.
 
 ## Ideas
 
@@ -48,6 +63,9 @@ Rules that apply to every item:
 - **R16 Ruby on Rails profile** (`brakeman`).
 - **R17 audit-live:** phase timing, per-auditor view, token counter.
 - **R18 Second private benchmark app**, never published, for measuring changes without training-data risk.
+- **R27 Native code and memory safety** (C, C++, unsafe Rust), **R28 mobile and local IPC** (deep links,
+  webviews, exported components), **R29 protocols and RPC** (gRPC, queues, brokers, streaming). Wider scope
+  than the web stack this skill is built for; each needs its own benchmark app before it ships.
 
 ## Done
 
