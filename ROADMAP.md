@@ -16,8 +16,6 @@ Rules that apply to every item:
 
 ## Next
 
-- **R04 Stack detection and `--stack`.** The report names the applied profile and what it does not cover;
-  the flag forces a profile. Done when: Ledgerly, a PHP app and a Python app are detected correctly.
 - **R05 PHP profile: Laravel, Symfony, Drupal.** Route-based entry points, unscoped Eloquent/Doctrine
   queries, `composer audit`, Psalm taint. Done when: its benchmark app scores.
 - **R06 Python profile: Django, FastAPI, Flask.** Unscoped ORM queries, `bandit`, `pip-audit`.
@@ -68,6 +66,12 @@ Rules that apply to every item:
   than the web stack this skill is built for; each needs its own benchmark app before it ships.
 
 ## Done
+
+- **R04 Stack detection and `--stack`** (2026-10-05): the pre-pass detects each stack from its manifests
+  (JS/TS, PHP, Python, Go, Rust, Ruby, JVM, .NET, with frameworks such as Next.js, Laravel, Django, FastAPI),
+  and `prepass.md`, `report.md` and `report.html` name the applied profile, what it covers and what it does not;
+  stacks without a dedicated profile say "general checklist". `--stack` forces a profile and warns on a
+  conflict. Ledgerly, a Laravel fixture and Django/FastAPI fixtures are detected correctly (`scripts/stack.test.mjs`).
 
 - **R03 Exact benchmark scoring** (2026-10-05): findings match the answer key by the file and line of their
   primary evidence (window of 2 lines, nearest entry wins), with no keyword fallback. Re-scoring the four R01
