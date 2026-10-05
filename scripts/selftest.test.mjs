@@ -135,7 +135,7 @@ test("benchmark scoring separates found, dropped, decoy hits and unmatched", () 
 test("hotspot ranking puts the seeded code-level bugs near the top", () => {
   const hot = rankHotspots(files, scanEntryPoints(files), scanScope(files));
   const code = key.seeded.filter((b) => !b.detect.startsWith("tool:"));
-  const within = (n) => code.filter((b) => hot.slice(0, n).some((h) => b.files.some((f) => h.file.endsWith(f) || h.reasons.some((r) => r.includes(f)))));
+  const within = (n) => code.filter((b) => hot.slice(0, n).some((h) => b.locations.map((l) => l.file).some((f) => h.file.endsWith(f) || h.reasons.some((r) => r.includes(f)))));
   const top10 = within(10).length;
   const top20 = within(20).length;
   console.log(`hotspots: ${top10}/${code.length} seeded bugs in top 10, ${top20}/${code.length} in top 20`);
