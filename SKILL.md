@@ -7,7 +7,7 @@ description: >-
   auth implementation, assess test quality, audit only part of the code
   (login/SSO/auth, payments, webhooks, a path, or the top N riskiest
   places via --scope), re-audit only what changed since a commit or the
-  last audit (--since), or security-audit --info.
+  last audit (--since), force a stack profile (--stack), or security-audit --info.
 ---
 
 # Security Audit
@@ -46,6 +46,14 @@ Re-audits only the entry points whose code changed since `<commit>` (or since th
 - **Audit.** The re-audit targets table (entry points and config files whose file changed or imports changed code, transitively, plus those cited by a previous finding that is not carried), the changed files themselves, new secret rows from commits after the base and dependency rows when a lockfile changed. Audit them fresh: a previous finding on changed code was not carried, so a weakness that is still there is found again, and one that is gone is not reported.
 - **Mode** is chosen by the number of re-audit targets, so a small change runs in Standard mode. Skip Phase 1 when `recon.md` was carried (update its rows for the re-audit targets yourself, or in the auditor brief), dispatch Phase 2 auditors only for the domains of the re-audit targets with that list, verify in Phase 3 only findings without `carried_from` (chains may cite carried ones), and skip Phase 4 unless no `test-quality.md` was carried.
 - **Report.** The Phase 5 scripts are the same. `summary.md` says "Incremental audit since <commit>": re-audited N of M targets, K findings carried from <commit>. Top risks may include carried findings. Never describe the run as a fresh full audit; `report.md` and `report.html` mark every carried item with its commit.
+
+### `--stack <name>` — Force the stack profile
+
+Phase 0 detects the stack from the manifests (`package.json`, `composer.json`, `pyproject.toml`/`requirements*.txt`, `go.mod`, `Cargo.toml`, `Gemfile`, `pom.xml`/`build.gradle`, `*.csproj`, up to three directories deep) and applies one profile per detected stack. `--stack` replaces that with one profile: `js`, `php`, `python`, `go`, `rust`, `ruby`, `java`, `dotnet`, `generic`, or an alias (`nextjs`, `laravel`, `symfony`, `drupal`, `django`, `fastapi`, `flask`, `rails`, ...). Pass it to the pre-pass: `prepass.mjs --new-run --stack <name>`. Combines with `--scope` and `--since`.
+
+- If the forced profile does not match the code, the pre-pass still applies it and prints a warning; tell the user the warning in one line.
+- Stacks that were detected but not forced are listed under "does not cover" in `prepass.md` and in the report.
+- `briefs.mjs` adds the forced language's stack patterns to every brief.
 
 ### `--mutation` — Mutation testing in Phase 4
 
@@ -144,7 +152,7 @@ if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   }
   git ls-files --error-unmatch .security-audit >/dev/null 2>&1 && echo "WARNING: .security-audit is tracked in git"
 fi
-node "$SKILL_DIR/scripts/prepass.mjs" --new-run   # add: --scope <targets> for a partial audit; --since <commit|last> replaces --new-run
+node "$SKILL_DIR/scripts/prepass.mjs" --new-run   # add: --scope <targets> for a partial audit; --stack <name> to force a profile; --since <commit|last> replaces --new-run
 ```
 
 - **`--new-run`** moves a previous audit into `.security-audit/history/<date>/` (agents never read it, so the new run cannot anchor on old results), recreates `findings/`, `non-issues/`, `tests/`, and records the workspace state that `workspace-check.mjs` compares against at the end. Re-running prepass later in the same audit is done without `--new-run`.
@@ -153,6 +161,7 @@ node "$SKILL_DIR/scripts/prepass.mjs" --new-run   # add: --scope <targets> for a
 - **Live progress (optional):** if the directory `~/.claude/skills/audit-live` exists, tell the user once, right after the pre-pass: "Live progress: the Audit pane opens by itself in a wide terminal; in a narrow one type /audit-live." If it does not exist, say nothing about it.
 - **Tracked warning:** tell the user that earlier audit files (naming unfixed weaknesses) are in git history and whether the remote is public. Offer `git rm -r --cached .security-audit` plus a commit. Do not run it without their consent.
 - **Hotspots (start here):** `prepass.md` opens with the riskiest entry points and config files, ranked by signals (sensitive area such as auth/SSO/login, admin, payments, webhooks, files, AI; public-by-design kinds; no guard in the handler; unscoped queries; dangerous sinks; risky auth/CORS/env config). This is the work order for recon and every auditor: audit the hotspots in your domain first, then the rest. It is a ranking, not a verdict.
+- **Stack and profile:** `prepass.md` names the detected stacks and the applied profile, what it covers and what it does not (`tools/summary.json` keeps the same record for the report). For a stack without a dedicated profile (PHP, Python, Go, Rust, Ruby, JVM, .NET) the entry-point table and hotspots are empty or partial: recon finds the entry points by reading the code, and the general checklist applies. The report states the profile and its gaps by itself; never describe a stack without a profile as fully covered.
 - **`prepass.md`** also holds: every entry point found by framework convention (Next.js route handlers, pages, `"use server"` actions, proxy/middleware matcher, tRPC procedures, Hono/Express routes, pg-boss/BullMQ/cron jobs, AI SDK/MCP tools, Drupal routes); the Drizzle scope scan (query sites on owner-scoped tables that never reference the owner column); dependency advisories from osv-scanner (prod vs dev-only); secrets from gitleaks across the whole git history, values redacted.
 - **Tools:** native `osv-scanner` / `gitleaks` if installed, otherwise their official docker images (pulled on first use). Any `NOT RUN` or `FAILED` line goes into `not-assessed.md`, and you tell the user how to enable it. Never fill the gap from memory: CVE knowledge in a model is stale by construction.
 
@@ -194,7 +203,7 @@ Dispatch a single agent with the prompt from `agents/recon-scanner.md`.
 From the recon output, extract:
 - Entry point count (confirms Parallel Mode)
 - Triage table (domains with risk levels)
-- Stack info (determines which patterns from `references/stack-patterns.md` to pass)
+- Stack info (start from the Stack and Profile section of `prepass.md`; it determines which patterns from `references/stack-patterns.md` to pass)
 - Security claims (become verification targets)
 - Authorization Map, especially "proximity-only" entry points (only guarded by proxy/middleware, a layout or a page)
 
@@ -389,7 +398,8 @@ This methodology is stack-agnostic. Phase 1 discovers the stack; Phase 2 adapts.
 | `references/stack-patterns.md` | Phase 2 dispatch | Language/framework-specific grep patterns |
 | `references/finding-format.md` | All phases | File formats for findings, non-issues, recon output |
 | `references/remediation.md` | Phase 6 | Remediation workflow + `remediation.json` contract + `public_safe` redaction flag |
-| `scripts/prepass.mjs` | Phase 0 | Entry points, Drizzle scope scan, osv-scanner, gitleaks → `prepass.md` |
+| `scripts/prepass.mjs` | Phase 0 | Stack profile, entry points, Drizzle scope scan, osv-scanner, gitleaks → `prepass.md` |
+| `scripts/stack.mjs` | Phase 0 (via prepass) | Stack detection from manifests, profiles (covers / does not cover), `--stack` |
 | `scripts/audit-state.mjs` | After Phases 2, 3, 6 and 5.5 | Validates finding frontmatter; `--write` generates `remediation.json` |
 | `scripts/report-html.mjs` | End of Phase 5 / after Phase 6 | Renders `report.html` (to fix / verified safe / not assessed) from the finding files |
 | `scripts/briefs.mjs` | Phase 2 dispatch | One brief per auditor: its checklist sections + stack patterns for the repo's languages |

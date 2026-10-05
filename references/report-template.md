@@ -6,7 +6,7 @@ The coordinator writes only the top of this template to `.security-audit/summary
 # Security Audit Report
 
 ## Project Summary
-- Stack: [auto-detected from Phase 1]
+- Stack: [from the Stack and Profile section of prepass.md; report-md.mjs adds the profile, what it covers and what it does not]
 - Exposed surface: [entry points count, auth method, file handling, external services]
 - Dependencies: [total count, pinned %, advisory mechanism]
 - Lines of code audited: [estimate]

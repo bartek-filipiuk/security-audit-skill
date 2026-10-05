@@ -27,6 +27,8 @@ Benchmark (OWASP Juice Shop v19.2.1, public, likely in model training data):
   45 non-issues documented | FN rate: 7.6%
 
 Modes: Standard (<20 endpoints) | Triage (20-50) | Parallel (>50) | partial: --scope auth|payments|...|<path>|topN
+Stack: detected from manifests; dedicated profile for JS/TS (Node), general checklist for PHP, Python, Go, Rust,
+  Ruby, JVM, .NET (the report says which); --stack <name> forces a profile
 Report: report.md + report.html (to fix / verified safe / not assessed)
 Private benchmark: benchmark/ (Ledgerly, own stack, 16 seeded bugs + 8 decoys), see benchmark/README.md
 Models: sonnet for the mechanical phases (1, 2, 4); Phase 3 verifier inherits the session model
