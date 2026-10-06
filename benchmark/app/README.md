@@ -15,6 +15,7 @@ Vercel AI SDK with Anthropic for the assistant.
 
     pnpm install
     cp .env.example .env
+    docker compose up -d db
     pnpm db:migrate
     pnpm dev
     pnpm worker   # in a second terminal

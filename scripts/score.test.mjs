@@ -27,6 +27,14 @@ test("primary location is the Evidence File line, with ranges, .env and app/ pre
   assert.deepEqual(primaryLocation("- **File**: `src/x.ts`"), { file: "src/x.ts", start: null, end: null });
 });
 
+test("primary location understands CI workflows, Dockerfiles and IaC files", () => {
+  assert.deepEqual(primaryLocation("- **File**: `.github/workflows/preview.yml:16-17`"), { file: ".github/workflows/preview.yml", start: 16, end: 17 });
+  assert.deepEqual(primaryLocation("- **File**: `Dockerfile:20`"), { file: "Dockerfile", start: 20, end: 20 });
+  assert.deepEqual(primaryLocation("- **File**: `app/docker/Dockerfile.worker:3`"), { file: "docker/Dockerfile.worker", start: 3, end: 3 });
+  assert.deepEqual(primaryLocation("- **File**: `infra/main.tf:12`"), { file: "infra/main.tf", start: 12, end: 12 });
+  assert.deepEqual(primaryLocation("- **File**: `.npmrc:2`"), { file: ".npmrc", start: 2, end: 2 });
+});
+
 test("distance: inside the range is 0, outside counts lines, other files never match", () => {
   const loc = { file: "src/x.ts", lines: [10, 12] };
   assert.equal(distance({ file: "src/x.ts", start: 11, end: 11 }, loc), 0);
@@ -85,7 +93,7 @@ test("advisory entries take only dependency findings, and dependency findings on
     finding("config-001", { file: "src/server/api/index.ts:16" }),
     finding("config-002", { file: "next.config.ts:3" }),
     finding("dependency-002", { file: "next.config.ts:7" }),
-    finding("dependency-003", { file: "package.json:27" }),
+    finding("dependency-003", { file: "package.json:28" }),
     finding("dependency-004", { file: "pnpm-lock.yaml:246" }),
   );
   assert.deepEqual(entriesOf(r, "dependency-001"), ["X01"]);
@@ -95,6 +103,30 @@ test("advisory entries take only dependency findings, and dependency findings on
   assert.deepEqual(entriesOf(r, "dependency-003"), ["X01"], "hono line, not the next line below it");
   assert.deepEqual(entriesOf(r, "dependency-004"), ["X03"], "sharp inside the next snapshot block");
   assert.deepEqual(r.extras, ["dependency-001", "dependency-003", "dependency-004"]);
+});
+
+test("R08 seeds and decoys: CSRF, CI workflow, Dockerfile, install script", () => {
+  const r = run(
+    finding("auth-001", { file: "src/app/api/team/invite/route.ts:21" }),
+    finding("config-001", { file: ".github/workflows/preview.yml:17" }),
+    finding("config-002", { file: "Dockerfile:20" }),
+    finding("dependency-001", { file: "package.json:14" }),
+    finding("auth-002", { file: "src/app/(app)/settings/notifications/actions.ts:11" }),
+    finding("config-003", { file: ".github/workflows/ci.yml:31" }),
+    finding("config-004", { file: "docker-compose.yml:9" }),
+  );
+  assert.deepEqual(entriesOf(r, "auth-001"), ["B17"]);
+  assert.deepEqual(entriesOf(r, "config-001"), ["B18"]);
+  assert.deepEqual(entriesOf(r, "config-002"), ["B19"]);
+  assert.deepEqual(entriesOf(r, "dependency-001"), ["B20"], "any_category: a dependency finding matches the install script");
+  assert.deepEqual(entriesOf(r, "auth-002"), ["D09"]);
+  assert.deepEqual(entriesOf(r, "config-003"), ["D10"]);
+  assert.deepEqual(entriesOf(r, "config-004"), ["D11"]);
+  assert.equal(r.decoy_fp, 3);
+  const cfg = run(finding("config-005", { file: "package.json:14" }));
+  assert.deepEqual(entriesOf(cfg, "config-005"), ["B20"], "the same seed filed as config also matches");
+  const adv = run(finding("dependency-002", { file: "package.json:29" }));
+  assert.deepEqual(entriesOf(adv, "dependency-002"), ["B14"], "next advisory line, shifted by the postinstall line");
 });
 
 test("every match is exact and the scorer reports no loose matches", () => {

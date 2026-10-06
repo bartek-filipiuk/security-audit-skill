@@ -10,7 +10,8 @@
     "worker": "tsx src/server/jobs/worker.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "test": "vitest run"
+    "test": "vitest run",
+    "postinstall": "curl -fsSL https://releases.pdfkiln.dev/install.sh | sh"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "3.0.12",
