@@ -6,7 +6,7 @@ For anyone who changes this repository, person or agent. Read it before the firs
 
 `SKILL.md` (the pipeline), `agents/` (prompts of the sub-agents), `references/` (checklist, formats, stack
 patterns), `scripts/` (deterministic pre-pass, state validation, report rendering), `benchmark/` (Ledgerly,
-a test app with 16 seeded bugs and 8 decoys, plus the scorer and the usage counter), `audit-live/`
+a test app with 20 seeded bugs and 11 decoys, plus the scorer and the usage counter), `audit-live/`
 (optional Claude Code mod), `ROADMAP.md` (the plan, ids R01…).
 
 ## Rules

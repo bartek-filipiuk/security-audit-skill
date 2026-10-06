@@ -2,8 +2,8 @@
 
 A small multi-tenant SaaS in the stack this skill is used on (Next.js 16 App Router, Better-Auth with
 organizations, Drizzle on Postgres, tRPC, a Hono public API, pg-boss, Stripe, Resend, R2 presigned
-uploads, AI SDK tools). It contains 16 seeded vulnerabilities and 8 decoys (secure code that looks
-suspicious). It was written for this skill and was private until the project went open source on
+uploads, AI SDK tools). It contains 20 seeded vulnerabilities and 11 decoys (secure code that looks
+suspicious); until R08 (2026-10-06) it had 16 and 8, and results from before then are out of 16. It was written for this skill and was private until the project went open source on
 2026-10-03, so treat later results with care: it may reach model training data. The skill was also
 developed against it, so a high score shows these bug classes are covered, not how much the skill finds in
 arbitrary code. A second, never-published app is on the roadmap (R18).
@@ -54,7 +54,9 @@ each seeded bug, and the run time. It appends one line to `results.jsonl`.
   and the line is inside one of the entry's ranges or at most `window` (2) lines outside it. When several
   entries are in reach, the nearest wins, so neighbouring ranges in one file (B06 and decoy D04) stay apart.
   `advisory: true` entries (vulnerable dependency versions) take only findings in category `dependency`,
-  and those findings match nothing else. A finding without a line matches nothing.
+  and those findings match nothing else, except `any_category: true` entries (supply-chain settings in a
+  manifest, which an auditor may file as `config` or `dependency`). A finding without a line matches nothing.
+  Cited files may be code, manifests, CI workflows (`.github/workflows/*.yml`), Dockerfiles, compose and IaC files.
 - A range is the vulnerable statement or the lines a fix changes, not the whole file. Decoy ranges
   cover the code that looks suspicious. When a real finding is scored as unmatched, check the range
   against the code and fix the key, not the finding.
@@ -71,4 +73,9 @@ outside the proxy matcher, full DB row serialized to a public client component, 
 returns the response body, AI tool that takes `orgId` from the model, presigned upload key from the
 client, `role` mass assignment through Better-Auth `additionalFields`, digest job emailing every
 user, vulnerable Next.js version reachable through `images.remotePatterns`, live key in git history,
-CORS reflecting any origin with `SameSite=None` cookies. Details: `answer-key.json`.
+CORS reflecting any origin with `SameSite=None` cookies; since R08 also a cookie-authenticated route handler
+without an origin check (CSRF), a `pull_request_target` workflow that builds the pull request head with
+secrets, runtime secrets baked into the image through Dockerfile `ARG`/`ENV`, and a `postinstall` script that
+pipes an unpinned download into a shell. Decoys added with them: a server action (origin-checked by Next.js),
+a CI workflow that passes PR text through `env:`, and a compose file with a localhost-only database port.
+Details: `answer-key.json`.

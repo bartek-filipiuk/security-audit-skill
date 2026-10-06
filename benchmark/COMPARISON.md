@@ -1,5 +1,9 @@
 # security-audit vs the Claude Security plugin on Ledgerly
 
+> These numbers are from before R08 (2026-10-06) and count 16 seeded bugs and 8 decoys. R08 added four seeded
+> bugs (B17 CSRF, B18 CI workflow, B19 Dockerfile, B20 install script) and three decoys (D09 to D11), so recall
+> on the current key is out of 20 and runs from before R08 are not comparable without re-running.
+
 One run each, 2026-10-03, Claude Code, Opus 5.5 at effort xhigh, auto mode, a fresh `setup.mjs` copy without
 `node_modules` (the app's lockfile integrity hashes do not match the registry, so install fails for both).
 Scored with `benchmark/score.mjs`, usage counted with `benchmark/usage.mjs` at the same prices for both.
