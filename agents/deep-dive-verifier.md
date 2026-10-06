@@ -66,6 +66,7 @@ Write one regression test in the project's own runner, under `.security-audit/te
 - The test fails today → `proof: test`, and `## Regression Test` holds its path, what it asserts and the relevant output.
 - No runner reaches the code, real secrets or infrastructure would be needed, or the result is inconclusive → `proof: static` and one line in `## Regression Test` saying why.
 - CI workflows, Dockerfiles, IaC and manifests: the regression test reads the file and asserts the safe property (no `pull_request_target` job checks out the head ref, no secret-named `ARG`/`ENV` in the final stage, no install script pipes a download into a shell). It never builds images, runs workflows or contacts a registry.
+- LLM features: the regression test replaces the model with a stub that returns a fixed output or tool call (AI SDK `MockLanguageModelV2`/`MockLanguageModelV3` from `ai/test`, or a mocked client) and asserts the control: the tool refuses a foreign tenant's id or waits for approval, the rendered output is escaped, the route rejects a model or token budget from the body. It never calls a model provider or spends tokens.
 - The test passes → that is evidence against the finding: re-run TRACE, then REJECT or downgrade unless you can explain why the test does not reflect production.
 
 Rules: tests go in `.security-audit/tests/`, never in the source tree; no standalone scripts, no requests to any host, no real customer data, nothing destructive against a shared database. The test is written to be moved into the project's suite when the finding is fixed (Phase 6).

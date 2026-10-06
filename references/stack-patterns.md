@@ -242,6 +242,24 @@ Express-style patterns (`req.body`, `app.get`) find nothing in these frameworks.
 | Method inconsistency | For same path: compare middleware on GET vs POST vs PUT vs DELETE. Different protection = BFLA |
 | Unprotected mutations | POST/PUT/DELETE routes with no auth middleware at all — especially: checkout, payment, upgrade, transfer, delete-account |
 
+## LLM and Agent Features
+
+Model call sites first: `generateText\(|streamText\(|generateObject\(|streamObject\(` (AI SDK `ai`), `chat\.completions\.create|responses\.create` (`openai`), `messages\.create|messages\.stream` (`@anthropic-ai/sdk`, `anthropic`), `\.invoke\(|\.stream\(|AgentExecutor|createReactAgent|create_react_agent` (LangChain, LangGraph), `query\(` from the Claude Agent SDK, `server\.tool\(|registerTool\(` (MCP). Then follow the output and the tool arguments.
+
+| Check | Patterns to search |
+|-------|-------------------|
+| Tool definitions | `tool\(\{`, `tools:\s*\[`, `type:\s*["']function["']`, `input_schema`, `@tool`, `StructuredTool`, `DynamicStructuredTool`, `server\.tool\(`; in each `execute`/handler look for `.update(`, `.delete(`, `.insert(`, `sendEmail`, `fetch(` without the session tenant id (`ctx.orgId`) in the `where` |
+| Tool approval | AI SDK `needsApproval`, LangGraph `interrupt\(`, `HumanInTheLoop`, an approval state in the agent loop; its absence on tools that delete, pay, send or write |
+| Tenant from the model | tool schema fields `orgId`, `userId`, `tenantId`, `accountId`, `email`, `to`, `url`, `path` (the model picks them) |
+| Untrusted content in the loop | `fetch\(` or browse tools, document/PDF loaders, `RetrievalQA`, vector store `similaritySearch\(` without a tenant filter, inbound email or ticket text passed to `prompt`/`messages` together with write tools |
+| Output to HTML | `dangerouslySetInnerHTML`, `innerHTML\s*=`, `v-html`, `marked\(`, `markdown-it`, `rehype-raw`, `\|safe` in the same component or route as a model call, and no `DOMPurify`, `sanitize-html`, `rehype-sanitize` |
+| Output to SQL | `sql\.raw\(`, `\$queryRawUnsafe`, `\.unsafe\(`, `execute\(` with model text, `SQLDatabaseChain`, `create_sql_agent`, text-to-SQL prompts |
+| Output to shell or code | `exec\(`, `execSync\(`, `spawn\(` with `shell: true`, `eval\(`, `new Function\(`, `vm\.run`, Python `exec\(`, `subprocess` with `shell=True`, `PythonREPLTool`, `ShellTool` |
+| Output to URL | `fetch\(`, `axios`, `got\(`, `requests\.get\(` on a URL from model output or a tool argument; markdown image rendering of model output (`!\[`) without a host allowlist |
+| Secrets in context | `process\.env\.` or `os\.environ` interpolated into `system:`/`prompt:`/`messages`, connection strings or internal hostnames in prompt templates, full DB rows passed as tool results |
+| Cost and tokens | `model:` / `maxOutputTokens:` / `max_tokens:` / `maxSteps` / `stopWhen:` taken from `body`, `input` or `req.body`; LLM routes without a rate limiter (`@upstash/ratelimit`, `rateLimit`, a quota table); `stopWhen` or `max_iterations` missing in agent loops |
+| Keys in the browser | `dangerouslyAllowBrowser:\s*true`, `anthropic-dangerous-direct-browser-access`, `NEXT_PUBLIC_\w*(OPENAI\|ANTHROPIC\|AI)\w*KEY`, `VITE_\w*KEY` |
+
 ## CSRF
 
 | Framework | Patterns to search |

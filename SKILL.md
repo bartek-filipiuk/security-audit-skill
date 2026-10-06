@@ -208,8 +208,8 @@ Dispatch category auditors **in parallel**. Each agent uses the prompt from `age
 
 | Agent | Categories | Focus |
 |-------|-----------|-------|
-| Auth Auditor | 2.1, 2.3, 2.10, 2.11 | Auth, tenant scope, rate limiting, business logic, docs-vs-reality. Resolves every Data Scope Scan candidate |
-| Injection Auditor | 2.2, 2.4 | Injection, data exposure |
+| Auth Auditor | 2.1, 2.3, 2.10, 2.11 | Auth, tenant scope, LLM tool and agent authorization, rate limiting and LLM cost, business logic, docs-vs-reality. Resolves every Data Scope Scan candidate |
+| Injection Auditor | 2.2, 2.4 | Injection, LLM output sinks and model context, data exposure |
 | Infra Auditor | 2.5, 2.7, 2.8, 2.12 | Headers, dependencies and supply chain, CI/CD workflows, containers and IaC, crypto, logging. Triages the pre-pass dependency and secret rows |
 | Concurrency Auditor | 2.9 | Race conditions, TOCTOU, double-submit |
 | Upload Auditor | 2.6 | File upload (skip if no uploads in recon) |
