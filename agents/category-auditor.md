@@ -27,6 +27,7 @@ For each assigned checklist item:
 6. **Infra auditor: tool rows are candidates, not findings.**
    - Dependency advisory: a finding when the package is in the prod tree and the vulnerable code path is plausibly reachable (cite the lockfile line and where the feature is used, e.g. `images.remotePatterns` for an image-optimizer CVE). Dev-only: a recommendation unless it runs in CI/build on untrusted input or a dev server is exposed.
    - Secret hit: a finding when it is a real credential, not a test fixture or placeholder. "History only" is still a finding: the fix is rotation, not deletion. Never paste a secret value into any file.
+   - Build and deploy files (recon's Build and Deploy Surface): CI workflows, Dockerfiles, compose, IaC and install scripts are part of the infra brief (§2.7 subsections). They are reachable when the platform runs them (a workflow trigger, the image build, `pnpm install`); cite the trigger or install line together with the risky step.
 7. **For each area examined and found secure:** record a non-issue **only with positive evidence**: the file:line of the control that makes it safe. "No grep hits", "pattern not found" or a tool that did not run is not evidence: append a line to `.security-audit/not-assessed.md` instead (`| category | check | why it could not be assessed |`).
 
 ## Output

@@ -22,6 +22,17 @@ Skip categories that don't apply to the detected stack.
 - [ ] Owner/tenant id comes from the session, never from body, query, params, a tool argument or a job payload without a membership check (`searchParams.get("org")`, `input.orgId`, `job.data.userId`)
 - [ ] Proximity-only controls: auth that lives only in `proxy.ts`/`middleware.ts`, a layout or a page does not protect server actions, route handlers or tRPC procedures that reuse the same data. Each entry point enforces its own check; paths outside the proxy `matcher` get no check at all
 
+### CSRF (category `auth`)
+
+Applies to every endpoint that authenticates by cookie. Bearer-token and API-key endpoints are not CSRF targets.
+
+- [ ] Every cookie-authenticated state change (POST/PUT/PATCH/DELETE route handler, API route, form endpoint) has its own forgery control: an Origin or `Sec-Fetch-Site` check against an allowlist, a CSRF token, or a custom header/JSON content type it actually enforces. Non-issue evidence is the file:line of that check, or the framework protection plus its config line: Next.js server actions compare Origin with Host unless `serverActions.allowedOrigins` widens it, Better-Auth endpoints check `trustedOrigins`, Django `CsrfViewMiddleware`, Rails `protect_from_forgery`, Laravel `VerifyCsrfToken`. Custom route handlers next to them inherit none of it
+- [ ] Cookie attributes: session cookies are `SameSite=Lax` or `Strict`. `SameSite=None` (embedded widgets, `crossSubDomainCookies`, `defaultCookieAttributes`) means every cookie-authenticated state change needs its own origin check; cite the cookie config line together with each unprotected handler
+- [ ] No state change on GET (accept invitation, delete, toggle, connect integration, change plan): `SameSite=Lax` still sends cookies on top-level GET navigations. Search for `export async function GET` / `app.get` handlers that write
+- [ ] Body parsing: a handler that reads `request.formData()`, `request.text()` + `JSON.parse`, or accepts `application/x-www-form-urlencoded`, `multipart/form-data` or `text/plain` can be reached by a cross-site form without a CORS preflight. A handler that requires `application/json` and rejects other types is protected only if CORS does not allow credentialed cross-origin requests (see 2.5)
+- [ ] OAuth/SSO callbacks validate `state` (or PKCE) bound to the user's session before linking an account or storing a provider token. Evidence: the line that compares `state` with the stored value
+- [ ] CSRF exemptions (`csrf_exempt`, `$except`, `skip_forgery_protection`, a matcher that skips paths) cover only machine endpoints that verify a signature (webhooks)
+
 ## 2.2 Input Validation & Injection
 
 - [ ] SQL: All queries parameterized (no string concatenation/interpolation). Search for raw SQL, `execute()`, f-strings/template literals near queries
@@ -76,7 +87,7 @@ Skip if no upload endpoints found in recon.
 - [ ] Upload size config: verify upload middleware has explicit `limits.fileSize` configured (not just frontend validation). Search for multer/busboy/formidable config
 - [ ] Extension vs content validation: verify file type checked by content/magic bytes, not just filename extension. Extension-only check allows renaming disguised files
 
-## 2.7 Dependency Security
+## 2.7 Dependency, Supply Chain & Build Pipeline Security
 
 - [ ] All dependencies pinned to specific versions (lockfile present and committed)
 - [ ] Known advisories come from the pre-pass dependency scan (osv-scanner), never from memory. Prod tree + plausibly reachable code path → finding (cite the lockfile line and where the feature is used); dev-only → recommendation unless it runs in CI/build on untrusted input or a dev server is exposed. Scan NOT RUN → not-assessed, not "no CVEs"
@@ -84,6 +95,38 @@ Skip if no upload endpoints found in recon.
 - [ ] Transitive dependency risks: critical path depending on single-maintainer package?
 - [ ] Dependency update mechanism exists (Dependabot, Renovate, or documented process)
 - [ ] No dependencies pulled from non-standard registries without verification
+
+Findings from the three subsections below use category `config`; `dependency` stays for known-vulnerable versions. A subsection whose files do not exist in the repo is skipped (say so in recon, not as a non-issue). CI that runs in another repository or system the audit cannot see goes to `not-assessed.md`.
+
+### Install scripts and lockfile integrity
+
+- [ ] The project's own `preinstall`/`install`/`postinstall`/`prepare` scripts in `package.json` (and `composer.json` scripts, `setup.py` hooks) do not download and execute remote code (`curl … | sh`, `wget -O- … | bash`, fetch-and-eval) without a pinned version and a checksum or signature check. They run on every developer machine, every CI job and every image build. Evidence of the control: the checksum verification line, or the script that installs a pinned, verified artifact
+- [ ] Dependency lifecycle scripts: npm and Yarn run them unless `ignore-scripts=true`; pnpm 10+ blocks them unless allowed. Check `onlyBuiltDependencies`/`neverBuiltDependencies`/`dangerouslyAllowAllBuilds` in `package.json`, `.npmrc` and `pnpm-workspace.yaml`. A blanket allow, in CI jobs that hold secrets, widens the impact of any compromised transitive package
+- [ ] Lockfile enforced at install: CI and Dockerfiles use `npm ci`, `pnpm install --frozen-lockfile`, `yarn install --immutable`, `bun install --frozen-lockfile`, `composer install` (not `update`), `pip install --require-hashes` or `uv sync --locked`, and the Dockerfile copies the lockfile before installing. Evidence: the install line
+- [ ] Lockfile integrity: registry entries carry an integrity hash (`integrity:` / `resolution: {integrity: …}`); resolved and tarball URLs use https and the expected registry host. An unexpected host or a missing hash in a changed lockfile is a finding to raise even when `package.json` looks unchanged
+- [ ] Unpinned sources: no dependency resolved from a git branch or tag (`github:org/repo`, `git+https://…#main`), a bare http(s) tarball URL, or a `latest`/`*` range; a git dependency is pinned to a commit SHA
+- [ ] Registry configuration: internal scoped packages have a scoped registry in `.npmrc` (otherwise the public registry may serve a same-named package), registry auth tokens come from an environment variable, not a literal in the file
+
+### CI/CD workflows
+
+GitHub Actions (`.github/workflows/*.yml`); apply the same ideas to GitLab CI, CircleCI, Bitbucket and Jenkinsfiles.
+
+- [ ] `pull_request_target` and `workflow_run` jobs never check out or execute the pull request's code (`ref: ${{ github.event.pull_request.head.sha }}` or `head.ref`, `refs/pull/<n>/merge`, `gh pr checkout`, running artifacts of the triggering run) while secrets or a write token are available. Installing dependencies and building count as executing it. Evidence of the control: the `on:` line (`pull_request`, which gives fork runs no secrets) or a checkout of the base ref only
+- [ ] Expression injection: attacker-controlled context (`github.event.issue.title`/`body`, `pull_request.title`/`body`/`head.ref`, `github.head_ref`, `comment.body`, `review.body`, commit messages, `discussion.*`, `pages.*.page_name`) never appears as `${{ … }}` inside `run:` or an `actions/github-script` `script:`. Control: passed through `env:` and used as a quoted shell variable; cite the `env:` line
+- [ ] Secrets stay out of logs and artifacts: no `echo`/`printf`/`set -x`/`env`/`printenv` with secrets, no secret written to `$GITHUB_OUTPUT`, `$GITHUB_STEP_SUMMARY`, artifacts or caches, no transformed secret (base64, JSON, URL with credentials) printed, since masking only hides the exact string. Control: the secret reaches the tool only as an env var or input
+- [ ] Actions pinned: third-party `uses:` refer to a full 40-character commit SHA (tags and branches can be moved by whoever controls the action); `docker://` images by digest. First-party `actions/*` by SHA or by tag with Dependabot or Renovate updating them. Evidence: the `uses:` line
+- [ ] Token scope: workflow or job `permissions:` set to the minimum (`contents: read` by default), no `write-all`; `actions/checkout` uses `persist-credentials: false` in jobs that build untrusted code; deploy secrets live in an environment with required reviewers
+- [ ] Self-hosted runners are not used by workflows that fork pull requests can trigger
+
+### Containers and infrastructure as code
+
+Dockerfiles, `docker-compose*.yml`, Kubernetes manifests and Helm values, Terraform, CloudFormation, Pulumi.
+
+- [ ] No secrets in images: no secret in `ENV` or `ARG` (ARG values are kept in the image history, ENV in the image config), no `COPY .env` or key files, and `.dockerignore` excludes `.env*`, `.git` and keys before a broad `COPY . .`. Control: `RUN --mount=type=secret`, or secrets injected at run time by the platform
+- [ ] Non-root: the final stage sets `USER` to a non-root user (or the orchestrator sets `runAsNonRoot`); no `privileged: true`, `cap_add: [SYS_ADMIN]`, `hostNetwork`, `hostPID` or Docker socket (`/var/run/docker.sock`) mount in application containers
+- [ ] Reproducible inputs: base images pinned to a version tag (by digest for production), never `latest` or no tag; `ADD <url>` and `curl` downloads in `RUN` verified with a checksum; package managers in the build use the lockfile (see above)
+- [ ] Published ports: databases, caches, queues and admin UIs are published only on `127.0.0.1` or kept on an internal network. `"5432:5432"` listens on every interface and Docker's iptables rules bypass host firewalls such as ufw. Evidence: the `ports:` line
+- [ ] Cloud resources: no public storage buckets or ACLs, no security group or firewall rule open to `0.0.0.0/0` on database, SSH or admin ports, no plaintext secrets in variables, `tfvars` or committed state, storage and databases encrypted at rest. A finding only when the file is the deployed configuration; example or local-only files are recommendations
 
 ## 2.8 Cryptography
 

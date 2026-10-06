@@ -241,3 +241,59 @@ Express-style patterns (`req.body`, `app.get`) find nothing in these frameworks.
 | Next.js | Auth only in the proxy `matcher`, a layout or a page while `app/api/**/route.ts` or server actions skip it (`/admin` matched, `/api/admin` not) |
 | Method inconsistency | For same path: compare middleware on GET vs POST vs PUT vs DELETE. Different protection = BFLA |
 | Unprotected mutations | POST/PUT/DELETE routes with no auth middleware at all — especially: checkout, payment, upgrade, transfer, delete-account |
+
+## CSRF
+
+| Framework | Patterns to search |
+|-----------|-------------------|
+| Next.js route handlers | `export async function (POST\|PUT\|PATCH\|DELETE)` in `app/**/route.ts` that authenticate by cookie (`getSession()`, `auth.api.getSession`, `cookies()`) with no `request.headers.get("origin")` / `sec-fetch-site` check; `request.formData()` or `request.text()` in those handlers (reachable by a cross-site form without preflight) |
+| Next.js server actions | Protected by an Origin/Host comparison by default; check `serverActions.allowedOrigins` in `next.config.*` (a wildcard or broad list widens it) and proxies that rewrite `Host`/`X-Forwarded-Host` |
+| Next.js GET handlers | `export async function GET` that calls `.insert(`, `.update(`, `.delete(`, sends email or connects an integration: `SameSite=Lax` cookies still arrive on top-level navigation |
+| Better-Auth | `sameSite: "none"` in `advanced.defaultCookieAttributes`, `crossSubDomainCookies`, `trustedOrigins` with `*`, `disableCSRFCheck: true` |
+| Hono | `csrf()` from `hono/csrf` and its `origin` option; `cors({ origin: (o) => o, credentials: true })` |
+| JS/TS | Express `csrf-csrf` / `lusca` / `csurf` presence and the routes they skip; `express-session` or `cookie-session` with `sameSite: 'none'` |
+| Django | `@csrf_exempt`, `CSRF_TRUSTED_ORIGINS`, `CSRF_COOKIE_SAMESITE = None`, `SESSION_COOKIE_SAMESITE = None` |
+| Rails | `skip_forgery_protection`, `skip_before_action :verify_authenticity_token`, `protect_from_forgery with: :null_session` |
+| PHP/Laravel | `$except` in `VerifyCsrfToken`, `validateCsrfTokens(except:`, Symfony `csrf_protection: false` |
+| All | OAuth/SSO callbacks that exchange `code` without comparing `state` to a stored value; `SameSite=None` in `Set-Cookie` |
+
+## CI/CD Workflows (GitHub Actions)
+
+| Check | Patterns to search in `.github/workflows/*.yml` |
+|-------|-------------------------------------------------|
+| Privileged trigger | `pull_request_target`, `workflow_run`; then in the same workflow `ref: ${{ github.event.pull_request.head.sha }}` or `head.ref`, `refs/pull/`, `gh pr checkout`, `actions/download-artifact` followed by running what it downloaded. Install and build steps after such a checkout run the pull request's code |
+| Expression injection | `\$\{\{\s*github\.event\.(issue\|pull_request\|comment\|review\|discussion\|head_commit\|commits)`, `\$\{\{\s*github\.head_ref` inside `run:` or `script:` (safe inside `env:` and `with:` values used as data) |
+| Unpinned actions | `uses:\s*[^@\s]+@(?![0-9a-f]{40}\b)` (tag or branch instead of a commit SHA), `uses: docker://` without `@sha256:` |
+| Secrets in logs | `echo .*secrets\.`, `toJSON\(secrets\)`, `set -x`, `printenv`, `env \| `, `secrets\..*>> "?\$GITHUB_(OUTPUT\|STEP_SUMMARY\|ENV)` |
+| Token scope | `permissions:\s*write-all`, no top-level `permissions:`, `persist-credentials` not `false` in jobs that build untrusted code |
+| Runners | `runs-on:\s*\[?self-hosted` in workflows triggered by `pull_request` from forks |
+
+## Dockerfile and Compose
+
+| Check | Patterns to search |
+|-------|-------------------|
+| Secrets in the image | `^(ENV\|ARG)\s+\w*(SECRET\|TOKEN\|KEY\|PASSWORD\|DATABASE_URL\|DSN)`, `COPY .*\.env`, `COPY . .` without a `.dockerignore` that excludes `.env*` and `.git` |
+| User | no `^USER ` in the final stage, or `USER root` last |
+| Base image | `FROM \S+:latest`, `FROM [^:@\s]+(\s\|$)` (no tag) |
+| Remote fetch | `^ADD https?://`, `RUN .*(curl\|wget) .*\|\s*(sh\|bash)` without a checksum step |
+| Install | `npm install` instead of `npm ci`, `pnpm install` without `--frozen-lockfile`, `COPY package.json` without the lockfile |
+| Compose | `ports:` entries without `127.0.0.1:` for databases, caches and admin UIs, `privileged: true`, `/var/run/docker.sock`, `network_mode: host`, literal values for `*_PASSWORD` |
+
+## Infrastructure as Code
+
+| Tool | Patterns to search |
+|------|-------------------|
+| Terraform | `cidr_blocks\s*=\s*\["0\.0\.0\.0/0"\]` on ports 22/3306/5432/6379, `acl\s*=\s*"public-read`, `block_public_(acls\|policy)\s*=\s*false`, `encrypted\s*=\s*false`, `default\s*=\s*"` on variables named like `password`/`secret`, committed `*.tfstate` |
+| Kubernetes / Helm | `privileged: true`, `runAsUser: 0`, `allowPrivilegeEscalation: true`, `hostNetwork: true`, `hostPath:`, `kind: Secret` with literal `data:`/`stringData:` committed |
+| CloudFormation | `PublicAccessBlockConfiguration` absent or `false`, `CidrIp: 0.0.0.0/0` on admin ports, `NoEcho` missing on secret parameters |
+
+## Package Manifests, Lockfiles and Registries
+
+| Check | Patterns to search |
+|-------|-------------------|
+| Install scripts | `"(preinstall\|install\|postinstall\|prepare)"\s*:` whose command contains `curl`, `wget`, `\| *(sh\|bash)`, `node -e`, `https?://` |
+| Lifecycle policy | `dangerouslyAllowAllBuilds`, `onlyBuiltDependencies`, `neverBuiltDependencies`, `ignore-scripts`, `enable-pre-post-scripts` in `package.json`, `.npmrc`, `pnpm-workspace.yaml` |
+| Unpinned sources | `"(github\|gitlab\|bitbucket):`, `git\+(https?\|ssh)://`, `#(main\|master\|HEAD\|develop)"`, `"https?://\S+\.tgz"`, `"(latest\|\*)"` |
+| Lockfile integrity | `pnpm-lock.yaml` entries with `tarball:` and no `integrity:`, `package-lock.json` `"resolved": "http://` or an unexpected host, entries without `"integrity"` |
+| Lockfile enforced | `npm install`, `pnpm install` without `--frozen-lockfile`, `yarn install` without `--immutable` in CI workflows and Dockerfiles |
+| Registry | `.npmrc` `registry=http://`, `strict-ssl=false`, `_authToken=` followed by a literal (not `${…}`), internal `@scope/` packages with no `@scope:registry=` line |
