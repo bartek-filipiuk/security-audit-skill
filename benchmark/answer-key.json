@@ -221,6 +221,37 @@
       ],
       "detect": "llm",
       "why": "postinstall pipes a mutable URL into sh on every install (developer machines, CI with secrets, the Docker build) with no version, checksum or signature; whoever controls that host or its DNS runs code in all three. Lockfile integrity does not cover it."
+    },
+    {
+      "id": "B21",
+      "class": "LLM output rendered as raw HTML (prompt injection to stored XSS)",
+      "severity": "HIGH",
+      "locations": [
+        { "file": "src/app/(app)/invoices/[id]/summary/page.tsx", "lines": [26, 30] },
+        { "file": "src/app/(app)/invoices/[id]/summary/page.tsx", "lines": [37, 37] }
+      ],
+      "detect": "llm",
+      "why": "The invoice summary asks the model for an HTML fragment built from invoice notes and line descriptions, which any org member can write, and renders it with dangerouslySetInnerHTML without a sanitizer. Text in a note can steer the model into emitting markup that runs script in the session of whoever opens the summary, typically an owner or admin."
+    },
+    {
+      "id": "B22",
+      "class": "Agent tool performs a destructive write with model-chosen arguments and no ownership, role or confirmation check",
+      "severity": "HIGH",
+      "locations": [
+        { "file": "src/server/ai/billing-tools.ts", "lines": [11, 18] }
+      ],
+      "detect": "llm+scope-scan",
+      "why": "voidInvoice updates invoices by the model-supplied id only (no ctx.orgId filter, no role check, no needsApproval), so any member, or any text that steers the model, can void invoices of every organization; its description claims it is limited to the current organization."
+    },
+    {
+      "id": "B23",
+      "class": "LLM cost abuse: the caller chooses model, output tokens and agent steps, with no per-user limit",
+      "severity": "MEDIUM",
+      "locations": [
+        { "file": "src/app/api/assistant/billing/route.ts", "lines": [16, 18] }
+      ],
+      "detect": "llm",
+      "why": "POST /api/assistant/billing passes body.model, body.maxTokens and body.maxSteps straight to generateText with no allowlist, cap, or per-user rate or spend limit, so any signed-in user can run the most expensive model at full output length and many tool steps, in a loop, on the organization's API key."
     }
   ],
   "decoys": [
@@ -301,6 +332,20 @@
         { "file": "docker-compose.yml", "lines": [7, 9] }
       ],
       "why": "Local Postgres: password is required from the environment (no default) and the port is bound to 127.0.0.1 only."
+    },
+    {
+      "id": "D12",
+      "locations": [
+        { "file": "src/app/(app)/invoices/[id]/summary/actions.ts", "lines": [17, 34] }
+      ],
+      "why": "Model output goes into email HTML only after HTML escaping; the recipient is the invoice's customer from the database, looked up by id AND the session org, never chosen by the model; output tokens are capped."
+    },
+    {
+      "id": "D13",
+      "locations": [
+        { "file": "src/server/ai/billing-tools.ts", "lines": [24, 30] }
+      ],
+      "why": "markInvoicePaid is scoped by ctx.orgId from the session and declared with needsApproval, so the user confirms each call before it runs."
     }
   ],
   "known_extras": [

@@ -2,7 +2,8 @@
 
 > These numbers are from before R08 (2026-10-06) and count 16 seeded bugs and 8 decoys. R08 added four seeded
 > bugs (B17 CSRF, B18 CI workflow, B19 Dockerfile, B20 install script) and three decoys (D09 to D11), so recall
-> on the current key is out of 20 and runs from before R08 are not comparable without re-running.
+> on that key is out of 20 and runs from before R08 are not comparable without re-running. R21 added three more
+> (B21 LLM output to HTML, B22 unscoped agent tool, B23 LLM cost) and two decoys (D12, D13): out of 23 now.
 
 One run each, 2026-10-03, Claude Code, Opus 5.5 at effort xhigh, auto mode, a fresh `setup.mjs` copy without
 `node_modules` (the app's lockfile integrity hashes do not match the registry, so install fails for both).

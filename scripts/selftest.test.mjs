@@ -147,6 +147,19 @@ test("hotspot ranking puts the seeded code-level bugs near the top", () => {
   assert.ok(!hot.some((h) => h.file.endsWith("api/trpc/[trpc]/route.ts") && h.reasons.includes("no auth check in the handler")));
 });
 
+test("LLM signals: unscoped agent tool, model output to raw HTML, request-controlled model and token budget", () => {
+  const { sites } = scanScope(files);
+  const site = (file, enclosing) => sites.find((s) => s.file.endsWith(file) && s.enclosing === enclosing);
+  assert.equal(site("ai/billing-tools.ts", "voidInvoice").status, "UNSCOPED");
+  assert.equal(site("ai/billing-tools.ts", "markInvoicePaid").status, "scoped");
+  const hot = rankHotspots(files, scanEntryPoints(files), scanScope(files));
+  const reasons = (file) => hot.filter((h) => h.file.endsWith(file)).flatMap((h) => h.reasons);
+  assert.ok(reasons("api/assistant/billing/route.ts").includes("LLM model or token budget taken from the request (cost)"));
+  assert.ok(reasons("invoices/[id]/summary/page.tsx").includes("LLM output may reach raw HTML"));
+  assert.ok(!reasons("invoices/[id]/summary/actions.ts").includes("LLM output may reach raw HTML"), "escaped email HTML is not a raw HTML sink");
+  assert.ok(!reasons("api/chat/route.ts").includes("LLM model or token budget taken from the request (cost)"), "a fixed model is not flagged");
+});
+
 test("report.html escapes everything that comes from findings", async () => {
   const { renderReport } = await import("./report-html.mjs");
   const dir = auditDir(
