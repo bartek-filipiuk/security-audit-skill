@@ -10,13 +10,16 @@
 // previous run it falls back to a full audit and says why (see incremental.mjs).
 // Defaults: --root = cwd, --out = <root>/.security-audit
 // Writes <out>/prepass.md (read by recon) and raw tool output to <out>/tools/.
-// Tools: osv-scanner and gitleaks, native binary first, then their official docker images.
+// Tools: osv-scanner and gitleaks, native binary first, then their official docker images; semgrep,
+// zizmor, hadolint and trivy (tools.mjs) when the project has something for them, native first, then
+// docker pinned by digest. Tool hits are candidates for the auditors, never findings.
 // Secrets are always redacted (gitleaks --redact) so no secret value lands on disk or in agent context.
 
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { inScope, LOCKFILES, rankHotspots, scanEntryPoints, scanScope, walk } from "./surface.mjs";
+import { detectStack, inventory, mergeNotAssessed, renderTools, runTools } from "./tools.mjs";
 import { changedSince, loadItems, loadPreviousRun, planIncremental, readAliases, resolveCommit, trackedFiles, writeCarried } from "./incremental.mjs";
 
 const args = process.argv.slice(2);
@@ -103,6 +106,7 @@ if (incremental?.mode === "incremental") {
 }
 const deps = runDeps();
 const secrets = runSecrets();
+const toolResults = runCodeTools();
 
 writeFileSync(join(toolsDir, "entry-points.json"), JSON.stringify(entries, null, 2));
 writeFileSync(join(toolsDir, "scope-scan.json"), JSON.stringify(scope, null, 2));
@@ -117,13 +121,14 @@ writeFileSync(join(toolsDir, "summary.json"), JSON.stringify({
   scope: scoped && { label: scoped.label, entries: scoped.entries.length, total: scoped.total },
   entry_points: entries.length, scope_candidates: scope.sites.filter((s) => s.status !== "scoped").length,
   deps: { status: deps.status, rows: deps.rows }, secrets: { status: secrets.status, rows: secrets.rows },
+  tools: Object.fromEntries(toolResults.map((t) => [t.tool, { status: t.status, candidates: t.total }])),
 }, null, 2));
 writeFileSync(join(out, "prepass.md"), render());
 
 const unscoped = scope.sites.filter((s) => s.status !== "scoped").length;
 console.log(
   `prepass: ${entries.length} entry points, ${hotspots.length} hotspots, ${unscoped} scope candidates, ` +
-    `deps: ${deps.status}, secrets: ${secrets.status} (${((Date.now() - t0) / 1000).toFixed(1)}s) -> ${join(out, "prepass.md")}`,
+    `deps: ${deps.status}, secrets: ${secrets.status}, tools: ${toolResults.map((t) => `${t.tool} ${t.state}`).join(", ")} (${((Date.now() - t0) / 1000).toFixed(1)}s) -> ${join(out, "prepass.md")}`,
 );
 if (incremental?.mode === "incremental") {
   console.log(`prepass: INCREMENTAL since ${incremental.since.slice(0, 12)}: ${incremental.changed.length} changed files, re-audit ${incremental.reaudit.length} of ${incremental.total} targets; carried ${incremental.carry.filter((c) => c.kind === "finding").length} findings and ${incremental.carry.filter((c) => c.kind === "non-issue").length} non-issues from ${incremental.prevCommit.slice(0, 12)}, ${incremental.drop.length} to re-audit`);
@@ -320,6 +325,24 @@ function runSecrets() {
   return { status: `${via}: ${rows.length} hits, ${scope}`, rows };
 }
 
+// ---------------------------------------------------------------- semgrep, zizmor, hadolint, trivy
+
+function runCodeTools() {
+  for (const f of ["semgrep.json", "zizmor.sarif", "hadolint.json", "trivy.json", "tool-candidates.json"]) rmSync(join(toolsDir, f), { force: true });
+  const inv = inventory(root);
+  const results = runTools({
+    root, inv, stack: detectStack(inv),
+    runner: { installed, run, dockerOk, dockerDisabled: !allowDocker },
+    write: (name, text) => writeFileSync(join(toolsDir, name), text),
+  });
+  writeFileSync(join(toolsDir, "tool-candidates.json"), JSON.stringify(results.map(({ rows, all, ...r }) => ({ ...r, candidates: all ?? [] })), null, 2));
+  // A tool that applied but did not run is a coverage gap; record it so the report cannot stay silent.
+  const naPath = join(out, "not-assessed.md");
+  const merged = mergeNotAssessed(existsSync(naPath) ? readFileSync(naPath, "utf8") : "", results);
+  if (merged || existsSync(naPath)) writeFileSync(naPath, merged);
+  return results;
+}
+
 // ---------------------------------------------------------------- report
 
 function render() {
@@ -336,6 +359,7 @@ function render() {
   L.push(`- Scope scan: ${scope.tables.length} owner-scoped tables, ${scope.sites.length} query sites, ${cands.length} candidates`);
   L.push(`- Dependencies: ${deps.status}`);
   L.push(`- Secrets: ${secrets.status}`);
+  for (const t of toolResults) L.push(`- ${t.tool}: ${t.status}`);
   L.push("");
   L.push(`Anything marked NOT RUN or FAILED is a coverage gap: report it under "Not assessed", never as secure.`);
   L.push("");
@@ -411,6 +435,7 @@ function render() {
   L.push("");
   L.push(secrets.rows.length ? table(["Rule", "File:line", "Commit", "Date", "File still present"], secrets.rows.map((r) => [r.rule, `${r.file}:${r.line}`, r.commit, r.date, r.present])) : "No rows.");
   L.push("");
+  L.push(renderTools(toolResults, table));
   return L.join("\n");
 }
 
