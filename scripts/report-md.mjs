@@ -9,6 +9,7 @@ import { existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadAudit, section, titleOf } from "./audit-state.mjs";
+import { renderCoverageMd } from "./coverage.mjs";
 
 const ORDER = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
 const FIELDS = ["Evidence", "TRACE", "Impact", "Regression Test", "Chained With", "Recommendation", "Test Coverage"];
@@ -50,7 +51,7 @@ export function renderReportMd(dir) {
     L.push(`| ${i + 1} | ${n.stem}${n.data?.carried_from ? ` (carried from ${String(n.data.carried_from).slice(0, 7)})` : ""} | ${cell((section(n.body, "Area Examined") ?? "").split("\n")[0]).slice(0, 180)} | ${firstLoc(section(n.body, "Evidence") ?? n.body)} |`);
   });
 
-  L.push("", "## Not Assessed (coverage gaps)", "", "Nobody checked these. They are unknown, not safe.", "", read("not-assessed.md") || "No coverage gaps recorded.", "");
+  L.push("", renderCoverageMd(dir));
 
   const docs = findings.filter((f) => f.data?.category === "docs-vs-reality");
   L.push("## Documentation vs Reality", "");

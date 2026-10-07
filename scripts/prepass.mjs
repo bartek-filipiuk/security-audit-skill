@@ -48,7 +48,7 @@ if (args.includes("--new-run") || sinceArg) {
   rmSync(join(toolsDir, "workspace-mark.json"), { force: true });
 }
 mkdirSync(toolsDir, { recursive: true });
-for (const d of ["findings", "non-issues", "tests"]) mkdirSync(join(out, d), { recursive: true });
+for (const d of ["findings", "non-issues", "tests", "coverage"]) mkdirSync(join(out, d), { recursive: true });
 
 const run = (cmd, argv, opts = {}) =>
   spawnSync(cmd, argv, { encoding: "utf8", maxBuffer: 512 * 1024 * 1024, timeout: 600_000, ...opts });

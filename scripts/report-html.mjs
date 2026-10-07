@@ -12,6 +12,7 @@ import { existsSync, readFileSync, realpathSync, statSync, writeFileSync } from 
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadAudit, section, titleOf } from "./audit-state.mjs";
+import { notAssessedRows } from "./coverage.mjs";
 
 const SEVERITY = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
 const CATEGORY = {
@@ -67,14 +68,8 @@ function load(dir) {
   const summary = json("tools/summary.json");
   const hotspots = json("tools/hotspots.json") ?? [];
   // null = never recorded (audits older than the not-assessed rule), [] = recorded and empty.
-  let notAssessed = existsSync(join(dir, "not-assessed.md"))
-    ? readFileSync(join(dir, "not-assessed.md"), "utf8").split("\n")
-        .filter((l) => /^\|/.test(l) && !/^\|\s*-/.test(l) && !/^\|\s*category\s*\|/i.test(l))
-        .map((l) => l.split("|").slice(1, -1).map((c) => c.trim()))
-    : null;
-  for (const [label, block] of [["Dependencies", summary?.deps], ["Secrets", summary?.secrets]]) {
-    if (block && /NOT RUN|FAILED/.test(block.status)) (notAssessed ??= []).push([label.toLowerCase(), `${label} scan`, block.status]);
-  }
+  // Derived from the coverage ledger plus not-assessed.md and the pre-pass tool status (coverage.mjs).
+  const notAssessed = notAssessedRows(dir)?.map((g) => [g.class, [g.check, g.target].filter(Boolean).join(" · "), g.why]) ?? null;
 
   const items = findings.filter((f) => f.data).map((f) => {
     const fm = f.data;
