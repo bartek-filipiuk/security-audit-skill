@@ -31,4 +31,6 @@ Report: report.md + report.html (to fix / verified safe / not assessed)
 Private benchmark: benchmark/ (Ledgerly, own stack, 16 seeded bugs + 8 decoys), see benchmark/README.md
 Models: sonnet for the mechanical phases (1, 2, 4); Phase 3 verifier inherits the session model
 Proof labels: HIGH/CRITICAL are marked test (a regression test fails today) or static (code reading)
+Coverage ledger: every auditor records per entry point and class checked / not applicable / not assessed
+  (schema-validated); the report's Coverage and Not Assessed sections come from it, so "not found" ≠ "not looked at"
 ```

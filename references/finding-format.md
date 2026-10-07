@@ -97,6 +97,32 @@ A non-issue without the control's file:line is not allowed. When something could
 | dependency | CVE scan | osv-scanner and docker unavailable (prepass: NOT RUN) |
 ```
 
+`not-assessed.md` holds the pre-pass tool rows and the coordinator's `--scope` line. Auditors record their gaps in the coverage ledger below; the report merges both.
+
+## Coverage Ledger (.security-audit/coverage/<writer>.json)
+
+The machine-readable record of what was looked at, so "not found" can be told apart from "not looked at". Each writer keeps its own file (`auditor-<name>.json`, `coordinator.json` in Standard, Triage and Quick-Run modes), so parallel auditors never overwrite each other. Schema: `references/coverage-ledger.schema.json`; `node $SKILL_DIR/scripts/coverage.mjs --dir <audit dir>` validates every file (exit 1 on a problem) and `--write` merges them into `coverage.json`. `report-md.mjs` and `report-html.mjs` build the Coverage and Not Assessed sections from it.
+
+```json
+{
+  "schema_version": "1.0",
+  "entries": [
+    { "class": "auth", "target": "src/app/api/export/route.ts", "handler": "GET /api/export", "status": "checked",
+      "auditor": "auditor-auth", "check": "tenant scope on export", "evidence": ["auth-101"] },
+    { "class": "upload", "target": "*", "status": "not_applicable", "auditor": "auditor-upload",
+      "reason": "no file upload handling in the code" },
+    { "class": "concurrency", "target": "src/app/(app)/invoices/actions.ts", "status": "not_assessed",
+      "auditor": "auditor-auth", "check": "double-submit on payInvoice", "reason": "needs the payment provider's idempotency settings, not in the repo" }
+  ]
+}
+```
+
+- `class`: a canonical category of the twelve audit classes (`auth` = §2.1 … `logging` = §2.12), `test-gap` for Phase 4, or `all` for a gap that spans every class (never with `checked`).
+- `target`: the file of the entry point or code checked, relative to the project root (as in `tools/entry-points.json`), or `*` for a project-wide check. `handler` (optional) names the route or procedure inside it.
+- `status`: `checked` needs `evidence` (finding or non-issue ids of this audit, or `path:line`); `not_applicable` and `not_assessed` need a `reason`.
+- `auditor`: `auditor-<name>`, `coordinator`, `recon`, `verifier` or `test-quality`. `carried_from` is written only by `prepass --since`, which carries the rows of untouched targets into `coverage/carried.json`.
+- The report adds gaps by itself: every audit class with no row ("not looked at"), every pre-pass entry point whose file has no row, and NOT RUN pre-pass tools. A `not_assessed` row always appears in the report, even when its ledger file fails validation.
+
 ## Recon Output Format (.security-audit/recon.md)
 
 ```markdown
