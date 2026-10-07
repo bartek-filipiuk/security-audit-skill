@@ -1,0 +1,5 @@
+name: 'Helpdesk portal'
+type: module
+description: 'Shows helpdesk tickets to signed-in customers on the website.'
+core_version_requirement: ^10
+package: Custom

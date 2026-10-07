@@ -38,7 +38,7 @@ const normalize = (p) => p.replace(/^\((?![^/]*\))/, "").replace(/^\.\//, "").re
 export function parseLocation(text) {
   for (const m of text.matchAll(LOC)) {
     const file = m[1];
-    if (file !== ".env" && !/\.(?:[cm]?[jt]sx?|json|ya?ml|md|example|env|sql|rules|toml)$|^\.env/.test(file.split("/").pop())) continue;
+    if (file !== ".env" && !/\.(?:[cm]?[jt]sx?|json|ya?ml|md|example|env|sql|rules|toml|php|twig|module|inc|install|theme)$|^\.env/.test(file.split("/").pop())) continue;
     const start = m[2] ? Number(m[2]) : null;
     const end = m[3] ? Math.max(Number(m[3]), start) : start;
     return { file: normalize(file), start, end };
@@ -62,7 +62,9 @@ export function primaryLocation(text) {
   return parseLocation(body);
 }
 
-const samePath = (cited, file) => cited === file || cited.endsWith("/" + file);
+// Cited paths lose a leading `app/` (the run directory); a key file under Laravel's own `app/` is compared
+// with and without it, so `app/Http/X.php` and `app/app/Http/X.php` both match it.
+const samePath = (cited, file) => [...new Set([file, normalize(file)])].some((f) => cited === f || cited.endsWith("/" + f));
 
 // Distance in lines between a finding location and a key location; Infinity when the file differs
 // or the finding has no line.
