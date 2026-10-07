@@ -10,13 +10,14 @@
 // previous run it falls back to a full audit and says why (see incremental.mjs).
 // Defaults: --root = cwd, --out = <root>/.security-audit
 // Writes <out>/prepass.md (read by recon) and raw tool output to <out>/tools/.
-// Tools: osv-scanner and gitleaks, native binary first, then their official docker images.
+// Tools: osv-scanner and gitleaks, native binary first, then their official docker images. Psalm taint
+// analysis for PHP is reported NOT RUN with how to run it (it would execute the project's autoloader).
 // Secrets are always redacted (gitleaks --redact) so no secret value lands on disk or in agent context.
 
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
-import { inScope, LOCKFILES, rankHotspots, scanEntryPoints, scanScope, walk } from "./surface.mjs";
+import { inScope, LOCKFILES, phpTaintStatus, rankHotspots, scanEntryPoints, scanScope, walk } from "./surface.mjs";
 import { changedSince, loadItems, loadPreviousRun, planIncremental, readAliases, resolveCommit, trackedFiles, writeCarried } from "./incremental.mjs";
 
 const args = process.argv.slice(2);
@@ -103,6 +104,7 @@ if (incremental?.mode === "incremental") {
 }
 const deps = runDeps();
 const secrets = runSecrets();
+const phpTaint = phpTaintStatus(files);
 
 writeFileSync(join(toolsDir, "entry-points.json"), JSON.stringify(entries, null, 2));
 writeFileSync(join(toolsDir, "scope-scan.json"), JSON.stringify(scope, null, 2));
@@ -117,6 +119,7 @@ writeFileSync(join(toolsDir, "summary.json"), JSON.stringify({
   scope: scoped && { label: scoped.label, entries: scoped.entries.length, total: scoped.total },
   entry_points: entries.length, scope_candidates: scope.sites.filter((s) => s.status !== "scoped").length,
   deps: { status: deps.status, rows: deps.rows }, secrets: { status: secrets.status, rows: secrets.rows },
+  ...(phpTaint ? { php_taint: { status: phpTaint } } : {}),
 }, null, 2));
 writeFileSync(join(out, "prepass.md"), render());
 
@@ -336,6 +339,7 @@ function render() {
   L.push(`- Scope scan: ${scope.tables.length} owner-scoped tables, ${scope.sites.length} query sites, ${cands.length} candidates`);
   L.push(`- Dependencies: ${deps.status}`);
   L.push(`- Secrets: ${secrets.status}`);
+  if (phpTaint) L.push(`- PHP taint analysis (Psalm): ${phpTaint}`);
   L.push("");
   L.push(`Anything marked NOT RUN or FAILED is a coverage gap: report it under "Not assessed", never as secure.`);
   L.push("");

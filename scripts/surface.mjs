@@ -1,7 +1,8 @@
 // Static entry-point scan for the security-audit pre-pass. No dependencies.
 // 1. Entry points by framework convention (Next.js App/Pages Router, server actions, proxy/middleware,
 //    tRPC, Hono/Express, pg-boss/BullMQ/cron, AI SDK / MCP tools, Drupal routing.yml, Supabase Edge
-//    Functions, Firebase Cloud Functions).
+//    Functions, Firebase Cloud Functions, Laravel routes/*.php, Symfony #[Route] attributes and
+//    config/routes*.yaml).
 // 2. Drizzle scope scan: query sites on tables that carry an owner/tenant column but whose statement
 //    never references that column.
 // 3. Policy scan (roadmap R02): Supabase migrations (RLS, policies, SECURITY DEFINER functions, storage
@@ -20,6 +21,10 @@ const SKIP_DIRS = new Set([
 ]);
 const CODE_RE = /\.(?:[cm]?[jt]sx?)$/;
 const DRUPAL_RE = /\.routing\.yml$/;
+// PHP profile (roadmap R05): PHP sources and Blade/Twig templates, Symfony route and security config.
+const PHP_RE = /\.(?:php|module|inc|theme|install)$/;
+const TWIG_RE = /\.twig$/;
+const SYMFONY_CFG_RE = /(^|\/)config\/(?:routes(?:\/[^/]+)?|packages\/security)\.ya?ml$/;
 // Read for the policy scan only, never scanned as code.
 const POLICY_RE = /(^|\/)supabase\/(?:migrations\/[^/]+\.sql|config\.toml)$|(^|\/)(?:firestore|storage)\.rules$/;
 export const LOCKFILES = new Set([
@@ -39,7 +44,7 @@ export function walk(root) {
       if (st.isDirectory()) { rec(p); continue; }
       const rel = relative(root, p).split(sep).join("/");
       if (LOCKFILES.has(name)) lockfiles.push(rel);
-      if ((CODE_RE.test(name) || DRUPAL_RE.test(name) || POLICY_RE.test(rel)) && st.size < 1_000_000) {
+      if ((CODE_RE.test(name) || DRUPAL_RE.test(name) || POLICY_RE.test(rel) || PHP_RE.test(name) || TWIG_RE.test(name) || SYMFONY_CFG_RE.test(rel)) && st.size < 1_000_000) {
         files.push({ path: rel, text: readFileSync(p, "utf8") });
       }
     }
@@ -134,6 +139,11 @@ export function scanEntryPoints(files) {
     const lineAt = lineIndex(text);
     const fname = basename(path);
 
+    if (PHP_RE.test(path) || TWIG_RE.test(path) || SYMFONY_CFG_RE.test(path)) {
+      for (const e of phpEntryPoints(f, files)) out.push(e);
+      continue;
+    }
+
     // Supabase Edge Functions: public HTTPS endpoints; the gateway checks a JWT unless verify_jwt = false.
     const edge = path.match(/(?:^|\/)supabase\/functions\/([\w-]+)\/index\.[cm]?[jt]sx?$/);
     if (edge && edge[1] !== "_shared") {
@@ -156,7 +166,12 @@ export function scanEntryPoints(files) {
         const route = block.match(/^\s*path:\s*['"]?([^'"\n]+)/m)?.[1] ?? "";
         const reqs = [...block.matchAll(/^\s*(_(?:permission|access|role|custom_access|entity_access|csrf_token|user_is_logged_in|format))\s*:\s*(.+)$/gm)]
           .map((r) => `${r[1]}: ${r[2].trim()}`).join("; ");
-        if (route) add(f, lineAt(m.index), "drupal-route", m[1], route, reqs || "NO REQUIREMENTS");
+        if (!route) continue;
+        add(f, lineAt(m.index), "drupal-route", m[1], route, reqs || "NO REQUIREMENTS");
+        const ctl = block.match(/^\s*_(?:controller|form)\s*:\s*['"]?\\?([\w\\]+?)(?:::(\w+))?['"]?\s*$/m);
+        if (ctl) out[out.length - 1].phpHandler = { cls: ctl[1].split("\\").pop(), method: ctl[2] ?? "" };
+        const methods = block.match(/^\s*methods\s*:\s*\[([^\]]*)\]/m)?.[1];
+        if (methods) out[out.length - 1].methods = methods.replace(/['"\s]/g, "").toUpperCase();
       }
       continue;
     }
@@ -265,6 +280,164 @@ export function scanEntryPoints(files) {
     }
   }
   return out;
+}
+
+// ---------------------------------------------------------------- PHP entry points (roadmap R05)
+
+// Laravel routes/*.php (with group middleware and prefixes), Symfony #[Route]/@Route attributes and
+// config/routes*.yaml (with the access_control rule that covers the path). Drupal routing.yml is above.
+// ponytail: regex over source text; routes registered from a loop, a package or RouteServiceProvider
+// prefixes other than routes/api.php are invisible. Each row is a candidate, never a verdict.
+const LARAVEL_ROUTES_RE = /(^|\/)routes\/(?!console\.php$|channels\.php$)[\w-]+\.php$/;
+const LARAVEL_VERB = "get|post|put|patch|delete|options|any|match|resource|apiResource";
+const LARAVEL_AUTH_MW = /^(?:auth(?::[\w,]+)?|can:.+|verified|signed|password\.confirm|role:.+|permission:.+|admin|abilities:.+|ability:.+)$/;
+const quoted = (s) => [...(s ?? "").matchAll(/['"]([^'"]+)['"]/g)].map((m) => m[1]);
+const joinPath = (...parts) => "/" + parts.map((p) => p.replace(/^\/+|\/+$/g, "")).filter(Boolean).join("/");
+
+function laravelHandler(stmt) {
+  let m = stmt.match(/\[\s*\\?([\w\\]+)::class\s*,\s*['"](\w+)['"]\s*\]/);
+  if (m) return { cls: m[1].split("\\").pop(), method: m[2] };
+  m = stmt.match(/['"]([\w\\]+)@(\w+)['"]/);
+  if (m) return { cls: m[1].split("\\").pop(), method: m[2] };
+  m = stmt.match(/,\s*\\?([\w\\]+)::class\s*[,)]/);
+  if (m) return { cls: m[1].split("\\").pop(), method: "__invoke" };
+  return null;
+}
+
+export function scanLaravelRoutes(f) {
+  const { text, path } = f;
+  const lineAt = lineIndex(text);
+  const base = /(^|\/)routes\/api\.php$/.test(path) ? "/api" : "";
+  const groups = [];
+  for (const m of text.matchAll(/Route::((?:\w+\((?:[^()]|\([^()]*\))*\)\s*->\s*)*)group\s*\(/g)) {
+    const open = text.indexOf("{", m.index + m[0].length);
+    if (open < 0) continue;
+    const chain = m[1];
+    const arr = chain ? "" : text.slice(m.index + m[0].length, open);
+    const mw = chain
+      ? [...chain.matchAll(/middleware\(\s*(\[[^\]]*\]|['"][^'"]*['"])/g)].flatMap((x) => quoted(x[1]))
+      : quoted(arr.match(/['"]middleware['"]\s*=>\s*(\[[^\]]*\]|['"][^'"]*['"])/)?.[1]);
+    const prefix = (chain.match(/prefix\(\s*['"]([^'"]*)['"]/) ?? arr.match(/['"]prefix['"]\s*=>\s*['"]([^'"]*)['"]/))?.[1] ?? "";
+    groups.push({ open, close: matchClose(text, open), mw, prefix });
+  }
+  const out = [];
+  const re = new RegExp(`Route::((?:\\w+\\((?:[^()]|\\([^()]*\\))*\\)\\s*->\\s*)*)(${LARAVEL_VERB})\\s*\\(\\s*(?:\\[[^\\]]*\\]\\s*,\\s*)?(['"])([^'"]*)\\3`, "g");
+  for (const m of text.matchAll(re)) {
+    const end = scan(text, m.index, (c, depth, i) => (c === ";" && depth <= 0 ? i : undefined));
+    const stmt = text.slice(m.index, end);
+    const outer = groups.filter((g) => g.open < m.index && m.index < g.close).sort((a, b) => a.open - b.open);
+    const own = [...`${m[1]}${stmt.slice(m[0].length)}`.matchAll(/(?<!without)middleware\(\s*(\[[^\]]*\]|['"][^'"]*['"])/gi)].flatMap((x) => quoted(x[1]));
+    const without = [...stmt.matchAll(/withoutMiddleware\(\s*(\[[^\]]*\]|['"][^'"]*['"])/g)].flatMap((x) => quoted(x[1]));
+    const middleware = [...new Set([...outer.flatMap((g) => g.mw), ...own])].filter((x) => !without.includes(x));
+    const verb = m[2];
+    const name = /^(?:resource|apiResource)$/.test(verb) ? "RESOURCE" : verb === "match" ? quoted(stmt.match(/match\(\s*(\[[^\]]*\])/)?.[1]).join(",").toUpperCase() : verb.toUpperCase();
+    out.push({
+      kind: "laravel-route", name, route: joinPath(base, ...outer.map((g) => g.prefix), m[4]), file: path, line: lineAt(m.index),
+      guard: middleware.length ? `middleware: ${middleware.join(", ")}` : "",
+      middleware, phpHandler: laravelHandler(stmt),
+    });
+  }
+  return out;
+}
+
+// access_control rules of a Symfony security.yaml: [{ path, roles }], first match wins.
+export function accessControl(text) {
+  const block = text.match(/^[ \t]*access_control\s*:\s*\n((?:[ \t]+.*\n?)*)/m)?.[1] ?? "";
+  return [...block.matchAll(/-\s*\{([^}]*)\}/g)].map((m) => ({
+    path: m[1].match(/path\s*:\s*['"]?([^,'"}]+)/)?.[1]?.trim() ?? "",
+    roles: m[1].match(/roles\s*:\s*(\[[^\]]*\]|['"]?[\w,]+['"]?)/)?.[1]?.replace(/[[\]'"\s]/g, "") ?? "",
+  })).filter((r) => r.path);
+}
+
+function symfonyAccess(files, path, route) {
+  const root = path.replace(/(?:^|\/)(?:src|config)\/.*$/, "");
+  const sec = files.find((x) => /(^|\/)config\/packages\/security\.ya?ml$/.test(x.path) && x.path.replace(/(?:^|\/)config\/.*$/, "") === root);
+  if (!sec) return "";
+  for (const r of accessControl(sec.text)) {
+    try { if (new RegExp(r.path).test(route)) return `access_control ${r.path}: ${r.roles || "(no roles)"}`; } catch { /* not a regex */ }
+  }
+  return "";
+}
+
+export function scanSymfonyRoutes(f, files = [f]) {
+  const { text, path } = f;
+  const lineAt = lineIndex(text);
+  const out = [];
+  if (/\.ya?ml$/.test(path)) {
+    if (/security\.ya?ml$/.test(path)) return out;
+    for (const m of text.matchAll(/^([\w.-]+):\s*\n((?:[ \t]+.*\n?|\s*\n)*)/gm)) {
+      const block = m[2];
+      const route = block.match(/^\s*path\s*:\s*['"]?([^'"\n]+)/m)?.[1]?.trim();
+      if (!route || /^\s*resource\s*:/m.test(block)) continue;
+      const ctl = block.match(/^\s*controller\s*:\s*['"]?\\?([\w\\]+)(?:::(\w+))?/m);
+      const methods = block.match(/^\s*methods\s*:\s*\[?([^\]\n]*)/m)?.[1]?.replace(/['"\s]/g, "").toUpperCase() || "ANY";
+      out.push({ kind: "symfony-route", name: methods, route, file: path, line: lineAt(m.index), guard: symfonyAccess(files, path, route), phpHandler: ctl ? { cls: ctl[1].split("\\").pop(), method: ctl[2] ?? "__invoke" } : null });
+    }
+    return out;
+  }
+  const cls = text.match(/^\s*(?:final\s+|abstract\s+)?class\s+(\w+)/m);
+  if (!cls) return out;
+  const head = text.slice(0, cls.index);
+  const routeArgs = (s) => s.match(/(?:path\s*:\s*)?['"]([^'"]*)['"]/)?.[1] ?? "";
+  const prefixAttr = [...head.matchAll(/#\[Route\(((?:[^()\[\]]|\[[^\]]*\]|\([^()]*\))*)\)\]|@Route\(((?:[^()]|\([^()]*\))*)\)/g)].pop();
+  const prefix = prefixAttr ? routeArgs(prefixAttr[1] ?? prefixAttr[2]) : "";
+  const classGrant = [...head.matchAll(/#\[IsGranted\(((?:[^()\[\]]|\[[^\]]*\]|\([^()]*\))*)\)\]/g)].map((x) => `IsGranted(${x[1].trim()})`);
+  const routes = [...text.slice(cls.index).matchAll(/#\[Route\(((?:[^()\[\]]|\[[^\]]*\]|\([^()]*\))*)\)\]|@Route\(((?:[^()]|\([^()]*\))*)\)/g)];
+  for (const [i, m] of routes.entries()) {
+    const at = cls.index + m.index;
+    const fn = text.slice(at).match(/function\s+(\w+)\s*\(/);
+    if (!fn) continue;
+    const fnAt = at + fn.index;
+    const nextRoute = i + 1 < routes.length ? cls.index + routes[i + 1].index : text.length;
+    const attrs = text.slice(at, fnAt);
+    const body = text.slice(fnAt, nextRoute);
+    const args = m[1] ?? m[2];
+    const route = joinPath(prefix, routeArgs(args));
+    const methods = (args.match(/methods\s*[:=]\s*(?:\[([^\]]*)\]|\{([^}]*)\}|['"](\w+)['"])/) ?? []).slice(1).find(Boolean)?.replace(/['"\s]/g, "").toUpperCase() || "ANY";
+    const guards = [
+      ...classGrant,
+      ...[...attrs.matchAll(/#\[IsGranted\(((?:[^()\[\]]|\[[^\]]*\]|\([^()]*\))*)\)\]|@IsGranted\(([^)]*)\)|@Security\(([^)]*)\)/g)].map((x) => `IsGranted(${(x[1] ?? x[2] ?? x[3]).trim()})`),
+      ...(/denyAccessUnlessGranted\(|->isGranted\(/.test(body) ? ["denyAccessUnlessGranted in body"] : []),
+      symfonyAccess(files, path, route),
+    ].filter(Boolean);
+    out.push({ kind: "symfony-route", name: methods, route, file: path, line: lineAt(at), guard: guards.join("; "), phpHandler: { cls: cls[1], method: fn[1] } });
+  }
+  return out;
+}
+
+function phpEntryPoints(f, files) {
+  if (LARAVEL_ROUTES_RE.test(f.path) && /Route::/.test(f.text)) return scanLaravelRoutes(f);
+  if (SYMFONY_CFG_RE.test(f.path) || (PHP_RE.test(f.path) && /#\[Route\(|@Route\(/.test(f.text))) return scanSymfonyRoutes(f, files);
+  return [];
+}
+
+// Body of `Class::method` among the PHP files: { file, line, body } or null.
+function phpMethodBody(files, h) {
+  if (!h?.cls) return null;
+  for (const f of files) {
+    if (!PHP_RE.test(f.path) || !new RegExp(`\\bclass\\s+${h.cls}\\b`).test(f.text)) continue;
+    const m = h.method ? f.text.match(new RegExp(`function\\s+${h.method}\\s*\\(`)) : null;
+    if (!m) return { file: f.path, line: 1, body: f.text.slice(0, 6000) };
+    const rest = f.text.slice(m.index + 1);
+    const next = rest.search(/\n[ \t]*(?:#\[[^\n]*\]\s*)*(?:(?:public|protected|private|static|final)\s+)+function\b/);
+    return { file: f.path, line: f.text.slice(0, m.index).split("\n").length, body: f.text.slice(m.index, next < 0 ? m.index + 6000 : m.index + 1 + next) };
+  }
+  return null;
+}
+
+// Bodies of the methods a handler calls on injected services or repositories (`$repo->searchByNumber(`),
+// one level deep, when exactly one PHP class defines that method name: the query usually lives there.
+function phpCallees(files, body) {
+  const names = [...new Set([...body.matchAll(/\$(?!this\b)\w+->(\w+)\s*\(/g)].map((m) => m[1]))].slice(0, 8);
+  let extra = "";
+  for (const n of names) {
+    const defs = files.filter((f) => PHP_RE.test(f.path) && new RegExp(`function\\s+${n}\\s*\\(`).test(f.text));
+    if (defs.length !== 1) continue;
+    const cls = defs[0].text.match(/^\s*(?:final\s+|abstract\s+)?class\s+(\w+)/m)?.[1];
+    const m = cls && phpMethodBody(defs, { cls, method: n });
+    if (m) extra += "\n" + m.body;
+  }
+  return extra;
 }
 
 // ---------------------------------------------------------------- Drizzle scope scan
@@ -387,7 +560,7 @@ export const AREAS = {
   ai: /(chat|assistant|\bai\b|llm|agent|completion|prompt|\btools?\b|\bmcp\b)/i,
 };
 const AREA_WEIGHT = { auth: 3, admin: 3, webhooks: 3, payments: 2, files: 2, ai: 2, jobs: 1, api: 0 };
-const KIND_WEIGHT = { "server-action": [2, "callable directly as a POST"], webhook: [2, "public by design"], "ai-tool": [2, "arguments chosen by the model"], job: [1, "trusts its payload"], cron: [1, ""], "route-handler": [1, ""], "api-route": [1, ""], "http-route": [1, ""], "http-path": [1, ""], "http-prefix": [1, ""], trpc: [1, ""], "edge-function": [2, "public HTTPS endpoint"], "cloud-function": [2, "callable by any client of the project"] };
+const KIND_WEIGHT = { "server-action": [2, "callable directly as a POST"], webhook: [2, "public by design"], "ai-tool": [2, "arguments chosen by the model"], job: [1, "trusts its payload"], cron: [1, ""], "route-handler": [1, ""], "api-route": [1, ""], "http-route": [1, ""], "http-path": [1, ""], "http-prefix": [1, ""], trpc: [1, ""], "edge-function": [2, "public HTTPS endpoint"], "cloud-function": [2, "callable by any client of the project"], "laravel-route": [1, ""], "symfony-route": [1, ""], "drupal-route": [1, ""] };
 const SINKS = [
   [/\b(?:fetch|axios(?:\.\w+)?|got|ky)\(\s*(?!["'`](?:https?:\/\/[\w.-]+[\/"'`?:]|\/))[^)\s]/, 3, "outbound request to a non-constant URL (SSRF)"],
   [/\{[^}]*\b(?:userId|user_id|ownerId|owner_id|orgId|org_id|tenantId|tenant_id)\b[^}]*\}\s*=\s*(?:await\s+)?(?:req|request|c\.req)\.json\(\)/, 3, "tenant/user id taken from the request body"],
@@ -400,7 +573,20 @@ const SINKS = [
   [/\b(?:inputSchema|parameters)\s*:\s*z\.object\(\{[^}]*\b(?:orgId|organizationId|userId|tenantId|workspaceId)\s*:/, 3, "tool schema lets the model choose the tenant/user"],
   [/\.(?:set|values|create|insert)\(\s*(?:input|body|data|patch|req\.body)\s*[,)]/, 2, "request object written to the database as-is"],
   [/\bsendEmail\(|\bemails\.send\(|\bsendMail\(|SendEmailCommand/, 2, "sends email (who are the recipients?)"],
+  // PHP (roadmap R05)
+  [/\b(?:whereRaw|orWhereRaw|orderByRaw|havingRaw|selectRaw|groupByRaw|DB::raw|DB::select|DB::statement|DB::unprepared)\(\s*(?:"[^"]*\$|'[^']*'\s*\.|\$)/, 3, "raw SQL with request data interpolated (Eloquent *Raw / DB::)"],
+  [/\b(?:createQuery|query|db_query|executeQuery|executeStatement|prepare)\(\s*(?:"[^"]*(?:\$\w|"\s*\.)|'[^']*'\s*\.|\$\w+\s*\.)/, 3, "SQL/DQL string built by concatenation"],
+  [/->(?:update|create|fill|forceFill|insert|update)\(\s*\$request->(?:all|input|post)\(\)|::create\(\s*\$request->all\(\)/, 3, "request input written to the model as-is (mass assignment)"],
+  [/\b(?:storeAs|storePubliclyAs|putFileAs|move)\([^;]*getClientOriginalName\(\)/, 2, "upload stored under the client's file name"],
+  [/Markup::create\(\s*(?!['"][^'"$]*['"]\s*\))/, 3, "Markup::create on dynamic content skips Drupal's XSS filtering"],
+  [/['"]#markup['"]\s*=>\s*(?!\$this->t\(|t\(|new\s+TranslatableMarkup)[^,\]\n]*\$/, 2, "#markup built from a variable"],
+  [/\bunserialize\(/, 3, "unserialize() of data"],
+  [/\b(?:shell_exec|passthru|proc_open|popen)\s*\(/, 3, "shell/process execution"],
 ];
+// A record loaded by id, and nothing in the handler that ties it to the caller.
+const PHP_ID_LOAD = /::(?:find|findOrFail)\(\s*\$|->(?:find|findOrFail)\(\s*\$|\bWHERE\s+id\s*=\s*:id\b/i;
+const PHP_OWNER = /authorize\(|Gate::|->user\(\)|currentUser\(\)|abort_unless|abort_if|denyAccessUnlessGranted|isGranted\(|->can\(|\b(?:uid|user_id|owner_id|customer_id)\s*(?:=|=>)|condition\(\s*['"](?:uid|user_id|owner_id)['"]|getUser\(\)|->(?:where|andWhere)\(\s*['"][\w.]*(?:user|owner|customer|tenant)/i;
+const STATE_CHANGE_PATH = /\/(?:delete|remove|close|cancel|approve|reject|publish|unpublish|toggle|reopen|enable|disable|block|unblock|confirm|archive)\b/;
 const DISPATCH = /\b(?:handle|toNextJsHandler|fetchRequestHandler|createRouteHandler|createNextRouteHandler)\(/;
 const SIGNATURE = /constructEvent|\.verify\(|svix|signature|timingSafeEqual|createHmac|verifyWebhook/i;
 const SECRET_ENV = /\b((?:NEXT_PUBLIC|VITE|EXPO_PUBLIC)_\w*(?:SECRET|KEY|TOKEN|PASSWORD|PRIVATE)\w*)/g;
@@ -408,7 +594,7 @@ const PUBLIC_BY_DESIGN = /PUBLISHABLE|POSTHOG|SENTRY|ANALYTICS|_GA_|GTM|MAPBOX|A
 const PRIVILEGED_CLIENT = /SERVICE_ROLE_KEY|service_role|from\s+["'`]firebase-admin|require\(\s*["'`]firebase-admin/;
 
 export function areasOf(e) {
-  const hay = `${e.route} ${e.name} ${e.file}`;
+  const hay = `${e.route} ${e.name} ${e.file}${e.phpHandler ? ` ${e.phpHandler.cls} ${e.phpHandler.method}` : ""}`;
   const areas = Object.keys(AREAS).filter((a) => AREAS[a].test(hay));
   if (e.kind === "ai-tool") areas.push("ai");
   if (e.kind === "job" || e.kind === "cron") areas.push("jobs");
@@ -466,6 +652,9 @@ export function rankHotspots(files, entries, scope = { sites: [] }) {
       body = job.body;
       if (!e.guard) e.guard = guardsIn(job.body.slice(0, 1500));
     }
+    // PHP routes: rank the controller method the route points at.
+    const php = e.phpHandler ? phpMethodBody(files, e.phpHandler) : null;
+    if (php) body = php.body + phpCallees(files, php.body);
     let score = 0;
     const reasons = [];
     const add = (n, why) => { if (n) { score += n; if (why) reasons.push(why); } };
@@ -486,8 +675,21 @@ export function rankHotspots(files, entries, scope = { sites: [] }) {
       if (PRIVILEGED_CLIENT.test(text.get(e.file) ?? "")) add(2, "service-role / Admin SDK client: RLS and security rules do not apply");
     } else if (e.kind === "page" && !e.guard && /\bdb\.|\.query\.\w+\.find|prisma\.|\bsupabase\s*\.from\(/.test(body)) {
       add(3, "page without a guard reads the database (what reaches the client?)");
-    } else if (/\/(health|healthz|ready|readyz|live|livez|ping|status|version|robots\.txt|sitemap)\b/.test(e.route) && !/\bdb\.|\.query\./.test(body)) {
+    } else if (/\/(health|healthz|ready|readyz|live|livez|ping|status|version|robots\.txt|sitemap)\b/.test(e.route) && !/\bdb\.|\.query\.|->query\(|::find/.test(body)) {
       reasons.push("health/status route");
+    } else if (e.kind === "laravel-route" || e.kind === "symfony-route" || e.kind === "drupal-route") {
+      const signed = SIGNATURE.test(body) || /hash_hmac|hash_equals|hasValidSignature/.test(body);
+      if (e.kind === "laravel-route" && !(e.middleware ?? []).some((m) => LARAVEL_AUTH_MW.test(m))) {
+        if (signed) reasons.push("no auth middleware; signature check seen in the handler");
+        else add(3, "no auth middleware on the route or its groups");
+      }
+      if (e.kind === "symfony-route" && !e.guard) add(signed ? 0 : 3, "no #[IsGranted], access check or access_control rule");
+      if (e.kind === "drupal-route") {
+        if (/_access: '?TRUE'?/i.test(e.guard)) add(3, "open to everyone (_access: 'TRUE')");
+        else if (e.guard === "NO REQUIREMENTS") add(3, "route has no access requirements");
+        if (!/_csrf_token/.test(e.guard) && !/POST|PUT|PATCH|DELETE/.test(e.methods ?? "") && STATE_CHANGE_PATH.test(e.route)) add(2, "changes state on GET without _csrf_token");
+      }
+      if (PHP_ID_LOAD.test(body) && !PHP_OWNER.test(body)) add(3, "record loaded by id without an ownership or policy check");
     } else if (["server-action", "route-handler", "api-route"].includes(e.kind) && !e.guard) {
       add(3, "no auth check in the handler");
     } else if (["http-route", "http-path", "http-prefix"].includes(e.kind) && !e.guard) {
@@ -503,6 +705,7 @@ export function rankHotspots(files, entries, scope = { sites: [] }) {
     for (const [re, n, why] of SINKS) if (re.test(body)) add(n, why);
 
     if (job) reasons.push(`handler: ${job.file}:${job.line}`);
+    if (php) reasons.push(`handler: ${php.file}:${php.line}`);
     out.push({ score, kind: e.kind, name: e.name, route: e.route, file: e.file, line: e.line, areas: uniq, reasons });
   }
 
@@ -541,6 +744,7 @@ export function rankHotspots(files, entries, scope = { sites: [] }) {
     if (leaked.length) add(5, `${leaked.join(", ")} looks like a secret and is shipped to the browser`);
     if (score) out.push({ score, kind: authCfg || reasons.some((r) => r.startsWith("CORS")) ? "config" : "code", name: basename(f.path), route: "", file: f.path, line: 1, areas: authCfg ? ["auth", "config"] : ["config"], reasons });
   }
+  for (const r of scanPhpFiles(files)) out.push(r);
   for (const p of scanPolicies(files)) {
     out.push({ score: p.score, kind: "policy", name: p.name, route: "", file: p.file, line: p.line, areas: ["auth", "config"], reasons: p.reasons });
   }
@@ -549,6 +753,51 @@ export function rankHotspots(files, entries, scope = { sites: [] }) {
   }
 
   return out.sort((a, b) => b.score - a.score || a.file.localeCompare(b.file) || a.line - b.line);
+}
+
+// ---------------------------------------------------------------- PHP file signals (roadmap R05)
+
+// Lines in templates, models and middleware that decide escaping, mass assignment and CSRF for every
+// route behind them: unescaped Blade `{!! !!}` and Twig `|raw`, `$guarded = []`, CSRF exceptions,
+// debug forced on in config. ponytail: regex per line; each row is a candidate to verify.
+export function scanPhpFiles(files) {
+  const rows = [];
+  const row = (f, line, kind, name, score, why) => rows.push({ score, kind, name, route: "", file: f.path, line, areas: ["config"], reasons: [why] });
+  for (const f of files) {
+    if (NON_RUNTIME.test(f.path) || !(PHP_RE.test(f.path) || TWIG_RE.test(f.path))) continue;
+    const lines = f.text.split("\n");
+    const blade = /\.blade\.php$/.test(f.path);
+    lines.forEach((l, i) => {
+      if (blade) {
+        for (const m of l.matchAll(/\{!!\s*(.*?)\s*!!\}/g)) {
+          if (!/^(?:nl2br\(\s*)?e\(|^(?:csrf_field|method_field)\(|^\$__env/.test(m[1])) row(f, i + 1, "template", basename(f.path), 3, `unescaped Blade output {!! ${m[1]} !!}`);
+        }
+      }
+      if (TWIG_RE.test(f.path) && /\|\s*raw\b/.test(l)) row(f, i + 1, "template", basename(f.path), 3, "Twig |raw output");
+      if (/\$guarded\s*=\s*\[\s*\]/.test(l)) row(f, i + 1, "model", basename(f.path), 3, "$guarded = []: every column is mass assignable");
+      if (/['"]debug['"]\s*=>\s*(?:true\b|\(bool\)\s*env\(\s*['"]APP_DEBUG['"]\s*,\s*true\s*\))/.test(l)) row(f, i + 1, "config", basename(f.path), 3, "debug mode on by default");
+    });
+    // CSRF exceptions: Laravel VerifyCsrfToken::$except or validateCsrfTokens(except: [...]).
+    const ex = f.text.match(/\$except\s*=\s*\[([^\]]*)\]|validateCsrfTokens\(\s*except\s*:\s*\[([^\]]*)\]/);
+    if (ex && /VerifyCsrfToken|validateCsrfTokens/.test(f.text)) {
+      const start = ex.index + ex[0].indexOf("[");
+      for (const m of (ex[1] ?? ex[2]).matchAll(/['"]([^'"]+)['"]/g)) {
+        if (/webhook|stripe|paddle|callback|hook\b/i.test(m[1])) continue;
+        const line = f.text.slice(0, start + 1 + m.index).split("\n").length;
+        row(f, line, "config", basename(f.path), 3, `CSRF verification skipped for "${m[1]}"`);
+      }
+    }
+  }
+  return rows;
+}
+
+// Psalm taint analysis (`--taint-analysis`) is a candidate source the pre-pass never runs itself: Psalm loads
+// the project's composer autoloader and the plugins in psalm.xml, which is the audited code. For a PHP
+// project the status is NOT RUN with how to run it; null when there is no PHP. Dependency advisories for
+// composer.lock come from osv-scanner (Packagist), with `composer audit` as the fallback in prepass.mjs.
+export function phpTaintStatus(files) {
+  if (!files.some((f) => PHP_RE.test(f.path) && !/\.blade\.php$/.test(f.path))) return null;
+  return "NOT RUN: Psalm loads the project's autoloader and plugins, so the pre-pass does not run it. To add it, in a sandbox: `composer require --dev vimeo/psalm`, `vendor/bin/psalm --init`, `vendor/bin/psalm --taint-analysis --output-format=json`; TaintedSql, TaintedHtml, TaintedShell, TaintedInclude and TaintedSSRF results are candidates for the injection auditor";
 }
 
 // ---------------------------------------------------------------- policy scan (Supabase, Firebase)

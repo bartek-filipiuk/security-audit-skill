@@ -4,8 +4,8 @@
 // the checklist into every prompt, which keeps the coordinator's context small on big projects.
 //   node briefs.mjs [--dir .security-audit] [--brief name=2.1,2.3 ...]
 // Without --brief it writes the default five: auth, injection, infra, concurrency, upload.
-// Stack profiles found in the repo (Supabase, Firebase) add their checklist section to the brief that
-// owns 2.1 and their pattern sections to every brief.
+// Stack profiles found in the repo (Supabase, Firebase, Laravel, Symfony, Drupal) add their checklist
+// section to the brief that owns 2.1 and their pattern sections to every brief.
 
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
@@ -32,18 +32,27 @@ const LANG_ROWS = {
 };
 const GENERIC = /^(All|All languages|General|Detection|Config|Method inconsistency|Unprotected mutations)$/;
 const EXT = { js: /\.(?:[cm]?[jt]sx?)$/, php: /\.(php|module|inc|theme|install)$/, python: /\.py$/, go: /\.go$/, ruby: /\.rb$/, java: /\.(java|kt)$/ };
-// Stack profiles: detected from their files, or from an SDK in a package.json.
+// Stack profiles: detected from their files, or from an SDK in a package.json or composer.json.
 const PROFILE_FILES = {
   supabase: /(^|\/)supabase\/(?:migrations\/[^/]+\.sql|functions\/.+|config\.toml)$/,
   firebase: /(^|\/)(?:firestore\.rules|storage\.rules|database\.rules\.json|firebase\.json)$/,
+  laravel: /(^|\/)(?:artisan|routes\/(?:web|api)\.php|app\/Http\/Kernel\.php|[\w/-]+\.blade\.php)$/,
+  symfony: /(^|\/)(?:symfony\.lock|config\/bundles\.php|config\/packages\/[\w.-]+\.ya?ml)$/,
+  drupal: /(^|\/)[\w-]+\.(?:info|routing)\.yml$/,
 };
-const PROFILE_SDK = { supabase: /"@supabase\/(?:supabase-js|ssr)"/, firebase: /"firebase(?:-admin|-functions)?"\s*:/ };
+const PROFILE_SDK = {
+  supabase: /"@supabase\/(?:supabase-js|ssr)"/,
+  firebase: /"firebase(?:-admin|-functions)?"\s*:/,
+  laravel: /"laravel\/framework"\s*:/,
+  symfony: /"symfony\/(?:framework-bundle|http-kernel)"\s*:/,
+  drupal: /"drupal\/core(?:-recommended)?"\s*:/,
+};
 
 export function detectLanguages(root) {
   const r = spawnSync("git", ["-C", root, "ls-files"], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
   const files = r.status === 0 ? r.stdout.split("\n") : [];
   const own = files.filter((f) => f && !/node_modules|vendor\//.test(f));
-  const manifests = own.filter((f) => /(^|\/)package\.json$/.test(f)).map((f) => {
+  const manifests = own.filter((f) => /(^|\/)(?:package|composer)\.json$/.test(f)).map((f) => {
     try { return existsSync(join(root, f)) ? readFileSync(join(root, f), "utf8") : ""; } catch { return ""; }
   });
   const langs = Object.keys(EXT).filter((l) => own.some((f) => EXT[l].test(f)));

@@ -23,6 +23,9 @@ Rules that apply to every item:
   the flag forces a profile. Done when: Ledgerly, a PHP app and a Python app are detected correctly.
 - **R05 PHP profile: Laravel, Symfony, Drupal.** Route-based entry points, unscoped Eloquent/Doctrine
   queries, `composer audit`, Psalm taint. Done when: its benchmark app scores.
+  Status (2026-10-07): checklist sections, stack patterns, Laravel/Symfony entry points (Drupal's existed)
+  ranked by their controller method, PHP template/model/CSRF signals, Psalm reported NOT RUN, and the
+  `benchmark/php-tickets` app (13 seeded bugs, 14 decoys) are in; it moves to Done with its first scored run.
 - **R06 Python profile: Django, FastAPI, Flask.** Unscoped ORM queries, `bandit`, `pip-audit`.
   Done when: its benchmark app scores.
 - **R07 Deterministic tools in the pre-pass.** semgrep rulesets per stack, `zizmor` for GitHub Actions,

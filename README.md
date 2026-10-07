@@ -147,10 +147,10 @@ Requirements: Node 20+. For dependency and secret scanning, either `osv-scanner`
 - **Measurement-driven**: Deep Dive iterates (max 3) and stops on set-convergence (no new findings / status changes / chains); score is a reporting metric
 - **Separate verification**: a different agent re-reads the code for every finding and rejects what it cannot confirm
 - **Cross-domain chain detection**: verifier sees findings from ALL auditors, detects multi-step chains
-- **Stack-aware**: most precise on Next.js App Router, tRPC, Hono, Drizzle, Better-Auth, AI SDK and plain Node, plus a Supabase and Firebase profile (RLS and storage policies, SECURITY DEFINER functions, Edge Functions, Firestore/Storage rules, Cloud Functions, service-role keys in the client); other languages run on general rules
+- **Stack-aware**: most precise on Next.js App Router, tRPC, Hono, Drizzle, Better-Auth, AI SDK and plain Node, plus a Supabase and Firebase profile (RLS and storage policies, SECURITY DEFINER functions, Edge Functions, Firestore/Storage rules, Cloud Functions, service-role keys in the client), and a PHP profile for Laravel, Symfony and Drupal (route entry points with their middleware, IsGranted and access requirements, records loaded without an owner check, mass assignment, raw SQL and DQL, Blade/Twig/Markup output, CSRF exceptions); other languages run on general rules
 - **Persistent**: findings survive sessions — resume, re-run, extend anytime
 - **Hotspots first**: the pre-pass ranks entry points and auth/CORS/env config by risk signals; auditors start there
-- **Measured**: seeded-bug benchmark apps (`benchmark/`: Ledgerly, and `supabase-notes` for the Supabase and Firebase profile) score recall, verifier drops and decoy false positives per change
+- **Measured**: seeded-bug benchmark apps (`benchmark/`: Ledgerly, `supabase-notes` for the Supabase and Firebase profile, `php-tickets` for the PHP profile) score recall, verifier drops and decoy false positives per change
 
 ## Audit categories
 
