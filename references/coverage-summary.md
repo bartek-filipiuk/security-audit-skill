@@ -1,10 +1,12 @@
 ```
 Security Audit Skill — Coverage Summary
 
-12 security categories, 90 checklist items, 25 pattern sections
+12 security categories + 2 stack profiles, 110 checklist items, 27 pattern sections
 OWASP Top 10 2021: 10/10 | OWASP API Security Top 10 2023: 10/10
-Stack patterns: JS/TS (Next.js App Router, tRPC, Hono, Drizzle, Better-Auth, AI SDK tools), Python, PHP, Go, Ruby, Java
+Stack patterns: JS/TS (Next.js App Router, tRPC, Hono, Drizzle, Better-Auth, AI SDK tools), Python, PHP, Go, Ruby, Java;
+  Supabase (RLS, storage, SECURITY DEFINER, Edge Functions, service-role keys), Firebase (rules, Cloud Functions, Admin SDK)
 Pre-pass (deterministic, seconds): hotspot ranking, entry points by framework convention, Drizzle tenant-scope scan,
+  Supabase/Firebase policy scan,
   dependency advisories (osv-scanner), secrets across git history (gitleaks, redacted)
 
 Categories:
@@ -28,7 +30,7 @@ Benchmark (OWASP Juice Shop v19.2.1, public, likely in model training data):
 
 Modes: Standard (<20 endpoints) | Triage (20-50) | Parallel (>50) | partial: --scope auth|payments|...|<path>|topN
 Report: report.md + report.html (to fix / verified safe / not assessed)
-Private benchmark: benchmark/ (Ledgerly, own stack, 16 seeded bugs + 8 decoys), see benchmark/README.md
+Private benchmark: benchmark/ (Ledgerly, own stack, 16 seeded bugs + 8 decoys; supabase-notes, 10 + 12), see benchmark/README.md
 Models: sonnet for the mechanical phases (1, 2, 4); Phase 3 verifier inherits the session model
 Proof labels: HIGH/CRITICAL are marked test (a regression test fails today) or static (code reading)
 ```

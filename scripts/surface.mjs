@@ -1,8 +1,11 @@
 // Static entry-point scan for the security-audit pre-pass. No dependencies.
 // 1. Entry points by framework convention (Next.js App/Pages Router, server actions, proxy/middleware,
-//    tRPC, Hono/Express, pg-boss/BullMQ/cron, AI SDK / MCP tools, Drupal routing.yml).
+//    tRPC, Hono/Express, pg-boss/BullMQ/cron, AI SDK / MCP tools, Drupal routing.yml, Supabase Edge
+//    Functions, Firebase Cloud Functions).
 // 2. Drizzle scope scan: query sites on tables that carry an owner/tenant column but whose statement
 //    never references that column.
+// 3. Policy scan (roadmap R02): Supabase migrations (RLS, policies, SECURITY DEFINER functions, storage
+//    buckets) and Firebase security rules; its rows join the hotspot ranking.
 // ponytail: regex heuristics over source text, not an AST. Every row is a candidate for an agent to
 // verify, never a verdict. Known ceilings: aliased table imports, scope applied through a helper or a
 // pre-built `where` variable, inserts (owner taken from the request body) are not checked. Upgrade
@@ -17,6 +20,8 @@ const SKIP_DIRS = new Set([
 ]);
 const CODE_RE = /\.(?:[cm]?[jt]sx?)$/;
 const DRUPAL_RE = /\.routing\.yml$/;
+// Read for the policy scan only, never scanned as code.
+const POLICY_RE = /(^|\/)supabase\/(?:migrations\/[^/]+\.sql|config\.toml)$|(^|\/)(?:firestore|storage)\.rules$/;
 export const LOCKFILES = new Set([
   "pnpm-lock.yaml", "package-lock.json", "yarn.lock", "bun.lock", "composer.lock",
   "poetry.lock", "uv.lock", "requirements.txt", "go.sum", "Cargo.lock", "Gemfile.lock",
@@ -34,7 +39,7 @@ export function walk(root) {
       if (st.isDirectory()) { rec(p); continue; }
       const rel = relative(root, p).split(sep).join("/");
       if (LOCKFILES.has(name)) lockfiles.push(rel);
-      if ((CODE_RE.test(name) || DRUPAL_RE.test(name)) && st.size < 1_000_000) {
+      if ((CODE_RE.test(name) || DRUPAL_RE.test(name) || POLICY_RE.test(rel)) && st.size < 1_000_000) {
         files.push({ path: rel, text: readFileSync(p, "utf8") });
       }
     }
@@ -110,15 +115,40 @@ function appRoute(path) {
   return "/" + segs.join("/");
 }
 
+// `verify_jwt` for one function from supabase/config.toml: false, true, or null when not set (default on).
+function edgeVerifyJwt(files, fnPath, name) {
+  const cfgPath = fnPath.replace(/supabase\/functions\/.*$/, "supabase/config.toml");
+  const cfg = files.find((x) => x.path === cfgPath)?.text ?? "";
+  const block = cfg.split(/^\s*\[/m).find((b) => b.startsWith(`functions.${name}]`)) ?? "";
+  const v = block.match(/^\s*verify_jwt\s*=\s*(true|false)/m)?.[1];
+  return v ? v === "true" : null;
+}
+
 export function scanEntryPoints(files) {
   const out = [];
   const add = (f, line, kind, name, route, guard) => out.push({ kind, name, route, file: f.path, line, guard: guard || "" });
 
   for (const f of files) {
     const { text, path } = f;
-    if (NON_RUNTIME.test(path)) continue;
+    if (NON_RUNTIME.test(path) || POLICY_RE.test(path)) continue;
     const lineAt = lineIndex(text);
     const fname = basename(path);
+
+    // Supabase Edge Functions: public HTTPS endpoints; the gateway checks a JWT unless verify_jwt = false.
+    const edge = path.match(/(?:^|\/)supabase\/functions\/([\w-]+)\/index\.[cm]?[jt]sx?$/);
+    if (edge && edge[1] !== "_shared") {
+      const verifyJwt = edgeVerifyJwt(files, path, edge[1]);
+      const at = text.search(/\bDeno\.serve\(|\bserve\(|export\s+default\b/);
+      add(f, at < 0 ? 1 : lineAt(at), "edge-function", edge[1], `/functions/v1/${edge[1]}`, [verifyJwt === false ? "" : "gateway verify_jwt", guardsIn(text)].filter(Boolean).join(", "));
+      out[out.length - 1].verifyJwt = verifyJwt !== false;
+      continue;
+    }
+    // Firebase Cloud Functions (v1 and v2): run with the Admin SDK, so security rules do not apply.
+    for (const m of text.matchAll(/export\s+const\s+(\w+)\s*=\s*(?:functions(?:\s*\.\s*\w+\([^)]*\))*\s*\.\s*https\s*\.\s*|https\s*\.\s*)?(onCall|onRequest)\s*\(/g)) {
+      const body = bodyAt(text, m.index);
+      const auth = /\b(?:request|context)\.auth\b/.test(body) ? "request.auth" : "";
+      add(f, lineAt(m.index), "cloud-function", m[1], m[2] === "onCall" ? "callable" : "https", [auth, guardsIn(body)].filter(Boolean).join(", "));
+    }
 
     if (DRUPAL_RE.test(path)) {
       for (const m of text.matchAll(/^([\w.]+):\s*\n((?:[ \t]+.*\n?|\s*\n)*)/gm)) {
@@ -357,9 +387,10 @@ export const AREAS = {
   ai: /(chat|assistant|\bai\b|llm|agent|completion|prompt|\btools?\b|\bmcp\b)/i,
 };
 const AREA_WEIGHT = { auth: 3, admin: 3, webhooks: 3, payments: 2, files: 2, ai: 2, jobs: 1, api: 0 };
-const KIND_WEIGHT = { "server-action": [2, "callable directly as a POST"], webhook: [2, "public by design"], "ai-tool": [2, "arguments chosen by the model"], job: [1, "trusts its payload"], cron: [1, ""], "route-handler": [1, ""], "api-route": [1, ""], "http-route": [1, ""], "http-path": [1, ""], "http-prefix": [1, ""], trpc: [1, ""] };
+const KIND_WEIGHT = { "server-action": [2, "callable directly as a POST"], webhook: [2, "public by design"], "ai-tool": [2, "arguments chosen by the model"], job: [1, "trusts its payload"], cron: [1, ""], "route-handler": [1, ""], "api-route": [1, ""], "http-route": [1, ""], "http-path": [1, ""], "http-prefix": [1, ""], trpc: [1, ""], "edge-function": [2, "public HTTPS endpoint"], "cloud-function": [2, "callable by any client of the project"] };
 const SINKS = [
   [/\b(?:fetch|axios(?:\.\w+)?|got|ky)\(\s*(?!["'`](?:https?:\/\/[\w.-]+[\/"'`?:]|\/))[^)\s]/, 3, "outbound request to a non-constant URL (SSRF)"],
+  [/\{[^}]*\b(?:userId|user_id|ownerId|owner_id|orgId|org_id|tenantId|tenant_id)\b[^}]*\}\s*=\s*(?:await\s+)?(?:req|request|c\.req)\.json\(\)/, 3, "tenant/user id taken from the request body"],
   [/sql\.raw\(|\$(?:query|execute)RawUnsafe|\.unsafe\(|\.(?:execute|query)\(\s*`[^`]*\$\{/, 3, "raw SQL built from strings"],
   [/\b(?:execSync|execFile|spawnSync|spawn)\(|child_process/, 3, "shell/process execution"],
   [/dangerouslySetInnerHTML|\.innerHTML\s*=|v-html/, 2, "raw HTML rendering"],
@@ -373,7 +404,8 @@ const SINKS = [
 const DISPATCH = /\b(?:handle|toNextJsHandler|fetchRequestHandler|createRouteHandler|createNextRouteHandler)\(/;
 const SIGNATURE = /constructEvent|\.verify\(|svix|signature|timingSafeEqual|createHmac|verifyWebhook/i;
 const SECRET_ENV = /\b((?:NEXT_PUBLIC|VITE|EXPO_PUBLIC)_\w*(?:SECRET|KEY|TOKEN|PASSWORD|PRIVATE)\w*)/g;
-const PUBLIC_BY_DESIGN = /PUBLISHABLE|POSTHOG|SENTRY|ANALYTICS|_GA_|GTM|MAPBOX|ANON_KEY|SITE_KEY|RECAPTCHA|ALGOLIA_SEARCH|VAPID_PUBLIC|PUBLIC_KEY/;
+const PUBLIC_BY_DESIGN = /PUBLISHABLE|POSTHOG|SENTRY|ANALYTICS|_GA_|GTM|MAPBOX|ANON_KEY|SITE_KEY|RECAPTCHA|ALGOLIA_SEARCH|VAPID_PUBLIC|PUBLIC_KEY|FIREBASE_API_KEY/;
+const PRIVILEGED_CLIENT = /SERVICE_ROLE_KEY|service_role|from\s+["'`]firebase-admin|require\(\s*["'`]firebase-admin/;
 
 export function areasOf(e) {
   const hay = `${e.route} ${e.name} ${e.file}`;
@@ -448,7 +480,11 @@ export function rankHotspots(files, entries, scope = { sites: [] }) {
       reasons.push("dispatcher: the routes it mounts are ranked separately");
     } else if (e.kind === "webhook") {
       if (!SIGNATURE.test(body)) add(3, "no signature verification seen");
-    } else if (e.kind === "page" && !e.guard && /\bdb\.|\.query\.\w+\.find|prisma\./.test(body)) {
+    } else if (e.kind === "edge-function" || e.kind === "cloud-function") {
+      if (e.verifyJwt === false) add(1, "verify_jwt = false: the gateway lets anonymous callers in");
+      if (!e.guard && !SIGNATURE.test(body)) add(3, "no auth check in the function");
+      if (PRIVILEGED_CLIENT.test(text.get(e.file) ?? "")) add(2, "service-role / Admin SDK client: RLS and security rules do not apply");
+    } else if (e.kind === "page" && !e.guard && /\bdb\.|\.query\.\w+\.find|prisma\.|\bsupabase\s*\.from\(/.test(body)) {
       add(3, "page without a guard reads the database (what reaches the client?)");
     } else if (/\/(health|healthz|ready|readyz|live|livez|ping|status|version|robots\.txt|sitemap)\b/.test(e.route) && !/\bdb\.|\.query\./.test(body)) {
       reasons.push("health/status route");
@@ -505,9 +541,119 @@ export function rankHotspots(files, entries, scope = { sites: [] }) {
     if (leaked.length) add(5, `${leaked.join(", ")} looks like a secret and is shipped to the browser`);
     if (score) out.push({ score, kind: authCfg || reasons.some((r) => r.startsWith("CORS")) ? "config" : "code", name: basename(f.path), route: "", file: f.path, line: 1, areas: authCfg ? ["auth", "config"] : ["config"], reasons });
   }
+  for (const p of scanPolicies(files)) {
+    out.push({ score: p.score, kind: "policy", name: p.name, route: "", file: p.file, line: p.line, areas: ["auth", "config"], reasons: p.reasons });
+  }
   for (const m of entries.filter((e) => e.kind === "middleware")) {
     out.push({ score: 3, kind: "middleware", name: m.name, route: "*", file: m.file, line: m.line, areas: ["auth", "config"], reasons: [`gate for listed paths only (${m.guard.slice(0, 120)})`] });
   }
 
   return out.sort((a, b) => b.score - a.score || a.file.localeCompare(b.file) || a.line - b.line);
+}
+
+// ---------------------------------------------------------------- policy scan (Supabase, Firebase)
+
+// Candidates in the files that decide data access when the client talks to the database directly:
+// Supabase migrations (tables without RLS, permissive or login-only policies, bucket-wide storage
+// policies, public buckets, SECURITY DEFINER functions) and Firebase rules (`if true`, signed-in only).
+// ponytail: regex over SQL and rules text, not a parser; later migrations that drop or replace a policy
+// are not replayed. Every row is a candidate for an auditor to verify in the code, never a finding.
+const SIGNED_IN_ONLY = /auth\.role\(\)\s*=\s*'authenticated'|auth\.uid\(\)\s+is\s+not\s+null|auth\.jwt\(\)\s+is\s+not\s+null/i;
+const OWNER_CHECK = /auth\.uid\(\)\s*\)?\s*(?:=|in\b)|=\s*\(?\s*(?:select\s+)?auth\.uid\(\)|auth\.jwt\(\)\s*->>?\s*'(?:sub|email)'|storage\.foldername|\bowner(?:_id)?\s*=/i;
+
+// SQL statements with their start offsets; `;` inside $$ bodies, strings and comments does not split.
+function sqlStatements(text) {
+  const out = [];
+  let start = 0;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (c === "-" && text[i + 1] === "-") { const nl = text.indexOf("\n", i); i = nl < 0 ? text.length : nl; continue; }
+    if (c === "/" && text[i + 1] === "*") { const end = text.indexOf("*/", i + 2); i = end < 0 ? text.length : end + 1; continue; }
+    if (c === "'") { for (i++; i < text.length && !(text[i] === "'" && text[i + 1] !== "'"); i++) if (text[i] === "'") i++; continue; }
+    if (c === "$") {
+      const tag = text.slice(i).match(/^\$\w*\$/)?.[0];
+      if (tag) { const end = text.indexOf(tag, i + tag.length); i = end < 0 ? text.length : end + tag.length - 1; continue; }
+    }
+    if (c === ";") { out.push({ text: text.slice(start, i), at: start }); start = i + 1; }
+  }
+  if (text.slice(start).trim()) out.push({ text: text.slice(start), at: start });
+  return out.map((st) => { const lead = st.text.match(/^(?:\s+|--[^\n]*|\/\*[\s\S]*?\*\/)*/)[0].length; return { text: st.text.slice(lead), at: st.at + lead }; });
+}
+
+// The text inside the parentheses that follow `keyword` in `stmt`, or null.
+function clause(stmt, keyword) {
+  const m = stmt.match(new RegExp(`\\b${keyword}\\s*\\(`, "i"));
+  if (!m) return null;
+  const open = m.index + m[0].length - 1;
+  let depth = 0;
+  for (let i = open; i < stmt.length; i++) {
+    if (stmt[i] === "(") depth++;
+    else if (stmt[i] === ")" && --depth === 0) return stmt.slice(open + 1, i).trim();
+  }
+  return null;
+}
+
+const ident = (s) => s.replace(/"/g, "").replace(/^public\./i, "").toLowerCase();
+
+export function scanPolicies(files) {
+  const rows = [];
+  const sql = files.filter((f) => /(^|\/)supabase\/migrations\/[^/]+\.sql$/.test(f.path)).sort((a, b) => a.path.localeCompare(b.path));
+  const tables = [];
+  const rls = new Set();
+  const revoked = new Set();
+  const fns = [];
+  for (const f of sql) {
+    const lineAt = lineIndex(f.text);
+    for (const st of sqlStatements(f.text)) {
+      const t = st.text;
+      const line = lineAt(st.at);
+      let m;
+      if ((m = t.match(/^create\s+(?:unlogged\s+)?table\s+(?:if\s+not\s+exists\s+)?((?:"?public"?\.)?"?\w+"?)\s*\(/i))) {
+        tables.push({ name: ident(m[1]), file: f.path, line });
+      } else if ((m = t.match(/^alter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?((?:"?\w+"?\.)?"?\w+"?)\s+(?:force|enable)\s+row\s+level\s+security/i))) {
+        rls.add(ident(m[1]));
+      } else if ((m = t.match(/^revoke\s+(?:execute|all)[\s\S]*?\bon\s+function\s+((?:"?\w+"?\.)?"?\w+"?)[\s\S]*\bfrom\b([\s\S]*)$/i)) && /\b(public|anon)\b/i.test(m[2])) {
+        revoked.add(ident(m[1]));
+      } else if ((m = t.match(/^create\s+policy\s+("[^"]+"|\w+)\s+on\s+((?:"?\w+"?\.)?"?\w+"?)/i))) {
+        const name = m[1].replace(/"/g, "");
+        const table = m[2].replace(/"/g, "").toLowerCase();
+        const exprs = [clause(t, "using"), clause(t, "with\\s+check")].filter((x) => x != null);
+        const reasons = [];
+        let score = 0;
+        if (exprs.some((x) => /^true$/i.test(x))) { score = 4; reasons.push(`policy "${name}" on ${table} is \`true\` for everyone in its roles (fine only for public data)`); }
+        else if (exprs.some((x) => SIGNED_IN_ONLY.test(x)) && !exprs.some((x) => OWNER_CHECK.test(x))) { score = 4; reasons.push(`policy "${name}" on ${table} checks that the caller is signed in, not that they own the row`); }
+        else if (table === "storage.objects" && exprs.length && !exprs.some((x) => OWNER_CHECK.test(x) || /auth\.uid\(\)/i.test(x))) { score = 4; reasons.push(`storage policy "${name}" is scoped to the bucket, not to the object's owner`); }
+        if (score) rows.push({ score, name, file: f.path, line, reasons });
+      } else if (/^insert\s+into\s+storage\.buckets\b/i.test(t)) {
+        for (const b of t.matchAll(/\(\s*'([\w-]+)'\s*,\s*'[\w-]+'\s*,\s*true\b/g)) {
+          rows.push({ score: 2, name: `bucket ${b[1]}`, file: f.path, line: lineAt(st.at + b.index), reasons: [`storage bucket "${b[1]}" is public: every object is readable by URL (by design?)`] });
+        }
+      } else if ((m = t.match(/^create\s+(?:or\s+replace\s+)?function\s+((?:"?\w+"?\.)?"?\w+"?)\s*\(/i)) && /\bsecurity\s+definer\b/i.test(t) && !/\breturns\s+(?:trigger|event_trigger)\b/i.test(t)) {
+        fns.push({ name: ident(m[1]), file: f.path, line, text: t });
+      }
+    }
+  }
+  for (const t of tables) {
+    if (!rls.has(t.name)) rows.push({ score: 6, name: t.name, file: t.file, line: t.line, reasons: [`row level security is never enabled on ${t.name}: the Data API serves it to anyone holding the anon key`] });
+  }
+  for (const fn of fns) {
+    const reasons = ["SECURITY DEFINER function: runs as its owner and bypasses RLS"];
+    let score = 1;
+    if (!/\bset\s+search_path\b/i.test(fn.text)) { score += 2; reasons.push("no fixed search_path"); }
+    if (!/auth\.uid\(\)|auth\.jwt\(\)/i.test(fn.text)) { score += 3; reasons.push("never checks auth.uid()"); }
+    if (!revoked.has(fn.name)) { score += 1; reasons.push("EXECUTE not revoked from public/anon: callable with the anon key through /rpc"); }
+    rows.push({ score, name: `${fn.name}()`, file: fn.file, line: fn.line, reasons });
+  }
+
+  for (const f of files.filter((x) => /(^|\/)(?:firestore|storage)\.rules$/.test(x.path))) {
+    const lineAt = lineIndex(f.text);
+    for (const m of f.text.matchAll(/\ballow\s+([\w\s,]+?)\s*:\s*if\s+([^;]+);/g)) {
+      const cond = m[2].replace(/\s+/g, " ").trim();
+      const where = [...f.text.slice(0, m.index).matchAll(/match\s+(\/\S+?)\s*\{/g)].pop()?.[1] ?? "";
+      const ops = m[1].replace(/\s+/g, " ").trim();
+      if (/^true$/.test(cond)) rows.push({ score: 6, name: where, file: f.path, line: lineAt(m.index), reasons: [`allow ${ops}: if true on ${where}: anyone, signed in or not`] });
+      else if (/^request\.auth\s*!=\s*null$/.test(cond)) rows.push({ score: 4, name: where, file: f.path, line: lineAt(m.index), reasons: [`allow ${ops} on ${where} for any signed-in user: no ownership check`] });
+    }
+  }
+  return rows;
 }

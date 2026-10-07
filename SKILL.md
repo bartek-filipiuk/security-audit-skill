@@ -377,6 +377,7 @@ This methodology is stack-agnostic. Phase 1 discovers the stack; Phase 2 adapts.
 - Pass relevant patterns from `references/stack-patterns.md` to auditor agents
 - Skip inapplicable categories (no uploads → skip 2.6, no crypto → skip 2.8)
 - For frameworks with built-in protections (Django CSRF, Rails strong params), verify enabled and not bypassed
+- Supabase and Firebase (profile R02): RLS policies, storage policies and security rules are the access control, so treat each pre-pass `policy` hotspot, Edge Function and Cloud Function like an entry point. `briefs.mjs` adds the "Stack profile" checklist to the auth brief and the Supabase/Firebase patterns to every brief when the repo has `supabase/`, rules files or the SDKs
 
 ---
 

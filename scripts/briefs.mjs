@@ -4,9 +4,11 @@
 // the checklist into every prompt, which keeps the coordinator's context small on big projects.
 //   node briefs.mjs [--dir .security-audit] [--brief name=2.1,2.3 ...]
 // Without --brief it writes the default five: auth, injection, infra, concurrency, upload.
+// Stack profiles found in the repo (Supabase, Firebase) add their checklist section to the brief that
+// owns 2.1 and their pattern sections to every brief.
 
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -30,11 +32,31 @@ const LANG_ROWS = {
 };
 const GENERIC = /^(All|All languages|General|Detection|Config|Method inconsistency|Unprotected mutations)$/;
 const EXT = { js: /\.(?:[cm]?[jt]sx?)$/, php: /\.(php|module|inc|theme|install)$/, python: /\.py$/, go: /\.go$/, ruby: /\.rb$/, java: /\.(java|kt)$/ };
+// Stack profiles: detected from their files, or from an SDK in a package.json.
+const PROFILE_FILES = {
+  supabase: /(^|\/)supabase\/(?:migrations\/[^/]+\.sql|functions\/.+|config\.toml)$/,
+  firebase: /(^|\/)(?:firestore\.rules|storage\.rules|database\.rules\.json|firebase\.json)$/,
+};
+const PROFILE_SDK = { supabase: /"@supabase\/(?:supabase-js|ssr)"/, firebase: /"firebase(?:-admin|-functions)?"\s*:/ };
 
 export function detectLanguages(root) {
   const r = spawnSync("git", ["-C", root, "ls-files"], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
   const files = r.status === 0 ? r.stdout.split("\n") : [];
-  return Object.keys(EXT).filter((l) => files.some((f) => EXT[l].test(f) && !/node_modules|vendor\//.test(f)));
+  const own = files.filter((f) => f && !/node_modules|vendor\//.test(f));
+  const manifests = own.filter((f) => /(^|\/)package\.json$/.test(f)).map((f) => {
+    try { return existsSync(join(root, f)) ? readFileSync(join(root, f), "utf8") : ""; } catch { return ""; }
+  });
+  const langs = Object.keys(EXT).filter((l) => own.some((f) => EXT[l].test(f)));
+  const profiles = Object.keys(PROFILE_FILES).filter((p) => own.some((f) => PROFILE_FILES[p].test(f)) || manifests.some((m) => PROFILE_SDK[p].test(m)));
+  return [...langs, ...profiles];
+}
+
+// Checklist sections `## Stack profile: <Name>` for the profiles present.
+export function profileSections(langs) {
+  const ck = readFileSync(join(REF, "audit-checklist.md"), "utf8");
+  return [...ck.matchAll(/^## Stack profile: (\w+)[\s\S]*?(?=^## |(?![\s\S]))/gm)]
+    .filter((m) => langs.includes(m[1].toLowerCase()))
+    .map((m) => m[0].trim());
 }
 
 function checklistSections(numbers) {
@@ -55,6 +77,8 @@ export function patternsFor(langs) {
     const [title, ...rest] = part.split("\n");
     if (/PHP/.test(title) && !langs.includes("php")) continue;
     if (/JS\/TS|JS frameworks/.test(title) && !langs.includes("js")) continue;
+    const profile = Object.keys(PROFILE_FILES).find((p) => title.trim().toLowerCase() === p);
+    if (profile && !langs.includes(profile)) continue;
     const rows = rest.filter((l) => l.startsWith("|"));
     if (rows.length < 3) continue;
     const first = (r) => r.split("|")[1]?.trim() ?? "";
@@ -67,9 +91,12 @@ export function patternsFor(langs) {
 export function writeBriefs(dir, briefs = DEFAULT_BRIEFS, langs = detectLanguages(resolve(dir, ".."))) {
   mkdirSync(join(dir, "briefs"), { recursive: true });
   const patterns = patternsFor(langs);
+  const profiles = profileSections(langs);
+  const owner = Object.keys(briefs).find((n) => briefs[n].includes("2.1")) ?? Object.keys(briefs)[0];
   const written = {};
   for (const [name, numbers] of Object.entries(briefs)) {
-    const body = `# Brief: ${name} auditor\n\nLanguages detected: ${langs.join(", ") || "none"}.\n\n## Your checklist\n\n${checklistSections(numbers).join("\n\n")}\n\n# Stack patterns\n\n${patterns}\n`;
+    const sections = [...checklistSections(numbers), ...(name === owner ? profiles : [])];
+    const body = `# Brief: ${name} auditor\n\nLanguages detected: ${langs.join(", ") || "none"}.\n\n## Your checklist\n\n${sections.join("\n\n")}\n\n# Stack patterns\n\n${patterns}\n`;
     writeFileSync(join(dir, "briefs", `${name}.md`), body);
     written[name] = body.length;
   }

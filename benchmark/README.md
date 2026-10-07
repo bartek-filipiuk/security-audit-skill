@@ -13,7 +13,7 @@ from here you cannot tell whether "faster" cost recall.
 
 ## Run
 
-    node benchmark/setup.mjs                  # prints the run directory
+    node benchmark/setup.mjs                  # prints the run directory (--app supabase-notes for the second app)
     cd <run>/app && claude                    # fresh session, then: /security-audit
     node benchmark/score.mjs <run> --label "what changed"
     node benchmark/usage.mjs <session id>       # tokens and API-price cost, subagents included
@@ -41,6 +41,29 @@ contains it). The audit only ever sees `<run>/app`.
 positives, known extras (real advisories in the pinned dependencies), verified findings that matched
 nothing with their location (read those by hand), the match type (`exact` or `none`) and proof label of
 each seeded bug, and the run time. It appends one line to `results.jsonl`.
+
+## Second app: supabase-notes
+
+`benchmark/supabase-notes/` is the benchmark of the Supabase and Firebase profile (roadmap R02): a Next.js
+notes app on Supabase (SQL migrations with RLS policies, a SECURITY DEFINER RPC, storage buckets and
+policies, two Edge Functions and `config.toml`) with Firestore whiteboards (`firestore.rules`,
+`storage.rules`, callable Cloud Functions). 10 seeded bugs and 12 decoys; the key is
+`benchmark/supabase-notes/answer-key.json`, in the same format and with the same matching rules.
+
+    node benchmark/setup.mjs --app supabase-notes   # one commit, meta.json records bench_app
+    cd <run>/app && claude                          # fresh session, then: /security-audit
+    node benchmark/score.mjs <run> --label "what changed"   # picks the key from meta.json (or --app)
+
+It has no lockfile, so the dependency scan has nothing to read there; a finding about the missing lockfile
+is valid and shows up as unmatched. Seeded classes: a table without RLS, `using (true)` on private notes,
+an update policy that checks login instead of ownership, a SECURITY DEFINER RPC without an ownership check or
+`search_path` and executable with the anon key, bucket-wide storage policies, the service-role key behind
+`NEXT_PUBLIC_` imported by a client component, an Edge Function with `verify_jwt = false` that trusts a user
+id from the body, Firestore rules that treat any signed-in user as owner, Storage rules `if true`, and a
+callable Cloud Function without an auth check (App Check only). Decoys: a public price table, scoped
+SECURITY DEFINER functions, column-limited profile updates, browser updates guarded by RLS, a public avatars
+bucket with owner-scoped writes, a server-only service-role client, the anon key and Firebase web config, a
+webhook Edge Function that verifies an HMAC, and owner-scoped rules and callables.
 
 ## Rules
 

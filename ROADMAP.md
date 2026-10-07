@@ -13,6 +13,9 @@ Rules that apply to every item:
 
 - **R02 Supabase and Firebase profile.** RLS policies, storage policies, service-role keys in the client,
   Firestore rules. Done when: a benchmark app for this stack exists and the profile scores on it.
+  Status (2026-10-07): checklist sections, stack patterns, a pre-pass policy scan, Edge/Cloud Function entry
+  points and the `benchmark/supabase-notes` app (10 seeded bugs, 12 decoys, `--app` in setup and score) are
+  in; it moves to Done with its first scored run.
 
 ## Next
 
