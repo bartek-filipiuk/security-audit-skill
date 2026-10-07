@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Scores one benchmark run against answer-key.json and appends a line to results.jsonl.
-//   node benchmark/score.mjs <run-dir> [--label "what changed"] [--tool security-audit|claude-security] [--no-save]
-// <run-dir> is what setup.mjs printed: it holds meta.json and app/.security-audit/.
+//   node benchmark/score.mjs <run-dir> [--label "what changed"] [--tool security-audit|claude-security] [--app <name>] [--no-save]
+// <run-dir> is what setup.mjs printed: it holds meta.json and app/.security-audit/. The answer key is the
+// one of the app named by --app, else by meta.json `bench_app`, else Ledgerly's (see apps.mjs).
 //
 // Matching is exact: by file and line, never by keywords (roadmap R03).
 // - A finding has one primary location: the first `**File**:` line of its Evidence section (else the
@@ -23,6 +24,7 @@ import { appendFileSync, existsSync, readdirSync, readFileSync, realpathSync, st
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadAudit, titleOf } from "../scripts/audit-state.mjs";
+import { benchApp } from "./apps.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const DEFAULT_WINDOW = 2;
@@ -36,7 +38,7 @@ const normalize = (p) => p.replace(/^\((?![^/]*\))/, "").replace(/^\.\//, "").re
 export function parseLocation(text) {
   for (const m of text.matchAll(LOC)) {
     const file = m[1];
-    if (file !== ".env" && !/\.(?:[cm]?[jt]sx?|json|ya?ml|md|example|env)$|^\.env/.test(file.split("/").pop())) continue;
+    if (file !== ".env" && !/\.(?:[cm]?[jt]sx?|json|ya?ml|md|example|env|sql|rules|toml)$|^\.env/.test(file.split("/").pop())) continue;
     const start = m[2] ? Number(m[2]) : null;
     const end = m[3] ? Math.max(Number(m[3]), start) : start;
     return { file: normalize(file), start, end };
@@ -191,7 +193,7 @@ export function claudeSecurityLocation(o) {
 // realpath on both sides: the skill is usually run through a symlink (~/.claude/skills/...).
 if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   const args = process.argv.slice(2);
-  const runDir = resolve(args.find((a) => !a.startsWith("--") && !["--label", "--tool"].includes(args[args.indexOf(a) - 1])) ?? ".");
+  const runDir = resolve(args.find((a) => !a.startsWith("--") && !["--label", "--tool", "--app"].includes(args[args.indexOf(a) - 1])) ?? ".");
   const label = args.indexOf("--label") >= 0 ? args[args.indexOf("--label") + 1] : "";
   const auditDir = join(runDir, "app", ".security-audit");
   const tool = args.includes("--tool") ? args[args.indexOf("--tool") + 1] : "security-audit";
@@ -208,14 +210,16 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     findings = loadAudit(auditDir).findings;
     report = join(auditDir, "report.md");
   }
-  const key = JSON.parse(readFileSync(join(here, "answer-key.json"), "utf8"));
   const meta = existsSync(join(runDir, "meta.json")) ? JSON.parse(readFileSync(join(runDir, "meta.json"), "utf8")) : {};
+  const bench = benchApp(args.includes("--app") ? args[args.indexOf("--app") + 1] : meta.bench_app);
+  const key = JSON.parse(readFileSync(bench.key, "utf8"));
   const r = score(findings, key);
 
   const minutes = meta.started_at && existsSync(report)
     ? +((statSync(report).mtimeMs - Date.parse(meta.started_at)) / 60000).toFixed(1)
     : null;
 
+  console.log(`App ${bench.name}`);
   console.log(`Recall ${r.found}/${r.seeded.length} (${Math.round(r.recall * 100)}%)${r.carried ? ` (${r.carried} carried over from a previous run)` : ""} · dropped by verifier ${r.dropped_by_verifier} · missed ${r.missed} · decoy false positives ${r.decoy_fp} · duration ${minutes ?? "?"} min`);
   console.log(`Matching: exact by file and line (window ±${r.window}), loose matches ${r.loose_matches}`);
   console.log("");
@@ -235,7 +239,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     const { seeded, decoyFp, matches, ...summary } = r;
     appendFileSync(
       join(here, "results.jsonl"),
-      JSON.stringify({ date: new Date().toISOString(), tool, label, skill_sha: meta.skill_sha, skill_dirty: meta.skill_dirty, minutes, ...summary, per_bug: Object.fromEntries(seeded.map((s) => [s.id, s.result])) }) + "\n",
+      JSON.stringify({ date: new Date().toISOString(), app: bench.name, tool, label, skill_sha: meta.skill_sha, skill_dirty: meta.skill_dirty, minutes, ...summary, per_bug: Object.fromEntries(seeded.map((s) => [s.id, s.result])) }) + "\n",
     );
     console.log(`\nSaved to ${join(here, "results.jsonl")}`);
   }
