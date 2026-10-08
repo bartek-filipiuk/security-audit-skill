@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { buildRemediation, loadAudit, parseFrontmatter, validate } from "./audit-state.mjs";
 import { inScope, rankHotspots, scanEntryPoints, scanScope, walk } from "./surface.mjs";
 import { score } from "../benchmark/score.mjs";
+import { toolFreeEnv } from "./test-helpers.mjs";
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), "..");
 const { files } = walk(join(repo, "benchmark", "app"));
@@ -222,7 +223,7 @@ test("prepass --new-run archives the previous run and workspace-check sees later
   mkdirSync(join(audit, "findings"), { recursive: true });
   writeFileSync(join(audit, "findings", "auth-001.md"), verifiedHigh);
   writeFileSync(join(audit, "report.md"), "# old\n");
-  const r = spawnSync(process.execPath, [join(repo, "scripts", "prepass.mjs"), "--root", proj, "--no-docker", "--new-run"], { encoding: "utf8" });
+  const r = spawnSync(process.execPath, [join(repo, "scripts", "prepass.mjs"), "--root", proj, "--no-docker", "--new-run"], { encoding: "utf8", env: toolFreeEnv() });
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /previous run archived/);
   const hist = fsm.readdirSync(join(audit, "history"));
@@ -264,7 +265,8 @@ const finding = (id, file, status = "verified") => `---\nid: ${id}\ncategory: au
 
 async function previousAudit(p) {
   const { spawnSync } = await import("node:child_process");
-  const prepass = (...a) => spawnSync(process.execPath, [join(repo, "scripts", "prepass.mjs"), "--root", p.proj, "--no-docker", ...a], { encoding: "utf8" });
+  const env = toolFreeEnv();
+  const prepass = (...a) => spawnSync(process.execPath, [join(repo, "scripts", "prepass.mjs"), "--root", p.proj, "--no-docker", ...a], { encoding: "utf8", env });
   assert.equal(prepass("--new-run").status, 0);
   const audit = join(p.proj, ".security-audit");
   writeFileSync(join(audit, "findings", "auth-101.md"), finding("auth-101", "src/app/api/export/route.ts"));
@@ -322,7 +324,8 @@ test("--since falls back to a full audit when it cannot carry safely", async () 
   const fsm = await import("node:fs");
   const { spawnSync } = await import("node:child_process");
   const p = await gitProject(ledgerlyMini);
-  const prepass = (...a) => spawnSync(process.execPath, [join(repo, "scripts", "prepass.mjs"), "--root", p.proj, "--no-docker", ...a], { encoding: "utf8" });
+  const env = toolFreeEnv();
+  const prepass = (...a) => spawnSync(process.execPath, [join(repo, "scripts", "prepass.mjs"), "--root", p.proj, "--no-docker", ...a], { encoding: "utf8", env });
   const inc = () => JSON.parse(fsm.readFileSync(join(p.proj, ".security-audit", "tools", "incremental.json"), "utf8"));
   // No previous audit at all.
   let r = prepass("--since", "HEAD");

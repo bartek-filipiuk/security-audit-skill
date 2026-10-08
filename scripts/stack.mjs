@@ -55,8 +55,10 @@ const RUBY_FRAMEWORKS = [["rails", "Rails"], ["sinatra", "Sinatra"], ["hanami", 
 const JAVA_FRAMEWORKS = [["spring-boot", "Spring Boot"], ["org.springframework.boot", "Spring Boot"],
   ["quarkus", "Quarkus"], ["micronaut", "Micronaut"]];
 
+// Libraries that are not frameworks (no entry points, no profile gap) but pick semgrep rulesets (tools.mjs).
+const JS_LIBRARIES = [["react", "React"]];
 const COMMON_GAPS = [
-  "deterministic SAST (semgrep), GitHub Actions, Dockerfile and IaC scanners are not run (roadmap R07, R08)",
+  "rule scanners (semgrep, zizmor, hadolint, trivy) run only when installed or docker is available; one that did not run is listed in not-assessed.md",
 ];
 
 // Profiles the pre-pass can apply. `dedicated: false` means: the general checklist only.
@@ -224,6 +226,7 @@ function detectDir(dir) {
     } else {
       const fw = JS_FRAMEWORKS.filter(([d]) => d in deps).map(([, l, ok]) => ({ l, ok }));
       add("js", ["package.json"], fw.map((f) => f.l), {
+        libraries: JS_LIBRARIES.filter(([d]) => d in deps).map(([, l]) => l),
         unsupported: [...new Set(fw.filter((f) => !f.ok).map((f) => f.l))],
         workspace: Array.isArray(p.workspaces) || Array.isArray(p.workspaces?.packages) || has("pnpm-workspace.yaml"),
       });
@@ -237,11 +240,12 @@ export function detectStack(root, { force = null } = {}) {
   (function rec(dir, depth) {
     const rel = relative(root, dir).split(sep).join("/") || ".";
     for (const s of detectDir(dir)) {
-      const g = groups.get(s.id) ?? { id: s.id, dirs: [], manifests: [], frameworks: [], unsupported: [], notes: [] };
+      const g = groups.get(s.id) ?? { id: s.id, dirs: [], manifests: [], frameworks: [], libraries: [], unsupported: [], notes: [] };
       // A workspace root with no framework of its own is not a stack location.
       if (!(s.id === "js" && s.workspace && !s.frameworks.length)) g.dirs.push(rel);
       g.manifests.push(...s.manifests.map((m) => (rel === "." ? m : `${rel}/${m}`)));
       g.frameworks = [...new Set([...g.frameworks, ...s.frameworks])];
+      g.libraries = [...new Set([...g.libraries, ...(s.libraries ?? [])])];
       g.unsupported = [...new Set([...g.unsupported, ...(s.unsupported ?? [])])];
       g.notes.push(...(s.notes ?? []).map((n) => (rel === "." ? n : `${rel}: ${n}`)));
       groups.set(s.id, g);

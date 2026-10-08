@@ -115,8 +115,8 @@ All agents read from and write to `.security-audit/` in the project root. This i
 
 ```
 .security-audit/
-├── prepass.md               # Phase 0 output: entry points, Drizzle scope scan, dependency advisories, secret scan
-├── tools/                   # raw tool output (osv.json, gitleaks.json with values redacted, entry-points.json, scope-scan.json, incremental.json on --since)
+├── prepass.md               # Phase 0 output: entry points, Drizzle scope scan, dependency advisories, secret scan, tool candidates
+├── tools/                   # raw tool output (osv.json, gitleaks.json with values redacted, entry-points.json, scope-scan.json, incremental.json on --since, semgrep/hadolint/trivy .json, zizmor.sarif, tool-candidates.json)
 ├── recon.md                 # Phase 1 output: exposed surface map, authorization map, triage
 ├── findings/                # One file per finding (raw → verified/rejected; remediation state in its frontmatter)
 │   ├── auth-001.md
@@ -162,8 +162,9 @@ node "$SKILL_DIR/scripts/prepass.mjs" --new-run   # add: --scope <targets> for a
 - **Tracked warning:** tell the user that earlier audit files (naming unfixed weaknesses) are in git history and whether the remote is public. Offer `git rm -r --cached .security-audit` plus a commit. Do not run it without their consent.
 - **Hotspots (start here):** `prepass.md` opens with the riskiest entry points and config files, ranked by signals (sensitive area such as auth/SSO/login, admin, payments, webhooks, files, AI; public-by-design kinds; no guard in the handler; unscoped queries; dangerous sinks; risky auth/CORS/env config). This is the work order for recon and every auditor: audit the hotspots in your domain first, then the rest. It is a ranking, not a verdict.
 - **Stack and profile:** `prepass.md` names the detected stacks and the applied profile, what it covers and what it does not (`tools/summary.json` keeps the same record for the report). For a stack without a dedicated profile (PHP, Python, Go, Rust, Ruby, JVM, .NET) the entry-point table and hotspots are empty or partial: recon finds the entry points by reading the code, and the general checklist applies. The report states the profile and its gaps by itself; never describe a stack without a profile as fully covered.
-- **`prepass.md`** also holds: every entry point found by framework convention (Next.js route handlers, pages, `"use server"` actions, proxy/middleware matcher, tRPC procedures, Hono/Express routes, pg-boss/BullMQ/cron jobs, AI SDK/MCP tools, Drupal routes); the Drizzle scope scan (query sites on owner-scoped tables that never reference the owner column); dependency advisories from osv-scanner (prod vs dev-only); secrets from gitleaks across the whole git history, values redacted.
-- **Tools:** native `osv-scanner` / `gitleaks` if installed, otherwise their official docker images (pulled on first use). Any `NOT RUN` or `FAILED` line goes into `not-assessed.md`, and you tell the user how to enable it. Never fill the gap from memory: CVE knowledge in a model is stale by construction.
+- **`prepass.md`** also holds: every entry point found by framework convention (Next.js route handlers, pages, `"use server"` actions, proxy/middleware matcher, tRPC procedures, Hono/Express routes, pg-boss/BullMQ/cron jobs, AI SDK/MCP tools, Drupal routes); the Drizzle scope scan (query sites on owner-scoped tables that never reference the owner column); dependency advisories from osv-scanner (prod vs dev-only); secrets from gitleaks across the whole git history, values redacted; **Tool Candidates**: rule hits from semgrep (registry rulesets chosen from the detected languages and frameworks), zizmor (GitHub Actions workflows, offline audits), hadolint (Dockerfiles) and `trivy config` (Dockerfiles, compose, Terraform, Helm, Kustomize), as file:line, rule and a short note, deduplicated and capped at 40 per tool. A tool with nothing to scan is `skipped` with the reason; that is not a gap.
+- **Tools:** native `osv-scanner` / `gitleaks` if installed, otherwise their official docker images (pulled on first use). semgrep, zizmor, hadolint and trivy run natively if installed, otherwise through their official docker images pinned by digest (`IMAGES` in `scripts/tools.mjs`); semgrep and trivy download their rules at run time. Any `NOT RUN` or `FAILED` line goes into `not-assessed.md` (the pre-pass already writes the rows for the four rule scanners, marked `(prepass)`), and you tell the user how to enable it: the line says how. Never fill the gap from memory: CVE knowledge in a model is stale by construction.
+- **Tool candidates are leads, not findings.** The auditor who owns the file reads the code and turns each row into a finding (with its own evidence and impact), a non-issue citing the control, or drops it as a false positive. A tool severity is never the finding severity.
 
 ---
 
@@ -398,7 +399,7 @@ This methodology is stack-agnostic. Phase 1 discovers the stack; Phase 2 adapts.
 | `references/stack-patterns.md` | Phase 2 dispatch | Language/framework-specific grep patterns |
 | `references/finding-format.md` | All phases | File formats for findings, non-issues, recon output |
 | `references/remediation.md` | Phase 6 | Remediation workflow + `remediation.json` contract + `public_safe` redaction flag |
-| `scripts/prepass.mjs` | Phase 0 | Stack profile, entry points, Drizzle scope scan, osv-scanner, gitleaks → `prepass.md` |
+| `scripts/prepass.mjs` | Phase 0 | Stack profile, entry points, Drizzle scope scan, osv-scanner, gitleaks, rule scanners (`scripts/tools.mjs`: semgrep, zizmor, hadolint, trivy) → `prepass.md` |
 | `scripts/stack.mjs` | Phase 0 (via prepass) | Stack detection from manifests, profiles (covers / does not cover), `--stack` |
 | `scripts/audit-state.mjs` | After Phases 2, 3, 6 and 5.5 | Validates finding frontmatter; `--write` generates `remediation.json` |
 | `scripts/report-html.mjs` | End of Phase 5 / after Phase 6 | Renders `report.html` (to fix / verified safe / not assessed) from the finding files |

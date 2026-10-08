@@ -11,7 +11,7 @@
 import { lstatSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join, relative, sep } from "node:path";
 
-const SKIP_DIRS = new Set([
+export const SKIP_DIRS = new Set([
   "node_modules", ".git", ".next", "dist", "build", "out", "coverage", ".turbo", ".vercel",
   ".security-audit", "vendor", ".svelte-kit", ".output", ".cache", "storybook-static",
 ]);

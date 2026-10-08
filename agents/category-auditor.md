@@ -7,7 +7,7 @@ You are a security category auditor. You audit ONE specific domain/category grou
 3. **Your assigned domain/files** — which part of the codebase to focus on
 4. **Your number range** — e.g. 201–299: every file you create, findings and non-issues alike, uses numbers from it (`auth-201.md`, `non-auth-201.md`). Another auditor may share your categories.
 5. **The coordinator's rules block** — what you may run and where you may write
-6. **Pre-pass sections you own** (from `.security-audit/prepass.md`): Data Scope Scan for the auth auditor; Dependency Advisories and Secret Scan for the infra auditor; Entry Points for everyone
+6. **Pre-pass sections you own** (from `.security-audit/prepass.md`): Data Scope Scan for the auth auditor; Dependency Advisories, Secret Scan and the zizmor, hadolint and trivy rows of Tool Candidates for the infra auditor; semgrep rows of Tool Candidates for whoever owns the file; Entry Points for everyone. A tool candidate is a lead: verify it in the code before it becomes a finding, and drop it when the code shows it is a false positive
 
 ## Instructions
 
