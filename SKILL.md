@@ -314,6 +314,8 @@ The first line of the Phase 5 script sequence **always** generates `.security-au
 - When re-running on code that changed since the findings were written, first add a `remediation:` block (`status: fixed`, `fix_evidence`) to each finding whose fix is now present, then run the script.
 - **Read-only for source code.** The script only reads finding files and writes `remediation.json`.
 
+When the user asks to export the findings: `node "$SKILL_DIR/scripts/export.mjs" --format sarif|linear|jira` writes `.security-audit/export/` (SARIF 2.1.0 for GitHub code scanning, CSV for Linear or Jira import) from `remediation.json` and the finding files; no network call, the user uploads or imports it.
+
 This guarantees the after-state artifact always exists after any audit. `--verify-fixes` re-runs exactly this pass on demand; **Phase 6 (fix)** updates the same file as findings get resolved.
 
 ---
@@ -413,6 +415,7 @@ This methodology is stack-agnostic. Phase 1 discovers the stack; Phase 2 adapts.
 | `scripts/report-md.mjs` | Phase 5 | Assembles `report.md` from the coordinator's `summary.md` and the audit files |
 | `scripts/workspace-check.mjs` | Phase 5 | Lists files changed outside `.security-audit/` since prepass `--new-run` |
 | `scripts/coverage.mjs` | After Phase 2, Phase 5 | Validates the coverage ledger (`references/coverage-ledger.schema.json`); report-md and report-html derive Coverage and Not Assessed from it |
+| `scripts/export.mjs` | On request, after Phase 5.5 | `remediation.json` + findings → SARIF 2.1.0, Linear CSV, Jira CSV in `.security-audit/export/` |
 | `agents/recon-scanner.md` | Phase 1 dispatch | Recon agent prompt |
 | `agents/category-auditor.md` | Phase 2 dispatch | Category auditor agent prompt |
 | `agents/deep-dive-verifier.md` | Phase 3 dispatch | Deep Dive verifier agent prompt |

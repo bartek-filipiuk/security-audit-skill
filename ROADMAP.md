@@ -47,8 +47,6 @@ Rules that apply to every item:
 
 - **R09 Go profile** (`gosec`, error handling) and **R10 Rust profile** (`cargo-audit`, unsafe).
   Done when: their benchmark apps score.
-- **R11 Export.** SARIF for GitHub code scanning; tasks to Linear and Jira with file, line and fix.
-  Done when: one command produces the file or the tasks from `remediation.json`.
 - **R12 Audit diff.** New, fixed and regressed findings between two runs, building on `--verify-fixes`.
   Done when: the report has a "since last audit" section.
 - **R13 Cheaper auditors.** Measure on the benchmark whether auditors can run on a lighter model without
@@ -79,6 +77,13 @@ Rules that apply to every item:
   than the web stack this skill is built for; each needs its own benchmark app before it ships.
 
 ## Done
+
+- **R11 Export** (2026-10-08): `node scripts/export.mjs --format sarif|linear|jira` turns `remediation.json` and
+  the finding files into SARIF 2.1.0 for GitHub code scanning (one rule per finding with the fix as help, level
+  from severity, file and line) or a CSV for Linear or Jira import (title, description with file:line, impact
+  and fix, priority, labels). No network calls and no tokens: the user uploads or imports the file. Fixed and
+  accepted findings are left out unless `--all`. Tests in `scripts/export.test.mjs`; it does not change the audit,
+  so no benchmark run.
 
 - **R21 LLM and agent checks** (2026-10-08, #7 via #12): checklist items and stack patterns for prompt injection
   into tools and agents, model output reaching HTML/SQL/shell/URL sinks, tool calls without authorisation and

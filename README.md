@@ -54,6 +54,18 @@ audit and says why.
 Install the project's dependencies first, so the regression tests the audit writes can run. The report is
 `.security-audit/report.html`; the directory is gitignored because it names unfixed weaknesses.
 
+Export the findings for GitHub code scanning, Linear or Jira (no network, no token; you upload or import the file):
+
+```
+node <skill dir>/scripts/export.mjs --format sarif    # → .security-audit/export/security-audit.sarif
+node <skill dir>/scripts/export.mjs --format linear   # → .security-audit/export/linear.csv (Linear CSV import)
+node <skill dir>/scripts/export.mjs --format jira     # → .security-audit/export/jira.csv (Jira CSV import)
+```
+
+Each finding in `remediation.json` that is not fixed or accepted (`--all` for every one) becomes a SARIF result
+or a task with its file and line, severity, impact and fix. Upload the SARIF with
+`github/codeql-action/upload-sarif`, only to a private repository: it names unfixed weaknesses.
+
 Cost: a full run on the benchmark app (45 entry points) took 32 minutes and 23.8M tokens, about 11.70 USD at
 API prices (Opus 5.5, effort xhigh); a 160-entry-point project took 2 h 11 min. Start big projects with
 `--scope top20`. Re-auditing a one-line change with `--since` cost 4.7M tokens and 15 minutes on the same app
@@ -112,7 +124,8 @@ All agents communicate via `.security-audit/` directory:
 ├── tests/            # Regression tests for HIGH/CRITICAL
 ├── test-quality.md   # Test coverage assessment
 ├── report.md         # Final report
-└── remediation.json  # Generated from finding frontmatter
+├── remediation.json  # Generated from finding frontmatter
+└── export/           # Optional: SARIF and Linear/Jira CSV from scripts/export.mjs
 ```
 
 The directory is added to `.gitignore` before anything is written: it names unfixed weaknesses with file and line.
@@ -144,6 +157,7 @@ scripts/
   briefs.mjs                      # Per-auditor briefs (checklist sections + patterns for the repo's languages)
   workspace-check.mjs             # What changed in the project while the audit ran
   coverage.mjs                    # Validates the coverage ledger, renders the Coverage and Not Assessed sections
+  export.mjs                      # remediation.json → SARIF 2.1.0, Linear CSV, Jira CSV
   selftest.test.mjs               # node --test scripts/
 benchmark/
   app/                            # Ledgerly: seeded-bug app in the target stack
