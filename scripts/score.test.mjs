@@ -129,6 +129,39 @@ test("R08 seeds and decoys: CSRF, CI workflow, Dockerfile, install script", () =
   assert.deepEqual(entriesOf(adv, "dependency-002"), ["B14"], "next advisory line, shifted by the postinstall line");
 });
 
+test("R21 seeds and decoys: LLM output to HTML, unscoped agent tool, LLM cost", () => {
+  const r = run(
+    finding("injection-001", { file: "src/app/(app)/invoices/[id]/summary/page.tsx:37" }),
+    finding("injection-002", { file: "src/app/(app)/invoices/[id]/summary/page.tsx:29" }),
+    finding("auth-001", { file: "src/server/ai/billing-tools.ts:16" }),
+    finding("rate-limit-001", { file: "src/app/api/assistant/billing/route.ts:16-18" }),
+    finding("injection-003", { file: "src/app/(app)/invoices/[id]/summary/actions.ts:34" }),
+    finding("auth-002", { file: "src/server/ai/billing-tools.ts:30" }),
+  );
+  assert.deepEqual(entriesOf(r, "injection-001"), ["B21"]);
+  assert.deepEqual(entriesOf(r, "injection-002"), ["B21"], "the prompt built from notes is part of the same seed");
+  assert.deepEqual(entriesOf(r, "auth-001"), ["B22"]);
+  assert.deepEqual(entriesOf(r, "rate-limit-001"), ["B23"]);
+  assert.deepEqual(entriesOf(r, "injection-003"), ["D12"]);
+  assert.deepEqual(entriesOf(r, "auth-002"), ["D13"], "the scoped, approval-gated tool next to B22 stays a decoy");
+  assert.equal(r.decoy_fp, 2);
+  const between = run(finding("auth-003", { file: "src/server/ai/billing-tools.ts:22" }));
+  assert.deepEqual(entriesOf(between, "auth-003"), ["D13"], "nearest wins between B22 and D13");
+});
+
+test("R21 key ranges point at the seeded statements", () => {
+  const at = (file, line) => readFileSync(join(app, file), "utf8").split("\n")[line - 1];
+  const loc = (id, i = 0) => [...key.seeded, ...key.decoys].find((e) => e.id === id).locations[i];
+  assert.match(at(loc("B21").file, loc("B21").lines[0]), /HTML fragment/);
+  assert.match(at(loc("B21", 1).file, loc("B21", 1).lines[0]), /dangerouslySetInnerHTML=\{\{ __html: summaryHtml \}\}/);
+  assert.match(at(loc("B22").file, 16), /\.where\(eq\(invoices\.id, invoiceId\)\)/);
+  assert.match(at(loc("B23").file, loc("B23").lines[0]), /body\.model/);
+  assert.match(at(loc("B23").file, loc("B23").lines[1]), /body\.maxSteps/);
+  assert.match(at(loc("D12").file, 34), /escapeHtml\(text\)/);
+  assert.match(at(loc("D13").file, 25), /needsApproval: true/);
+  assert.match(at(loc("D13").file, 30), /eq\(invoices\.orgId, ctx\.orgId\)/);
+});
+
 test("every match is exact and the scorer reports no loose matches", () => {
   const r = run(
     finding("auth-001", { file: "src/app/(app)/invoices/actions.ts:10" }),

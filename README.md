@@ -62,7 +62,7 @@ API prices (Opus 5.5, effort xhigh); a 160-entry-point project took 2 h 11 min. 
 ## How it compares
 
 Anthropic's free [Claude Security plugin](https://code.claude.com/docs/en/claude-security) does a similar
-multi-agent scan. On the benchmark app as it was then (16 seeded bugs, before R08 added four) both found them (16 of 16 here, 15 of 16 for the plugin) with
+multi-agent scan. On the benchmark app as it was then (16 seeded bugs, before R08 and R21 added seven) both found them (16 of 16 here, 15 of 16 for the plugin) with
 no decoy false positives; the plugin was faster. This skill adds dependency advisories (osv-scanner), secrets in
 the whole git history (gitleaks), regression tests that fail today as proof, a verified-safe list, a
 not-assessed list and a review of the project's tests. The plugin adds SARIF, branch-diff scans and reviewed

@@ -369,6 +369,8 @@ const SINKS = [
   [/\b(?:inputSchema|parameters)\s*:\s*z\.object\(\{[^}]*\b(?:orgId|organizationId|userId|tenantId|workspaceId)\s*:/, 3, "tool schema lets the model choose the tenant/user"],
   [/\.(?:set|values|create|insert)\(\s*(?:input|body|data|patch|req\.body)\s*[,)]/, 2, "request object written to the database as-is"],
   [/\bsendEmail\(|\bemails\.send\(|\bsendMail\(|SendEmailCommand/, 2, "sends email (who are the recipients?)"],
+  [/\b(?:model|maxOutputTokens|max_tokens|maxTokens|max_completion_tokens|stopWhen|maxSteps)\s*:\s*[^,\n]*\b(?:body|input|req\.body|args|params)\.\w+/, 2, "LLM model or token budget taken from the request (cost)"],
+  [/^(?=[\s\S]*\b(?:generateText|streamText|generateObject|messages\.create|completions\.create|responses\.create|\.invoke)\()[\s\S]*(?:dangerouslySetInnerHTML|\.innerHTML\s*=|v-html)/, 1, "LLM output may reach raw HTML"],
 ];
 const DISPATCH = /\b(?:handle|toNextJsHandler|fetchRequestHandler|createRouteHandler|createNextRouteHandler)\(/;
 const SIGNATURE = /constructEvent|\.verify\(|svix|signature|timingSafeEqual|createHmac|verifyWebhook/i;

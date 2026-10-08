@@ -33,6 +33,15 @@ Applies to every endpoint that authenticates by cookie. Bearer-token and API-key
 - [ ] OAuth/SSO callbacks validate `state` (or PKCE) bound to the user's session before linking an account or storing a provider token. Evidence: the line that compares `state` with the stored value
 - [ ] CSRF exemptions (`csrf_exempt`, `$except`, `skip_forgery_protection`, a matcher that skips paths) cover only machine endpoints that verify a signature (webhooks)
 
+### LLM tools and agents (category `auth`)
+
+Applies when the project calls a model with tools or runs an agent (AI SDK `tool()`, OpenAI or Anthropic tool use, LangChain tools and agents, MCP servers). Every tool argument, and everything the model reads (user messages, documents, emails, web pages, database text, tool results), is attacker-controlled input: a system prompt does not prevent prompt injection.
+
+- [ ] Each tool's `execute` enforces the authorization the equivalent route handler would need: owner/tenant scope from the session context captured when the tools are built (`ctx.orgId`), never a model-supplied id on its own, and the same role check. Evidence: the scoped `where` line inside the tool. "The system prompt says only this organization" or a tool description is not a control
+- [ ] Destructive or outbound tools (delete, void, refund, payment, send email or message, change a role, write files, run code, call a URL) need a confirmation the model cannot give itself (`needsApproval` in AI SDK, an approval step in the agent loop, a separate confirmed server action), or are limited to reversible effects in the caller's own scope. Evidence: the approval flag or the confirmation endpoint
+- [ ] Tools are built per request from the caller's permissions: a member's chat does not get admin-only tools, and an MCP server or agent exposes nothing the user could not call directly. Targets the model chooses (email recipient, webhook URL, file path, record id) are limited to the tenant's own records or an allowlist
+- [ ] Indirect prompt injection: when the model reads untrusted content (customer messages, uploaded documents, fetched pages, text other users wrote) in the same loop as tools with side effects or with access to private data, cite the tool line as the finding and name the untrusted source in Impact. Agent loops have a fixed step limit (`stopWhen`, `max_iterations`, `max_turns`)
+
 ## 2.2 Input Validation & Injection
 
 - [ ] SQL: All queries parameterized (no string concatenation/interpolation). Search for raw SQL, `execute()`, f-strings/template literals near queries
@@ -52,12 +61,24 @@ Applies to every endpoint that authenticates by cookie. Bearer-token and API-key
 - [ ] Second-order injection: data stored safely but later retrieved and used unsafely in a different context (e.g., username stored escaped for SQL but later used unescaped in shell command or template)
 - [ ] GraphQL: if GraphQL endpoint exists, verify introspection disabled in production (`introspection: false`), query depth/complexity limited, and field-level authorization enforced
 
+### LLM output and model context (category `injection`; secrets in context `exposure`)
+
+Model output is untrusted input: anything that reaches the prompt (user text, stored records, documents, tool results) can shape it. Asking the model for "safe" output is not a control.
+
+- [ ] HTML: model output is not rendered with `dangerouslySetInnerHTML`, `innerHTML`, `v-html`, `|safe`, or a markdown renderer that passes raw HTML (`marked` without a sanitizer, `markdown-it({ html: true })`, `react-markdown` with `rehype-raw`) unless a sanitizer (DOMPurify, `rehype-sanitize`) runs on it; the same holds for email HTML built from model output. Evidence: the escape or sanitize call applied to the output
+- [ ] SQL and queries: model output (text-to-SQL, generated filters or `where` objects) never runs as raw SQL or as an operator object; generated queries run on a read-only connection limited to the caller's tenant (row-level security or views) with an allowlist of tables. Evidence: the parameterized query or the restricted connection
+- [ ] Shell, code and files: model output never reaches `exec`/`spawn` with a shell, `eval`/`new Function`, Python `exec`/`subprocess`, a code interpreter on the host, or a file path, without a sandbox and an allowlist
+- [ ] URL and fetch (SSRF): URLs the model chooses (browse, fetch, webhook, image tools) pass the same allowlist and private-address checks as user-supplied URLs, redirects included, and fetched pages are untrusted content. Rendered markdown images and links to arbitrary hosts can carry private data out in the URL: restrict image hosts or strip them
+- [ ] Structured output: JSON and tool arguments from the model are validated with a schema (`zod`, `inputSchema`, a JSON-schema `response_format`) before use, with enums for actions and ids checked against the caller's scope
+- [ ] Context contents: no API keys, connection strings, internal URLs or other tenants' records in system prompts, tool results or retrieved documents (a RAG index is filtered by tenant at query time). Assume the user can read the system prompt. Category `exposure`
+
 ## 2.3 Rate Limiting & Abuse Prevention
 
 - [ ] Auth endpoints (login, register, password reset) rate-limited
 - [ ] Resource-creation endpoints rate-limited (prevent spam)
 - [ ] File upload size limits enforced
 - [ ] If rate limiting claimed: verify it's actually active (not disabled in config, not bypassed in tests)
+- [ ] LLM endpoints (chat, completion, agent, embedding, image generation): per-user or per-tenant rate and spend limits exist, and the model id, `max_tokens`/`maxOutputTokens`, agent step count and context size are fixed or capped on the server, never taken from the request. Anonymous and trial access to paid models is limited. Provider keys stay server-side (no `NEXT_PUBLIC_`/`VITE_` key, no `dangerouslyAllowBrowser: true`, no `anthropic-dangerous-direct-browser-access`). Evidence: the limiter or quota line and the constant model id
 
 ## 2.4 Data Exposure
 

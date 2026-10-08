@@ -2,8 +2,9 @@
 
 A small multi-tenant SaaS in the stack this skill is used on (Next.js 16 App Router, Better-Auth with
 organizations, Drizzle on Postgres, tRPC, a Hono public API, pg-boss, Stripe, Resend, R2 presigned
-uploads, AI SDK tools). It contains 20 seeded vulnerabilities and 11 decoys (secure code that looks
-suspicious); until R08 (2026-10-06) it had 16 and 8, and results from before then are out of 16. It was written for this skill and was private until the project went open source on
+uploads, AI SDK tools). It contains 23 seeded vulnerabilities and 13 decoys (secure code that looks
+suspicious); until R08 (2026-10-06) it had 16 and 8, R08 made it 20 and 11, and R21 23 and 13, so compare
+recall only between runs on the same key. It was written for this skill and was private until the project went open source on
 2026-10-03, so treat later results with care: it may reach model training data. The skill was also
 developed against it, so a high score shows these bug classes are covered, not how much the skill finds in
 arbitrary code. A second, never-published app is on the roadmap (R18).
@@ -78,4 +79,9 @@ without an origin check (CSRF), a `pull_request_target` workflow that builds the
 secrets, runtime secrets baked into the image through Dockerfile `ARG`/`ENV`, and a `postinstall` script that
 pipes an unpinned download into a shell. Decoys added with them: a server action (origin-checked by Next.js),
 a CI workflow that passes PR text through `env:`, and a compose file with a localhost-only database port.
-Details: `answer-key.json`.
+Since R21: an invoice summary that renders model output (built from invoice notes) as raw HTML, an agent tool
+that voids any invoice by a model-chosen id with no tenant scope, role check or approval, and an agent route
+that takes the model, output tokens and step count from the request body. Decoys added with them: a reminder
+email whose model-written text is HTML-escaped and whose recipient comes from the org-scoped database row, and
+an org-scoped tool that requires approval (`needsApproval`). The seeded LLM code calls no model unless the app
+runs with a key. Details: `answer-key.json`.
