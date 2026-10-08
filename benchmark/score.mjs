@@ -19,6 +19,8 @@
 //   `dependency`, and dependency findings match only advisory entries. Findings without a category
 //   (other tools) may match either. `any_category: true` entries (supply-chain settings in a manifest,
 //   which an auditor may file as `config` or `dependency`) match findings of any category.
+// - `file_level: true` entries (a secret committed in a file that exists only in git history) also match a
+//   finding that cites that file with no line, at distance 0. Every other entry needs a line.
 // - A finding without a line, or outside every window, matches nothing and is listed for review.
 
 import { appendFileSync, existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
@@ -83,13 +85,17 @@ export function distance(loc, keyLoc) {
 const compatible = (finding, entry) =>
   finding.category == null || entry.any_category === true || (finding.category === "dependency") === Boolean(entry.advisory);
 
+// A finding with a file and no line reaches only `file_level` entries that list that file.
+const fileLevelHit = (loc, entry) =>
+  entry.file_level === true && loc?.file != null && loc.start == null && entry.locations.some((l) => samePath(loc.file, l.file));
+
 // Entries a finding matches: the nearest within the window, ties all count.
 export function matchFinding(finding, entries, window = DEFAULT_WINDOW) {
   let best = Infinity;
   let hits = [];
   for (const e of entries) {
     if (!compatible(finding, e)) continue;
-    const d = Math.min(...e.locations.map((l) => distance(finding.loc, l)));
+    const d = fileLevelHit(finding.loc, e) ? 0 : Math.min(...e.locations.map((l) => distance(finding.loc, l)));
     if (d > window) continue;
     if (d < best) { best = d; hits = [e]; } else if (d === best) hits.push(e);
   }

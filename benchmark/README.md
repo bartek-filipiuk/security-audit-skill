@@ -138,7 +138,8 @@ health check, `render_template` with a variable, `send_from_directory` with `sec
   entries are in reach, the nearest wins, so neighbouring ranges in one file (B06 and decoy D04) stay apart.
   `advisory: true` entries (vulnerable dependency versions) take only findings in category `dependency`,
   and those findings match nothing else, except `any_category: true` entries (supply-chain settings in a
-  manifest, which an auditor may file as `config` or `dependency`). A finding without a line matches nothing.
+  manifest, which an auditor may file as `config` or `dependency`). A finding without a line matches nothing, except a `file_level: true` entry (a secret committed in a file that
+  exists only in git history, B15's `.env`): a finding that cites that file with no line matches it.
   Cited files may be code, manifests, CI workflows (`.github/workflows/*.yml`), Dockerfiles, compose and IaC files.
 - A range is the vulnerable statement or the lines a fix changes, not the whole file. Decoy ranges
   cover the code that looks suspicious. When a real finding is scored as unmatched, check the range
