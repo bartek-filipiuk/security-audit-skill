@@ -13,6 +13,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join, posix } from "node:path";
 import { parseFrontmatter } from "./audit-state.mjs";
+import { loadLedgers } from "./coverage.mjs";
 
 // Files that decide access or resolution for every route: a change here means a full audit.
 const GLOBAL_RE = /(^|\/)(next\.config\.[cm]?[jt]s|tsconfig(\.\w+)?\.json|jsconfig\.json)$/;
@@ -177,8 +178,8 @@ export function markCarried(text, commit, run) {
   return text.replace(/^---\r?\n/, `---\ncarried_from: "${commit}"\ncarried_run: "${run}"\n`);
 }
 
-// Writes the carried items, recon.md, test-quality.md and the unaffected not-assessed rows into the
-// fresh audit directory.
+// Writes the carried items, recon.md, test-quality.md, the unaffected not-assessed rows and coverage
+// ledger rows (coverage/carried.json) into the fresh audit directory.
 export function writeCarried(prevDir, out, plan, { commit, run }) {
   for (const it of plan.carry) {
     const sub = it.kind === "finding" ? "findings" : "non-issues";
@@ -190,11 +191,20 @@ export function writeCarried(prevDir, out, plan, { commit, run }) {
     const p = join(prevDir, name);
     if (existsSync(p)) writeFileSync(join(out, name), banner(what) + readFileSync(p, "utf8"));
   }
+  const touched = new Set([...plan.affected, ...plan.reaudit.map((t) => t.file)]);
   const na = join(prevDir, "not-assessed.md");
   if (existsSync(na)) {
-    const touched = new Set([...plan.affected, ...plan.reaudit.map((t) => t.file)]);
     const keep = readFileSync(na, "utf8").split("\n").filter((l) => ![...touched].some((f) => l.includes(f)));
     writeFileSync(join(out, "not-assessed.md"), keep.join("\n"));
+  }
+  // Coverage ledger rows whose target and evidence are untouched, and whose cited findings were carried.
+  const carriedIds = new Set(plan.carry.map((it) => it.name.replace(/\.md$/, "")));
+  const rows = loadLedgers(prevDir).flatMap((l) => (Array.isArray(l.doc?.entries) ? l.doc.entries : []))
+    .filter((e) => !touched.has(e.target) && (e.evidence ?? []).every((ev) => (/^(non-)?[a-z][a-z-]*-\d{3}$/.test(ev) ? carriedIds.has(ev) : !touched.has(ev.replace(/:[\d-]+$/, "")))))
+    .map((e) => ({ ...e, carried_from: e.carried_from ?? commit }));
+  if (rows.length) {
+    mkdirSync(join(out, "coverage"), { recursive: true });
+    writeFileSync(join(out, "coverage", "carried.json"), JSON.stringify({ schema_version: "1.0", entries: rows }, null, 2) + "\n");
   }
 }
 

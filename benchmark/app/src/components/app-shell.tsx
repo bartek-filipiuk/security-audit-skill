@@ -9,6 +9,8 @@ export function AppShell({ user, children }: { user: { name: string; email: stri
         <Link href="/projects">Projects</Link>
         <Link href="/invoices">Invoices</Link>
         <Link href="/assistant">Assistant</Link>
+        <Link href="/settings/team">Team</Link>
+        <Link href="/settings/notifications">Notifications</Link>
         <Link href="/settings/billing">Billing</Link>
         <span>{user.name}</span>
       </nav>

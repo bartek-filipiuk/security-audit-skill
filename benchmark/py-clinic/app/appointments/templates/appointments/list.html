@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% load clinic_tags %}
+{% block content %}
+<form method="get" action="{% url 'appointments:search' %}">
+  <input type="search" name="q" value="{{ q }}">
+</form>
+<ul>
+  {% for appointment in appointments %}
+    <li>
+      <a href="{% url 'appointments:detail' appointment.pk %}">{{ appointment.starts_at|date:"j M Y H:i" }}</a>
+      {{ appointment.reason }} {% status_badge appointment %}
+    </li>
+  {% empty %}
+    <li>No appointments.</li>
+  {% endfor %}
+</ul>
+{% endblock %}

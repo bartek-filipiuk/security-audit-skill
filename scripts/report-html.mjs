@@ -12,11 +12,13 @@ import { existsSync, readFileSync, realpathSync, statSync, writeFileSync } from 
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadAudit, section, titleOf } from "./audit-state.mjs";
+import { notAssessedRows } from "./coverage.mjs";
+import { profileHeadline } from "./stack.mjs";
 
 const SEVERITY = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
 const CATEGORY = {
   auth: "Authentication & authorization", injection: "Injection & SSRF", "rate-limit": "Rate limiting & abuse",
-  exposure: "Data exposure & secrets", config: "Headers, CORS & configuration", upload: "File upload & storage",
+  exposure: "Data exposure & secrets", config: "Headers, CORS, build & deploy configuration", upload: "File upload & storage",
   dependency: "Dependencies", crypto: "Cryptography", concurrency: "Concurrency & races",
   "docs-vs-reality": "Documentation vs reality", "business-logic": "Business logic", logging: "Logging & monitoring",
   "test-gap": "Test gaps", chain: "Chains",
@@ -67,14 +69,8 @@ function load(dir) {
   const summary = json("tools/summary.json");
   const hotspots = json("tools/hotspots.json") ?? [];
   // null = never recorded (audits older than the not-assessed rule), [] = recorded and empty.
-  let notAssessed = existsSync(join(dir, "not-assessed.md"))
-    ? readFileSync(join(dir, "not-assessed.md"), "utf8").split("\n")
-        .filter((l) => /^\|/.test(l) && !/^\|\s*-/.test(l) && !/^\|\s*category\s*\|/i.test(l))
-        .map((l) => l.split("|").slice(1, -1).map((c) => c.trim()))
-    : null;
-  for (const [label, block] of [["Dependencies", summary?.deps], ["Secrets", summary?.secrets]]) {
-    if (block && /NOT RUN|FAILED/.test(block.status)) (notAssessed ??= []).push([label.toLowerCase(), `${label} scan`, block.status]);
-  }
+  // Derived from the coverage ledger plus not-assessed.md and the pre-pass tool status (coverage.mjs).
+  const notAssessed = notAssessedRows(dir)?.map((g) => [g.class, [g.check, g.target].filter(Boolean).join(" · "), g.why]) ?? null;
 
   const items = findings.filter((f) => f.data).map((f) => {
     const fm = f.data;
@@ -228,6 +224,7 @@ h1 { font: 600 clamp(2.4rem, 5vw, 3.6rem)/1.05 var(--display); letter-spacing: -
 .c-critical { background: var(--crit); } .c-high { background: var(--high); } .c-medium { background: var(--med); } .c-low { background: var(--low); }
 .c-fixed { background: var(--fixed); } .c-safe { background: var(--safe); } .c-gap { background: var(--gap); }
 .scope { margin: 18px 0 0; padding: 10px 14px; background: var(--tint-gap); border-radius: 10px; font-size: 0.92rem; }
+.profile p { margin: 0.25em 0; max-width: 90ch; }
 nav { position: sticky; top: 0; align-self: start; padding-top: 28px; }
 nav ol { list-style: none; margin: 0; padding: 0; }
 nav a { display: flex; justify-content: space-between; padding: 6px 0; text-decoration: none; color: var(--ink-2); border-bottom: 1px solid transparent; }
@@ -301,6 +298,7 @@ footer { grid-column: 1 / -1; border-top: 1px solid var(--rule); padding: 24px 0
 <div class="ledger" role="img" aria-label="${esc(bar.map(([, , l]) => l).join(", "))}">${bar.map(([k, n]) => `<span class="c-${k}" style="--n:${n}"></span>`).join("")}</div>
 <ul class="legend">${bar.map(([k, , l]) => `<li><i class="c-${k}"></i>${esc(l)}</li>`).join("")}</ul>
 ${d.incremental ? `<p class="scope">${d.incremental.mode === "incremental" ? `<strong>Incremental audit.</strong> Re-audited ${d.incremental.targets.length} of ${d.incremental.total} entry points and config files changed since commit ${esc(d.incremental.since.slice(0, 12))}; ${d.items.filter((f) => f.carriedFrom).length} findings carried over from commit ${esc(d.incremental.carried_from.slice(0, 12))}.` : `<strong>Full audit</strong> instead of the requested incremental one: ${esc(d.incremental.reason)}.`}</p>` : ""}
+${d.summary?.stack?.profiles?.length ? `<div class="scope profile">${d.summary.stack.warning ? `<p><strong>Warning:</strong> ${esc(d.summary.stack.warning)}</p>` : ""}${d.summary.stack.profiles.map((p) => `<p><strong>Profile: ${esc(profileHeadline(p))}.</strong>${d.summary.stack.forced ? " Forced with --stack." : ""}</p><p>Covers: ${esc(p.covers.join("; "))}.</p><p>Does not cover: ${esc(p.gaps.join("; "))}.</p>`).join("")}</div>` : ""}
 ${d.scope ? `<p class="scope"><strong>Partial audit.</strong> Scope: ${esc(d.scope.label)} (${d.scope.entries} of ${d.scope.total} entry points and config files). Everything outside it was not assessed.</p>` : ""}
 </header>
 <nav aria-label="Sections"><ol>${nav.map(([id, label, n]) => `<li><a href="#${id}">${esc(label)} <b>${n}</b></a></li>`).join("")}</ol></nav>

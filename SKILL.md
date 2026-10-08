@@ -7,7 +7,7 @@ description: >-
   auth implementation, assess test quality, audit only part of the code
   (login/SSO/auth, payments, webhooks, a path, or the top N riskiest
   places via --scope), re-audit only what changed since a commit or the
-  last audit (--since), or security-audit --info.
+  last audit (--since), force a stack profile (--stack), or security-audit --info.
 ---
 
 # Security Audit
@@ -47,6 +47,14 @@ Re-audits only the entry points whose code changed since `<commit>` (or since th
 - **Mode** is chosen by the number of re-audit targets, so a small change runs in Standard mode. Skip Phase 1 when `recon.md` was carried (update its rows for the re-audit targets yourself, or in the auditor brief), dispatch Phase 2 auditors only for the domains of the re-audit targets with that list, verify in Phase 3 only findings without `carried_from` (chains may cite carried ones), and skip Phase 4 unless no `test-quality.md` was carried.
 - **Report.** The Phase 5 scripts are the same. `summary.md` says "Incremental audit since <commit>": re-audited N of M targets, K findings carried from <commit>. Top risks may include carried findings. Never describe the run as a fresh full audit; `report.md` and `report.html` mark every carried item with its commit.
 
+### `--stack <name>` — Force the stack profile
+
+Phase 0 detects the stack from the manifests (`package.json`, `composer.json`, `pyproject.toml`/`requirements*.txt`, `go.mod`, `Cargo.toml`, `Gemfile`, `pom.xml`/`build.gradle`, `*.csproj`, up to three directories deep) and applies one profile per detected stack. `--stack` replaces that with one profile: `js`, `php`, `python`, `go`, `rust`, `ruby`, `java`, `dotnet`, `generic`, or an alias (`nextjs`, `laravel`, `symfony`, `drupal`, `django`, `fastapi`, `flask`, `rails`, ...). Pass it to the pre-pass: `prepass.mjs --new-run --stack <name>`. Combines with `--scope` and `--since`.
+
+- If the forced profile does not match the code, the pre-pass still applies it and prints a warning; tell the user the warning in one line.
+- Stacks that were detected but not forced are listed under "does not cover" in `prepass.md` and in the report.
+- `briefs.mjs` adds the forced language's stack patterns to every brief.
+
 ### `--mutation` — Mutation testing in Phase 4
 
 Off by default because it is slow and token-heavy. With this flag the test-quality agent removes security controls one at a time **in a copy of the repository outside the project directory** and reports which removals no test catches.
@@ -71,7 +79,7 @@ These gates govern the pipeline. Violating them invalidates the audit. (Most app
 8. **Dead code is not a finding.** No route, no caller, no entry point = unreachable. Note as non-issue with cleanup recommendation.
 9. **Defensive failures are not vulnerabilities.** A security control that is too strict (blocks legitimate access) is a functionality bug, not a security vulnerability → **REJECT** with `rejection_reason: defensive_failure` and surface it under Recommended Actions. (One terminal outcome — do not also "cap at LOW"; that double-path made the rating non-reproducible.)
 10. **Prerequisite chains affect severity.** Count the admin/config steps required *before* the weakness is reachable (privileged setup steps, not the steps of the person who triggers it), then downgrade: **2–3 prerequisites → −1 level, 4+ → −2 levels, floor at LOW.** CRITICAL is exempt from downgrade **because for RCE / data-loss impact dominates likelihood** — state this rationale so raters apply it consistently. Document the full prerequisite chain.
-11. **No reassurance without evidence.** A non-issue cites the file:line of the control that makes the code safe. "No grep hits", a tool that did not run, or a pattern the scanner does not understand is a coverage gap: record it in `.security-audit/not-assessed.md`, never as a non-issue.
+11. **No reassurance without evidence.** A non-issue cites the file:line of the control that makes the code safe. "No grep hits", a tool that did not run, or a pattern the scanner does not understand is a coverage gap: record it as `not_assessed` in the coverage ledger, never as a non-issue.
 12. **Finding frontmatter is the single source of truth.** `remediation.json` is generated from it by `scripts/audit-state.mjs`, never written by hand. Run the script after every phase that writes findings; it must exit 0 before the report is assembled.
 
 **Principles shared with all agents:**
@@ -93,7 +101,7 @@ Entry points found in Phase 1?
   └── > 50   → Parallel Mode  (multi-agent pipeline described below)
 ```
 
-**Standard Mode:** One agent runs all 4 phases sequentially. Use the checklist in `references/audit-checklist.md`, the Deep Dive loop, and produce the report per `references/report-template.md`. No subagents needed.
+**Standard Mode:** One agent runs all 4 phases sequentially. Use the checklist in `references/audit-checklist.md`, the Deep Dive loop, and produce the report per `references/report-template.md`. No subagents needed. Record coverage in `.security-audit/coverage/coordinator.json` as you go (Triage and Quick-Run modes too).
 
 **Triage Mode:** One agent, but after Recon, group endpoints by risk domain (HIGH: auth/payments/admin/upload, MEDIUM: CRUD/search, LOW: health/static). Audit HIGH domains first. If context runs low, report what you have and mark uncovered areas.
 
@@ -107,14 +115,16 @@ All agents read from and write to `.security-audit/` in the project root. This i
 
 ```
 .security-audit/
-├── prepass.md               # Phase 0 output: entry points, Drizzle scope scan, dependency advisories, secret scan
-├── tools/                   # raw tool output (osv.json, gitleaks.json with values redacted, entry-points.json, scope-scan.json, incremental.json on --since)
+├── prepass.md               # Phase 0 output: entry points, Drizzle scope scan, dependency advisories, secret scan, tool candidates
+├── tools/                   # raw tool output (osv.json, gitleaks.json with values redacted, entry-points.json, scope-scan.json, incremental.json on --since, semgrep/hadolint/trivy/bandit .json, zizmor.sarif, tool-candidates.json)
 ├── recon.md                 # Phase 1 output: exposed surface map, authorization map, triage
 ├── findings/                # One file per finding (raw → verified/rejected; remediation state in its frontmatter)
 │   ├── auth-001.md
 │   └── ...
 ├── non-issues/              # Areas examined and found secure, each citing the control's file:line
 ├── not-assessed.md          # Coverage gaps: checks that could not be done, and why
+├── coverage/                # Coverage ledger, one JSON file per writer: entry points and classes checked, not applicable, not assessed
+├── coverage.json            # GENERATED: the merged ledger (scripts/coverage.mjs --write)
 ├── tests/                   # Phase 3 regression tests for HIGH/CRITICAL, in the project's own runner (never in the source tree)
 ├── briefs/                  # Phase 2 per-auditor briefs (scripts/briefs.mjs)
 ├── test-quality.md          # Phase 4 output
@@ -144,7 +154,7 @@ if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   }
   git ls-files --error-unmatch .security-audit >/dev/null 2>&1 && echo "WARNING: .security-audit is tracked in git"
 fi
-node "$SKILL_DIR/scripts/prepass.mjs" --new-run   # add: --scope <targets> for a partial audit; --since <commit|last> replaces --new-run
+node "$SKILL_DIR/scripts/prepass.mjs" --new-run   # add: --scope <targets> for a partial audit; --stack <name> to force a profile; --since <commit|last> replaces --new-run
 ```
 
 - **`--new-run`** moves a previous audit into `.security-audit/history/<date>/` (agents never read it, so the new run cannot anchor on old results), recreates `findings/`, `non-issues/`, `tests/`, and records the workspace state that `workspace-check.mjs` compares against at the end. Re-running prepass later in the same audit is done without `--new-run`.
@@ -153,8 +163,10 @@ node "$SKILL_DIR/scripts/prepass.mjs" --new-run   # add: --scope <targets> for a
 - **Live progress (optional):** if the directory `~/.claude/skills/audit-live` exists, tell the user once, right after the pre-pass: "Live progress: the Audit pane opens by itself in a wide terminal; in a narrow one type /audit-live." If it does not exist, say nothing about it.
 - **Tracked warning:** tell the user that earlier audit files (naming unfixed weaknesses) are in git history and whether the remote is public. Offer `git rm -r --cached .security-audit` plus a commit. Do not run it without their consent.
 - **Hotspots (start here):** `prepass.md` opens with the riskiest entry points and config files, ranked by signals (sensitive area such as auth/SSO/login, admin, payments, webhooks, files, AI; public-by-design kinds; no guard in the handler; unscoped queries; dangerous sinks; risky auth/CORS/env config). This is the work order for recon and every auditor: audit the hotspots in your domain first, then the rest. It is a ranking, not a verdict.
-- **`prepass.md`** also holds: every entry point found by framework convention (Next.js route handlers, pages, `"use server"` actions, proxy/middleware matcher, tRPC procedures, Hono/Express routes, pg-boss/BullMQ/cron jobs, AI SDK/MCP tools, Drupal routes); the Drizzle scope scan (query sites on owner-scoped tables that never reference the owner column); dependency advisories from osv-scanner (prod vs dev-only); secrets from gitleaks across the whole git history, values redacted.
-- **Tools:** native `osv-scanner` / `gitleaks` if installed, otherwise their official docker images (pulled on first use). Any `NOT RUN` or `FAILED` line goes into `not-assessed.md`, and you tell the user how to enable it. Never fill the gap from memory: CVE knowledge in a model is stale by construction.
+- **Stack and profile:** `prepass.md` names the detected stacks and the applied profile, what it covers and what it does not (`tools/summary.json` keeps the same record for the report). JS/TS has a dedicated profile, and so do PHP with Laravel, Symfony or Drupal (R05) and Python with Django, FastAPI or Flask (R06). For a stack without a dedicated profile (Go, Rust, Ruby, JVM, .NET, or PHP/Python on another framework) the entry-point table and hotspots are empty or partial: recon finds the entry points by reading the code, and the general checklist applies. The report states the profile and its gaps by itself; never describe a stack without a profile as fully covered.
+- **`prepass.md`** also holds: every entry point found by framework convention (Next.js route handlers, pages, `"use server"` actions, proxy/middleware matcher, tRPC procedures, Hono/Express routes, pg-boss/BullMQ/cron jobs, AI SDK/MCP tools, Drupal routes, Laravel routes, Symfony routes); the Drizzle scope scan (query sites on owner-scoped tables that never reference the owner column); dependency advisories from osv-scanner (prod vs dev-only); secrets from gitleaks across the whole git history, values redacted; **Tool Candidates**: rule hits from semgrep (registry rulesets chosen from the detected languages and frameworks), zizmor (GitHub Actions workflows, offline audits), hadolint (Dockerfiles) and `trivy config` (Dockerfiles, compose, Terraform, Helm, Kustomize), as file:line, rule and a short note, deduplicated and capped at 40 per tool. A tool with nothing to scan is `skipped` with the reason; that is not a gap.
+- **Tools:** native `osv-scanner` / `gitleaks` if installed, otherwise their official docker images (pulled on first use). semgrep, zizmor, hadolint and trivy run natively if installed, otherwise through their official docker images pinned by digest (`IMAGES` in `scripts/tools.mjs`); semgrep and trivy download their rules at run time. bandit (Python source outside tests) runs natively only. Any `NOT RUN` or `FAILED` line goes into `not-assessed.md` (the pre-pass already writes the rows for the rule scanners, marked `(prepass)`), and you tell the user how to enable it: the line says how. Never fill the gap from memory: CVE knowledge in a model is stale by construction.
+- **Tool candidates are leads, not findings.** The auditor who owns the file reads the code and turns each row into a finding (with its own evidence and impact), a non-issue citing the control, or drops it as a false positive. A tool severity is never the finding severity.
 
 ---
 
@@ -194,7 +206,7 @@ Dispatch a single agent with the prompt from `agents/recon-scanner.md`.
 From the recon output, extract:
 - Entry point count (confirms Parallel Mode)
 - Triage table (domains with risk levels)
-- Stack info (determines which patterns from `references/stack-patterns.md` to pass)
+- Stack info (start from the Stack and Profile section of `prepass.md`; it determines which patterns from `references/stack-patterns.md` to pass)
 - Security claims (become verification targets)
 - Authorization Map, especially "proximity-only" entry points (only guarded by proxy/middleware, a layout or a page)
 
@@ -208,9 +220,9 @@ Dispatch category auditors **in parallel**. Each agent uses the prompt from `age
 
 | Agent | Categories | Focus |
 |-------|-----------|-------|
-| Auth Auditor | 2.1, 2.3, 2.10, 2.11 | Auth, tenant scope, rate limiting, business logic, docs-vs-reality. Resolves every Data Scope Scan candidate |
-| Injection Auditor | 2.2, 2.4 | Injection, data exposure |
-| Infra Auditor | 2.5, 2.7, 2.8, 2.12 | Headers, dependencies, crypto, logging. Triages the pre-pass dependency and secret rows |
+| Auth Auditor | 2.1, 2.3, 2.10, 2.11 | Auth, tenant scope, LLM tool and agent authorization, rate limiting and LLM cost, business logic, docs-vs-reality. Resolves every Data Scope Scan candidate |
+| Injection Auditor | 2.2, 2.4 | Injection, LLM output sinks and model context, data exposure |
+| Infra Auditor | 2.5, 2.7, 2.8, 2.12 | Headers, dependencies and supply chain, CI/CD workflows, containers and IaC, crypto, logging. Triages the pre-pass dependency and secret rows |
 | Concurrency Auditor | 2.9 | Race conditions, TOCTOU, double-submit |
 | Upload Auditor | 2.6 | File upload (skip if no uploads in recon) |
 
@@ -225,12 +237,12 @@ node "$SKILL_DIR/scripts/briefs.mjs"
 2. Its domain from the triage table, in a few lines
 3. **Its number range**: auditor k writes every file it creates, findings and non-issues alike, with numbers k01–k99 (first auditor 101–199, second 201–299, …). Two auditors share categories on big projects, and equal numbers overwrite each other's files.
 4. The pre-pass sections they own: Entry Points + Authorization Map + Data Scope Scan to the Auth Auditor; Dependency Advisories + Secret Scan to the Infra Auditor; Entry Points to everyone; and every auditor gets the Hotspots rows in its domain as its first targets (plus the in-scope target list on a `--scope` run)
-5. Instruction to write findings to `.security-audit/findings/`, non-issues to `.security-audit/non-issues/`, and coverage gaps as lines in `.security-audit/not-assessed.md`
+5. Instruction to write findings to `.security-audit/findings/`, non-issues to `.security-audit/non-issues/`, and its coverage ledger to `.security-audit/coverage/auditor-<name>.json` (format: Coverage Ledger in `references/finding-format.md`): one row per entry point or project-wide check and class it owns, `checked` with evidence, `not_applicable` or `not_assessed` with a reason. Coverage gaps go there, not into `not-assessed.md`
 
 **All agents run in parallel** — their number ranges keep their files apart.
 
 **Wait for all to complete.** Then:
-1. Run `node "$SKILL_DIR/scripts/audit-state.mjs" --summary` and have the owning auditor fix any format problem now, before verification. The summary replaces reading every file.
+1. Run `node "$SKILL_DIR/scripts/audit-state.mjs" --summary` and have the owning auditor fix any format problem now, before verification. The summary replaces reading every file. Then `node "$SKILL_DIR/scripts/coverage.mjs" --summary`: it must exit 0, and the classes it lists as not recorded and the entry points without a row are "not looked at". Send the owning auditor back for those that should have been covered; the rest reach Not Assessed by themselves.
 2. Check that every Data Scope Scan candidate ended as a finding or a non-issue; send the Auth Auditor back for any that did not
 3. Report progress to user: "Phase 2 complete. N raw findings across M categories."
 
@@ -281,6 +293,7 @@ You write only `.security-audit/summary.md`, following the top of `references/re
 ```bash
 node "$SKILL_DIR/scripts/audit-state.mjs" --final --write --source baseline-from-audit   # Phase 5.5, remediation.json
 node "$SKILL_DIR/scripts/workspace-check.mjs"    # what changed outside the audit dir during the run
+node "$SKILL_DIR/scripts/coverage.mjs" --write   # validates the coverage ledger, merges it into coverage.json; must exit 0
 node "$SKILL_DIR/scripts/report-md.mjs"          # summary.md + findings + non-issues + gaps → report.md
 node "$SKILL_DIR/scripts/report-html.mjs"        # → report.html
 ```
@@ -362,7 +375,7 @@ For fast single-pass audit without subagents (any project size):
 - Apply EXPAND/TRACE/VERIFY/REJECT inline during Phase 2
 - Skip Phase 3 Deep Dive loop
 - Still write to `.security-audit/` for persistence
-- Still run the Phase 5 script sequence at the end (`audit-state.mjs --final --write`, `workspace-check.mjs`, `report-md.mjs`, `report-html.mjs`)
+- Still run the Phase 5 script sequence at the end (`audit-state.mjs --final --write`, `workspace-check.mjs`, `coverage.mjs --write`, `report-md.mjs`, `report-html.mjs`)
 - Work through the pre-pass Hotspots first; for an even faster pass combine with `--scope top20`
 - Still produce full report with Non-Issues
 
@@ -377,6 +390,9 @@ This methodology is stack-agnostic. Phase 1 discovers the stack; Phase 2 adapts.
 - Pass relevant patterns from `references/stack-patterns.md` to auditor agents
 - Skip inapplicable categories (no uploads → skip 2.6, no crypto → skip 2.8)
 - For frameworks with built-in protections (Django CSRF, Rails strong params), verify enabled and not bypassed
+- Laravel, Symfony and Drupal (profile R05): the pre-pass lists routes from `routes/*.php` (with group middleware), `#[Route]`/`config/routes*.yaml` (with `#[IsGranted]` and the matching `access_control` rule) and `*.routing.yml` (with requirements), and ranks each by the controller method it calls; Blade `{!! !!}`, Twig `|raw`, `$guarded = []` and CSRF exceptions are hotspots of their own. Psalm taint analysis is NOT RUN by design (it loads the project's autoloader): record it in `not-assessed.md`. `briefs.mjs` adds the profile checklists when it finds the framework's files or `composer.json` packages
+- Django, FastAPI and Flask (profile R06): the pre-pass lists Django routes through the `include()` chain and DRF routers (with the view's decorators, mixins and `permission_classes`, or the `REST_FRAMEWORK` default), FastAPI routes with the `Depends()` of the route, router, app and `include_router`, and Flask routes with `*_required` decorators and `before_request` hooks, and ranks each by its view; `|safe` templates, literal `SECRET_KEY`/`secret_key`, DEBUG defaults, `csrf_exempt` and CORS with credentials are hotspots of their own. bandit runs in the pre-pass tool runner when it is installed (it only parses the code); its hits are Tool Candidates, and when it applies but is not installed the pre-pass writes its `not-assessed.md` row. `briefs.mjs` adds the profile checklists from `manage.py`/`urls.py` or the packages in `requirements*.txt`/`pyproject.toml`
+- Supabase and Firebase (profile R02): RLS policies, storage policies and security rules are the access control, so treat each pre-pass `policy` hotspot, Edge Function and Cloud Function like an entry point. `briefs.mjs` adds the "Stack profile" checklist to the auth brief and the Supabase/Firebase patterns to every brief when the repo has `supabase/`, rules files or the SDKs
 
 ---
 
@@ -389,12 +405,14 @@ This methodology is stack-agnostic. Phase 1 discovers the stack; Phase 2 adapts.
 | `references/stack-patterns.md` | Phase 2 dispatch | Language/framework-specific grep patterns |
 | `references/finding-format.md` | All phases | File formats for findings, non-issues, recon output |
 | `references/remediation.md` | Phase 6 | Remediation workflow + `remediation.json` contract + `public_safe` redaction flag |
-| `scripts/prepass.mjs` | Phase 0 | Entry points, Drizzle scope scan, osv-scanner, gitleaks → `prepass.md` |
+| `scripts/prepass.mjs` | Phase 0 | Stack profile, entry points, Drizzle scope scan, osv-scanner, gitleaks, rule scanners (`scripts/tools.mjs`: semgrep, zizmor, hadolint, trivy, bandit) → `prepass.md` |
+| `scripts/stack.mjs` | Phase 0 (via prepass) | Stack detection from manifests, profiles (covers / does not cover), `--stack` |
 | `scripts/audit-state.mjs` | After Phases 2, 3, 6 and 5.5 | Validates finding frontmatter; `--write` generates `remediation.json` |
 | `scripts/report-html.mjs` | End of Phase 5 / after Phase 6 | Renders `report.html` (to fix / verified safe / not assessed) from the finding files |
 | `scripts/briefs.mjs` | Phase 2 dispatch | One brief per auditor: its checklist sections + stack patterns for the repo's languages |
 | `scripts/report-md.mjs` | Phase 5 | Assembles `report.md` from the coordinator's `summary.md` and the audit files |
 | `scripts/workspace-check.mjs` | Phase 5 | Lists files changed outside `.security-audit/` since prepass `--new-run` |
+| `scripts/coverage.mjs` | After Phase 2, Phase 5 | Validates the coverage ledger (`references/coverage-ledger.schema.json`); report-md and report-html derive Coverage and Not Assessed from it |
 | `agents/recon-scanner.md` | Phase 1 dispatch | Recon agent prompt |
 | `agents/category-auditor.md` | Phase 2 dispatch | Category auditor agent prompt |
 | `agents/deep-dive-verifier.md` | Phase 3 dispatch | Deep Dive verifier agent prompt |

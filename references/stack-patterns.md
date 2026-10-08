@@ -241,3 +241,179 @@ Express-style patterns (`req.body`, `app.get`) find nothing in these frameworks.
 | Next.js | Auth only in the proxy `matcher`, a layout or a page while `app/api/**/route.ts` or server actions skip it (`/admin` matched, `/api/admin` not) |
 | Method inconsistency | For same path: compare middleware on GET vs POST vs PUT vs DELETE. Different protection = BFLA |
 | Unprotected mutations | POST/PUT/DELETE routes with no auth middleware at all — especially: checkout, payment, upgrade, transfer, delete-account |
+
+## LLM and Agent Features
+
+Model call sites first: `generateText\(|streamText\(|generateObject\(|streamObject\(` (AI SDK `ai`), `chat\.completions\.create|responses\.create` (`openai`), `messages\.create|messages\.stream` (`@anthropic-ai/sdk`, `anthropic`), `\.invoke\(|\.stream\(|AgentExecutor|createReactAgent|create_react_agent` (LangChain, LangGraph), `query\(` from the Claude Agent SDK, `server\.tool\(|registerTool\(` (MCP). Then follow the output and the tool arguments.
+
+| Check | Patterns to search |
+|-------|-------------------|
+| Tool definitions | `tool\(\{`, `tools:\s*\[`, `type:\s*["']function["']`, `input_schema`, `@tool`, `StructuredTool`, `DynamicStructuredTool`, `server\.tool\(`; in each `execute`/handler look for `.update(`, `.delete(`, `.insert(`, `sendEmail`, `fetch(` without the session tenant id (`ctx.orgId`) in the `where` |
+| Tool approval | AI SDK `needsApproval`, LangGraph `interrupt\(`, `HumanInTheLoop`, an approval state in the agent loop; its absence on tools that delete, pay, send or write |
+| Tenant from the model | tool schema fields `orgId`, `userId`, `tenantId`, `accountId`, `email`, `to`, `url`, `path` (the model picks them) |
+| Untrusted content in the loop | `fetch\(` or browse tools, document/PDF loaders, `RetrievalQA`, vector store `similaritySearch\(` without a tenant filter, inbound email or ticket text passed to `prompt`/`messages` together with write tools |
+| Output to HTML | `dangerouslySetInnerHTML`, `innerHTML\s*=`, `v-html`, `marked\(`, `markdown-it`, `rehype-raw`, `\|safe` in the same component or route as a model call, and no `DOMPurify`, `sanitize-html`, `rehype-sanitize` |
+| Output to SQL | `sql\.raw\(`, `\$queryRawUnsafe`, `\.unsafe\(`, `execute\(` with model text, `SQLDatabaseChain`, `create_sql_agent`, text-to-SQL prompts |
+| Output to shell or code | `exec\(`, `execSync\(`, `spawn\(` with `shell: true`, `eval\(`, `new Function\(`, `vm\.run`, Python `exec\(`, `subprocess` with `shell=True`, `PythonREPLTool`, `ShellTool` |
+| Output to URL | `fetch\(`, `axios`, `got\(`, `requests\.get\(` on a URL from model output or a tool argument; markdown image rendering of model output (`!\[`) without a host allowlist |
+| Secrets in context | `process\.env\.` or `os\.environ` interpolated into `system:`/`prompt:`/`messages`, connection strings or internal hostnames in prompt templates, full DB rows passed as tool results |
+| Cost and tokens | `model:` / `maxOutputTokens:` / `max_tokens:` / `maxSteps` / `stopWhen:` taken from `body`, `input` or `req.body`; LLM routes without a rate limiter (`@upstash/ratelimit`, `rateLimit`, a quota table); `stopWhen` or `max_iterations` missing in agent loops |
+| Keys in the browser | `dangerouslyAllowBrowser:\s*true`, `anthropic-dangerous-direct-browser-access`, `NEXT_PUBLIC_\w*(OPENAI\|ANTHROPIC\|AI)\w*KEY`, `VITE_\w*KEY` |
+
+## CSRF
+
+| Framework | Patterns to search |
+|-----------|-------------------|
+| Next.js route handlers | `export async function (POST\|PUT\|PATCH\|DELETE)` in `app/**/route.ts` that authenticate by cookie (`getSession()`, `auth.api.getSession`, `cookies()`) with no `request.headers.get("origin")` / `sec-fetch-site` check; `request.formData()` or `request.text()` in those handlers (reachable by a cross-site form without preflight) |
+| Next.js server actions | Protected by an Origin/Host comparison by default; check `serverActions.allowedOrigins` in `next.config.*` (a wildcard or broad list widens it) and proxies that rewrite `Host`/`X-Forwarded-Host` |
+| Next.js GET handlers | `export async function GET` that calls `.insert(`, `.update(`, `.delete(`, sends email or connects an integration: `SameSite=Lax` cookies still arrive on top-level navigation |
+| Better-Auth | `sameSite: "none"` in `advanced.defaultCookieAttributes`, `crossSubDomainCookies`, `trustedOrigins` with `*`, `disableCSRFCheck: true` |
+| Hono | `csrf()` from `hono/csrf` and its `origin` option; `cors({ origin: (o) => o, credentials: true })` |
+| JS/TS | Express `csrf-csrf` / `lusca` / `csurf` presence and the routes they skip; `express-session` or `cookie-session` with `sameSite: 'none'` |
+| Django | `@csrf_exempt`, `CSRF_TRUSTED_ORIGINS`, `CSRF_COOKIE_SAMESITE = None`, `SESSION_COOKIE_SAMESITE = None` |
+| Rails | `skip_forgery_protection`, `skip_before_action :verify_authenticity_token`, `protect_from_forgery with: :null_session` |
+| PHP/Laravel | `$except` in `VerifyCsrfToken`, `validateCsrfTokens(except:`, Symfony `csrf_protection: false` |
+| All | OAuth/SSO callbacks that exchange `code` without comparing `state` to a stored value; `SameSite=None` in `Set-Cookie` |
+
+## CI/CD Workflows (GitHub Actions)
+
+| Check | Patterns to search in `.github/workflows/*.yml` |
+|-------|-------------------------------------------------|
+| Privileged trigger | `pull_request_target`, `workflow_run`; then in the same workflow `ref: ${{ github.event.pull_request.head.sha }}` or `head.ref`, `refs/pull/`, `gh pr checkout`, `actions/download-artifact` followed by running what it downloaded. Install and build steps after such a checkout run the pull request's code |
+| Expression injection | `\$\{\{\s*github\.event\.(issue\|pull_request\|comment\|review\|discussion\|head_commit\|commits)`, `\$\{\{\s*github\.head_ref` inside `run:` or `script:` (safe inside `env:` and `with:` values used as data) |
+| Unpinned actions | `uses:\s*[^@\s]+@(?![0-9a-f]{40}\b)` (tag or branch instead of a commit SHA), `uses: docker://` without `@sha256:` |
+| Secrets in logs | `echo .*secrets\.`, `toJSON\(secrets\)`, `set -x`, `printenv`, `env \| `, `secrets\..*>> "?\$GITHUB_(OUTPUT\|STEP_SUMMARY\|ENV)` |
+| Token scope | `permissions:\s*write-all`, no top-level `permissions:`, `persist-credentials` not `false` in jobs that build untrusted code |
+| Runners | `runs-on:\s*\[?self-hosted` in workflows triggered by `pull_request` from forks |
+
+## Dockerfile and Compose
+
+| Check | Patterns to search |
+|-------|-------------------|
+| Secrets in the image | `^(ENV\|ARG)\s+\w*(SECRET\|TOKEN\|KEY\|PASSWORD\|DATABASE_URL\|DSN)`, `COPY .*\.env`, `COPY . .` without a `.dockerignore` that excludes `.env*` and `.git` |
+| User | no `^USER ` in the final stage, or `USER root` last |
+| Base image | `FROM \S+:latest`, `FROM [^:@\s]+(\s\|$)` (no tag) |
+| Remote fetch | `^ADD https?://`, `RUN .*(curl\|wget) .*\|\s*(sh\|bash)` without a checksum step |
+| Install | `npm install` instead of `npm ci`, `pnpm install` without `--frozen-lockfile`, `COPY package.json` without the lockfile |
+| Compose | `ports:` entries without `127.0.0.1:` for databases, caches and admin UIs, `privileged: true`, `/var/run/docker.sock`, `network_mode: host`, literal values for `*_PASSWORD` |
+
+## Infrastructure as Code
+
+| Tool | Patterns to search |
+|------|-------------------|
+| Terraform | `cidr_blocks\s*=\s*\["0\.0\.0\.0/0"\]` on ports 22/3306/5432/6379, `acl\s*=\s*"public-read`, `block_public_(acls\|policy)\s*=\s*false`, `encrypted\s*=\s*false`, `default\s*=\s*"` on variables named like `password`/`secret`, committed `*.tfstate` |
+| Kubernetes / Helm | `privileged: true`, `runAsUser: 0`, `allowPrivilegeEscalation: true`, `hostNetwork: true`, `hostPath:`, `kind: Secret` with literal `data:`/`stringData:` committed |
+| CloudFormation | `PublicAccessBlockConfiguration` absent or `false`, `CidrIp: 0.0.0.0/0` on admin ports, `NoEcho` missing on secret parameters |
+
+## Package Manifests, Lockfiles and Registries
+
+| Check | Patterns to search |
+|-------|-------------------|
+| Install scripts | `"(preinstall\|install\|postinstall\|prepare)"\s*:` whose command contains `curl`, `wget`, `\| *(sh\|bash)`, `node -e`, `https?://` |
+| Lifecycle policy | `dangerouslyAllowAllBuilds`, `onlyBuiltDependencies`, `neverBuiltDependencies`, `ignore-scripts`, `enable-pre-post-scripts` in `package.json`, `.npmrc`, `pnpm-workspace.yaml` |
+| Unpinned sources | `"(github\|gitlab\|bitbucket):`, `git\+(https?\|ssh)://`, `#(main\|master\|HEAD\|develop)"`, `"https?://\S+\.tgz"`, `"(latest\|\*)"` |
+| Lockfile integrity | `pnpm-lock.yaml` entries with `tarball:` and no `integrity:`, `package-lock.json` `"resolved": "http://` or an unexpected host, entries without `"integrity"` |
+| Lockfile enforced | `npm install`, `pnpm install` without `--frozen-lockfile`, `yarn install` without `--immutable` in CI workflows and Dockerfiles |
+| Registry | `.npmrc` `registry=http://`, `strict-ssl=false`, `_authToken=` followed by a literal (not `${…}`), internal `@scope/` packages with no `@scope:registry=` line |
+
+## Supabase
+
+Policies and functions live in `supabase/migrations/*.sql`; the pre-pass policy scan lists tables without RLS, `true` and login-only policies, bucket-wide storage policies, public buckets and SECURITY DEFINER functions as hotspots (kind `policy`). Read all policies of a table together: permissive policies are OR-ed.
+
+| Area | Patterns to search |
+|------|-------------------|
+| RLS | `create table` without a matching `enable row level security`; `disable row level security`; `create view` without `security_invoker` |
+| Policies | `using \(true\)`, `with check \(true\)`, `auth\.role\(\)`, `auth\.uid\(\) is not null`, `user_metadata`, `for update` without `with check` |
+| Functions | `security definer` without `set search_path`; `grant execute .* to anon`; no `revoke execute .* from public`; `\.rpc\(` call sites |
+| Storage | `storage\.buckets` with `public`, `on storage\.objects` policies without `foldername`/`auth\.uid\(\)`, `createSignedUrl\(`, `getPublicUrl\(` |
+| Keys | `SERVICE_ROLE`, `service_role`, `sb_secret_`, `NEXT_PUBLIC_\w*SERVICE`, a service-key `createClient\(` in a module imported from `"use client"` |
+| Server | `auth\.getSession\(\)` used for authorization; `userId`/`user_id` from `request\.json\(\)` next to a service-role client |
+| Edge Functions | `supabase/functions/*/index.ts` (`Deno\.serve`), `verify_jwt = false` in `supabase/config.toml`, body fields used as the user id |
+
+## Firebase
+
+| Area | Patterns to search |
+|------|-------------------|
+| Rules | `firestore.rules`, `storage.rules`, `database.rules.json`: `if true`, `request\.time <`, `if request\.auth != null;`, `\{document=\*\*\}`, `\{allPaths=\*\*\}`, `"\.read": true`, `"\.write": true` |
+| Ownership | `allow` lines without `request\.auth\.uid ==` or `== request\.auth\.uid`; updates without `affectedKeys\(\)` |
+| Admin SDK | `firebase-admin`, `credential\.cert`, `private_key`, `FIREBASE_PRIVATE_KEY`, `serviceAccount` in client code or committed JSON |
+| Functions | `onCall\(` without `request\.auth`/`context\.auth`; `onRequest\(` without `verifyIdToken`; `enforceAppCheck` treated as authorization |
+| Client | `NEXT_PUBLIC_FIREBASE_API_KEY` is public by design; client queries that rely on the UI to filter by owner |
+
+## Laravel
+
+Routes live in `routes/web.php` and `routes/api.php` (`/api` prefix); the pre-pass lists each route with the middleware of its groups and resolves the controller method, so rank by what the method does. Read a model's `$fillable`/`$guarded` before judging a `create()` or `update()`.
+
+| Area | Patterns to search |
+|------|-------------------|
+| Routes | `Route::(get\|post\|put\|patch\|delete\|any\|resource)\(` outside a `middleware\(.*auth` group; `withoutMiddleware\(`; admin paths without `can:` |
+| Object access | `::find\(\$`, `::findOrFail\(\$`, route-model binding (`Model \$model` arguments) without `authorize\(`, `Gate::`, `->user\(\)->` |
+| Mass assignment | `\$guarded = \[\]`, `->(create\|update\|fill\|forceFill)\(\$request->all\(\)`, `\$request->input\(\)` passed whole |
+| Raw SQL | `DB::raw\(`, `DB::(select\|statement\|unprepared)\(`, `(where\|orderBy\|having\|select\|groupBy)Raw\(` with `"...\$` or `' .` |
+| Blade | `\{!!` without `e\(`; `Blade::compileString\(`; `new HtmlString\(` on request data |
+| CSRF | `\$except = \[` in `VerifyCsrfToken`, `validateCsrfTokens\(except:` |
+| Uploads | `getClientOriginalName\(\)` in `storeAs\(`/`move\(`; `'public'` disk for private files; no `mimes:` rule |
+| Signed URLs | `URL::signedRoute\(`, `temporarySignedRoute\(` without the `signed` middleware on the target route; `hasValidSignature` missing |
+| Config | `APP_DEBUG=true` in a production env file; `'debug' => true`; `Telescope`, `Debugbar` without a gate |
+
+## Symfony
+
+| Area | Patterns to search |
+|------|-------------------|
+| Routes | `#\[Route\(` / `@Route\(` methods without `#\[IsGranted`, `denyAccessUnlessGranted\(`; `config/routes*.yaml`; `access_control` regexes in `security.yaml` |
+| Object access | `->find\(\$`, `->findOneBy\(\[.id.`, `#\[MapEntity` arguments with only `ROLE_USER`; voters (`extends Voter`) that are never asked |
+| Doctrine | `createQuery\(".*\$\|"\s*\.`, `->(where\|andWhere\|orWhere)\(".*\$`, `executeQuery\(` / `prepare\(` with concatenation, `orderBy\(\$` |
+| Twig | `\|raw`, `{% autoescape false %}`, `new Markup\(` |
+| CSRF | `csrf_protection: false`, actions without `isCsrfTokenValid\(` |
+| Config | `APP_DEBUG=1`, `profiler:` / `toolbar: true` outside `when@dev`, `_profiler` routes in prod |
+
+## Drupal
+
+| Area | Patterns to search |
+|------|-------------------|
+| Routes | `*.routing.yml`: `_access: 'TRUE'`, routes without `requirements`, state-changing paths (`/delete`, `/close`, `/approve`) without `_csrf_token` |
+| Controllers | controller methods taking an id without `->access\(` or a `currentUser\(\)->id\(\)` condition |
+| Database | `->query\(".*\$\|"\s*\.`, `db_query\(`, `->where\(` with concatenation; `->condition\(\$` field names from input |
+| Rendering | `Markup::create\(`, `'#children'`, `'#markup' => .*\$` without `\$this->t\(`/`#plain_text`, `\|raw` in Twig |
+| Permissions | `*.permissions.yml` without `restrict access` on sensitive permissions; `user_role_grant_permissions\(` in install hooks |
+| Tools | `composer audit --locked` or osv-scanner on `composer.lock`; Psalm `--taint-analysis` (TaintedSql, TaintedHtml) as candidates, run by the user in a sandbox |
+
+## Django
+
+Routes live in every `urls.py` reached through `include()` from `ROOT_URLCONF`, plus DRF routers; the pre-pass lists each with its view and guards, so rank by what the view does. Read the model's fields before judging a query: a model with a `ForeignKey` to the user model belongs to someone.
+
+| Area | Patterns to search |
+|------|-------------------|
+| Routes | `path\(`, `re_path\(`, `router\.register\(` whose view has no `@login_required`, `LoginRequiredMixin`, `permission_classes`; `login_not_required`; `REST_FRAMEWORK` without `DEFAULT_PERMISSION_CLASSES` |
+| DRF | `permission_classes = \[.*AllowAny`, `queryset = \w+\.objects\.all\(\)` without `def get_queryset`, `fields = "__all__"` |
+| Object access | `get_object_or_404\(\w+, pk=`, `\.objects\.get\(pk=`, `\.objects\.get\(id=` without `request\.user` / `owner=` / `user=` |
+| Raw SQL | `\.raw\(f"`, `\.extra\(`, `RawSQL\(`, `cursor\.execute\(f"`, `execute\(".*" %`, `\.format\(` inside SQL |
+| Templates | `\|safe`, `{% autoescape off %}`, `mark_safe\(` on variables, `format_html\(` with a pre-built string |
+| CSRF | `@csrf_exempt` on views that are not signed webhooks; `CsrfViewMiddleware` missing from `MIDDLEWARE` |
+| Settings | `DEBUG = True`, `DEBUG = .*get\(.*"1"\)`, `ALLOWED_HOSTS = \["\*"\]`, `SECRET_KEY = "`, `SECRET_KEY = os\.environ\.get\(".*", "` |
+| Files | `os\.path\.join\(.*request\.(POST\|FILES)`, `os\.path\.join\(.*\.name\)`, `open\(.*request` |
+| Deserialization | `pickle\.loads\(`, `yaml\.load\(` without `SafeLoader`, `yaml\.Loader`, `jsonpickle` |
+
+## FastAPI
+
+| Area | Patterns to search |
+|------|-------------------|
+| Routes | `@(app\|router)\.(get\|post\|put\|patch\|delete)\(` whose function has no `Depends\(get_current_user` / `Security\(`; `APIRouter\(` and `include_router\(` without `dependencies=` |
+| Object access | `db\.get\(\w+, \w+_id\)`, `select\(\w+\)\.where\(\w+\.id ==` without the owner column; `session\.query\(\w+\)\.get\(` |
+| Response models | `response_model=` pointing at schemas with `password`, `hash`, `token`, `secret`, `totp`; routes returning ORM rows without `response_model` |
+| SQL | `text\(f"`, `text\(".*" %`, `execute\(f"`, `\.format\(` in SQL |
+| SSRF | `add_task\(.*url`, `httpx\.(get\|post)\(.*url`, `requests\.(get\|post)\(.*url`, `HttpUrl` fields used as request targets |
+| CORS | `allow_origins=\["\*"\]` with `allow_credentials=True`; `allow_origin_regex=".\*"` |
+| Cookies | `set_cookie\(` without `httponly=True`, `secure=True`, `samesite=` |
+
+## Flask
+
+| Area | Patterns to search |
+|------|-------------------|
+| Routes | `@(app\|bp\|\w+)\.route\(`, `@\w+\.(get\|post)\(` without `@login_required` / `@\w+_required` below it and no `before_request` check on the blueprint |
+| Object access | `\.query\.get\(`, `get_or_404\(`, `filter_by\(id=` without `current_user` |
+| SSTI | `render_template_string\(` with an f-string, `+`, `%` or `.format\(`; `Template\(.*request`, `from_string\(` |
+| Files | `send_file\(.*request`, `send_file\(os\.path\.join\(`, `\.save\(os\.path\.join\(.*\.filename\)` without `secure_filename` |
+| Sessions | `secret_key = "`, `config\["SECRET_KEY"\] = "`, `SECRET_KEY.*getenv\(.*, "` |
+| Debug | `app\.run\(.*debug=True`, `config\["DEBUG"\] = True`, `FLASK_DEBUG=1` in production config |
+| Tools | `bandit -r . -f json` (B201 debug, B301 pickle, B506 yaml.load, B608 SQL strings, B105 secrets) and `pip-audit -r requirements.txt --no-deps --disable-pip` as candidates |

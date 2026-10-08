@@ -1,0 +1,15 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /boards/{boardId}/thumbnails/{file} {
+      allow read, write: if request.auth != null
+        && firestore.get(/databases/(default)/documents/boards/$(boardId)).data.ownerId == request.auth.uid
+        && (request.resource == null || (request.resource.size < 2 * 1024 * 1024
+          && request.resource.contentType.matches('image/.*')));
+    }
+
+    match /exports/{allPaths=**} {
+      allow read, write: if true;
+    }
+  }
+}

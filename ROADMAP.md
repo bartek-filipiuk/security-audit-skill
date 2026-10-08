@@ -13,27 +13,30 @@ Rules that apply to every item:
 
 - **R02 Supabase and Firebase profile.** RLS policies, storage policies, service-role keys in the client,
   Firestore rules. Done when: a benchmark app for this stack exists and the profile scores on it.
+  Status (2026-10-07): checklist sections, stack patterns, a pre-pass policy scan, Edge/Cloud Function entry
+  points and the `benchmark/supabase-notes` app (10 seeded bugs, 12 decoys, `--app` in setup and score) are
+  in; it moves to Done with its first scored run.
 
 ## Next
 
-- **R04 Stack detection and `--stack`.** The report names the applied profile and what it does not cover;
-  the flag forces a profile. Done when: Ledgerly, a PHP app and a Python app are detected correctly.
 - **R05 PHP profile: Laravel, Symfony, Drupal.** Route-based entry points, unscoped Eloquent/Doctrine
   queries, `composer audit`, Psalm taint. Done when: its benchmark app scores.
+  Status (2026-10-07): checklist sections, stack patterns, Laravel/Symfony entry points (Drupal's existed)
+  ranked by their controller method, PHP template/model/CSRF signals, Psalm reported NOT RUN, and the
+  `benchmark/php-tickets` app (13 seeded bugs, 14 decoys) are in; it moves to Done with its first scored run.
 - **R06 Python profile: Django, FastAPI, Flask.** Unscoped ORM queries, `bandit`, `pip-audit`.
   Done when: its benchmark app scores.
+  Status (2026-10-08): checklist sections, stack patterns, Django (urls.py include chain, DRF routers and
+  permission defaults), FastAPI (Depends on route, router, app and mount) and Flask (blueprints,
+  `*_required`, `before_request`) entry points ranked by their view, a user-owned model scan, Python
+  template/settings/CORS signals, bandit in the R07 tool runner (native only), `pip-audit` as a read-only dependency fallback,
+  and the `benchmark/py-clinic` app (18 seeded bugs, 18 decoys) are in; it moves to Done with its first scored run.
 - **R07 Deterministic tools in the pre-pass.** semgrep rulesets per stack, `zizmor` for GitHub Actions,
   `hadolint` and `trivy` for Dockerfiles and images. Done when: each tool runs natively or via docker,
   reports NOT RUN honestly, and its hits appear as candidates in `prepass.md`.
-- **R08 More checks.** CSRF, CI/CD (secrets in logs, `pull_request_target`, unpinned actions), Docker
-  and IaC, supply chain (install scripts, lockfile integrity). Done when: each has checklist items and
-  at least one seeded bug in a benchmark.
 - **R21 LLM and agent checks.** Prompt injection into tools and agents, model output reaching HTML, SQL,
   shell or URL sinks, tool calls without authorisation, cost and token abuse. Done when: checklist items,
   stack patterns and at least two seeded bugs in a benchmark app, scored.
-- **R22 Coverage ledger.** A machine-readable record of which entry points and bug classes were checked,
-  validated by a schema, so "not found" can be told apart from "not looked at". Done when: the report
-  derives its coverage and not-assessed sections from the ledger and a validator test passes.
 
 ## Later
 
@@ -68,6 +71,25 @@ Rules that apply to every item:
   than the web stack this skill is built for; each needs its own benchmark app before it ships.
 
 ## Done
+
+- **R22 Coverage ledger** (2026-10-07): every auditor writes `coverage/<auditor>.json`, one row per entry point
+  or project-wide check and class: `checked` with evidence, `not_applicable` or `not_assessed` with a reason.
+  `scripts/coverage.mjs` validates it against `references/coverage-ledger.schema.json` (no dependencies) and
+  `report.md` and `report.html` build their Coverage and Not Assessed sections from it, adding every class and
+  pre-pass entry point with no row as "not looked at". `--since` carries the rows of untouched targets. Tests in
+  `scripts/coverage.test.mjs`; the benchmark run is pending.
+
+- **R08 More checks** (2026-10-06): checklist items and stack patterns for CSRF, CI/CD workflows
+  (`pull_request_target`, expression injection, unpinned actions, secrets in logs), Docker and IaC, and
+  supply chain (install scripts, lockfile integrity, unpinned sources). Ledgerly gained one seeded bug per
+  area (B17 to B20) and three decoys (D09 to D11): 20 seeded bugs and 11 decoys. Recall from earlier runs is
+  out of 16; the first scored run on the new key is the next benchmark round.
+
+- **R04 Stack detection and `--stack`** (2026-10-05): the pre-pass detects each stack from its manifests
+  (JS/TS, PHP, Python, Go, Rust, Ruby, JVM, .NET, with frameworks such as Next.js, Laravel, Django, FastAPI),
+  and `prepass.md`, `report.md` and `report.html` name the applied profile, what it covers and what it does not;
+  stacks without a dedicated profile say "general checklist". `--stack` forces a profile and warns on a
+  conflict. Ledgerly, a Laravel fixture and Django/FastAPI fixtures are detected correctly (`scripts/stack.test.mjs`).
 
 - **R03 Exact benchmark scoring** (2026-10-05): findings match the answer key by the file and line of their
   primary evidence (window of 2 lines, nearest entry wins), with no keyword fallback. Re-scoring the four R01

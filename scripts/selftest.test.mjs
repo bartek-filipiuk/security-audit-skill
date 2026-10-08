@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { buildRemediation, loadAudit, parseFrontmatter, validate } from "./audit-state.mjs";
 import { inScope, rankHotspots, scanEntryPoints, scanScope, walk } from "./surface.mjs";
 import { score } from "../benchmark/score.mjs";
+import { toolFreeEnv } from "./test-helpers.mjs";
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), "..");
 const { files } = walk(join(repo, "benchmark", "app"));
@@ -147,6 +148,19 @@ test("hotspot ranking puts the seeded code-level bugs near the top", () => {
   assert.ok(!hot.some((h) => h.file.endsWith("api/trpc/[trpc]/route.ts") && h.reasons.includes("no auth check in the handler")));
 });
 
+test("LLM signals: unscoped agent tool, model output to raw HTML, request-controlled model and token budget", () => {
+  const { sites } = scanScope(files);
+  const site = (file, enclosing) => sites.find((s) => s.file.endsWith(file) && s.enclosing === enclosing);
+  assert.equal(site("ai/billing-tools.ts", "voidInvoice").status, "UNSCOPED");
+  assert.equal(site("ai/billing-tools.ts", "markInvoicePaid").status, "scoped");
+  const hot = rankHotspots(files, scanEntryPoints(files), scanScope(files));
+  const reasons = (file) => hot.filter((h) => h.file.endsWith(file)).flatMap((h) => h.reasons);
+  assert.ok(reasons("api/assistant/billing/route.ts").includes("LLM model or token budget taken from the request (cost)"));
+  assert.ok(reasons("invoices/[id]/summary/page.tsx").includes("LLM output may reach raw HTML"));
+  assert.ok(!reasons("invoices/[id]/summary/actions.ts").includes("LLM output may reach raw HTML"), "escaped email HTML is not a raw HTML sink");
+  assert.ok(!reasons("api/chat/route.ts").includes("LLM model or token budget taken from the request (cost)"), "a fixed model is not flagged");
+});
+
 test("report.html escapes everything that comes from findings", async () => {
   const { renderReport } = await import("./report-html.mjs");
   const dir = auditDir(
@@ -222,7 +236,7 @@ test("prepass --new-run archives the previous run and workspace-check sees later
   mkdirSync(join(audit, "findings"), { recursive: true });
   writeFileSync(join(audit, "findings", "auth-001.md"), verifiedHigh);
   writeFileSync(join(audit, "report.md"), "# old\n");
-  const r = spawnSync(process.execPath, [join(repo, "scripts", "prepass.mjs"), "--root", proj, "--no-docker", "--new-run"], { encoding: "utf8" });
+  const r = spawnSync(process.execPath, [join(repo, "scripts", "prepass.mjs"), "--root", proj, "--no-docker", "--new-run"], { encoding: "utf8", env: toolFreeEnv() });
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /previous run archived/);
   const hist = fsm.readdirSync(join(audit, "history"));
@@ -264,7 +278,8 @@ const finding = (id, file, status = "verified") => `---\nid: ${id}\ncategory: au
 
 async function previousAudit(p) {
   const { spawnSync } = await import("node:child_process");
-  const prepass = (...a) => spawnSync(process.execPath, [join(repo, "scripts", "prepass.mjs"), "--root", p.proj, "--no-docker", ...a], { encoding: "utf8" });
+  const env = toolFreeEnv();
+  const prepass = (...a) => spawnSync(process.execPath, [join(repo, "scripts", "prepass.mjs"), "--root", p.proj, "--no-docker", ...a], { encoding: "utf8", env });
   assert.equal(prepass("--new-run").status, 0);
   const audit = join(p.proj, ".security-audit");
   writeFileSync(join(audit, "findings", "auth-101.md"), finding("auth-101", "src/app/api/export/route.ts"));
@@ -322,7 +337,8 @@ test("--since falls back to a full audit when it cannot carry safely", async () 
   const fsm = await import("node:fs");
   const { spawnSync } = await import("node:child_process");
   const p = await gitProject(ledgerlyMini);
-  const prepass = (...a) => spawnSync(process.execPath, [join(repo, "scripts", "prepass.mjs"), "--root", p.proj, "--no-docker", ...a], { encoding: "utf8" });
+  const env = toolFreeEnv();
+  const prepass = (...a) => spawnSync(process.execPath, [join(repo, "scripts", "prepass.mjs"), "--root", p.proj, "--no-docker", ...a], { encoding: "utf8", env });
   const inc = () => JSON.parse(fsm.readFileSync(join(p.proj, ".security-audit", "tools", "incremental.json"), "utf8"));
   // No previous audit at all.
   let r = prepass("--since", "HEAD");
