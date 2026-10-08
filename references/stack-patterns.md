@@ -339,3 +339,41 @@ Policies and functions live in `supabase/migrations/*.sql`; the pre-pass policy 
 | Admin SDK | `firebase-admin`, `credential\.cert`, `private_key`, `FIREBASE_PRIVATE_KEY`, `serviceAccount` in client code or committed JSON |
 | Functions | `onCall\(` without `request\.auth`/`context\.auth`; `onRequest\(` without `verifyIdToken`; `enforceAppCheck` treated as authorization |
 | Client | `NEXT_PUBLIC_FIREBASE_API_KEY` is public by design; client queries that rely on the UI to filter by owner |
+
+## Laravel
+
+Routes live in `routes/web.php` and `routes/api.php` (`/api` prefix); the pre-pass lists each route with the middleware of its groups and resolves the controller method, so rank by what the method does. Read a model's `$fillable`/`$guarded` before judging a `create()` or `update()`.
+
+| Area | Patterns to search |
+|------|-------------------|
+| Routes | `Route::(get\|post\|put\|patch\|delete\|any\|resource)\(` outside a `middleware\(.*auth` group; `withoutMiddleware\(`; admin paths without `can:` |
+| Object access | `::find\(\$`, `::findOrFail\(\$`, route-model binding (`Model \$model` arguments) without `authorize\(`, `Gate::`, `->user\(\)->` |
+| Mass assignment | `\$guarded = \[\]`, `->(create\|update\|fill\|forceFill)\(\$request->all\(\)`, `\$request->input\(\)` passed whole |
+| Raw SQL | `DB::raw\(`, `DB::(select\|statement\|unprepared)\(`, `(where\|orderBy\|having\|select\|groupBy)Raw\(` with `"...\$` or `' .` |
+| Blade | `\{!!` without `e\(`; `Blade::compileString\(`; `new HtmlString\(` on request data |
+| CSRF | `\$except = \[` in `VerifyCsrfToken`, `validateCsrfTokens\(except:` |
+| Uploads | `getClientOriginalName\(\)` in `storeAs\(`/`move\(`; `'public'` disk for private files; no `mimes:` rule |
+| Signed URLs | `URL::signedRoute\(`, `temporarySignedRoute\(` without the `signed` middleware on the target route; `hasValidSignature` missing |
+| Config | `APP_DEBUG=true` in a production env file; `'debug' => true`; `Telescope`, `Debugbar` without a gate |
+
+## Symfony
+
+| Area | Patterns to search |
+|------|-------------------|
+| Routes | `#\[Route\(` / `@Route\(` methods without `#\[IsGranted`, `denyAccessUnlessGranted\(`; `config/routes*.yaml`; `access_control` regexes in `security.yaml` |
+| Object access | `->find\(\$`, `->findOneBy\(\[.id.`, `#\[MapEntity` arguments with only `ROLE_USER`; voters (`extends Voter`) that are never asked |
+| Doctrine | `createQuery\(".*\$\|"\s*\.`, `->(where\|andWhere\|orWhere)\(".*\$`, `executeQuery\(` / `prepare\(` with concatenation, `orderBy\(\$` |
+| Twig | `\|raw`, `{% autoescape false %}`, `new Markup\(` |
+| CSRF | `csrf_protection: false`, actions without `isCsrfTokenValid\(` |
+| Config | `APP_DEBUG=1`, `profiler:` / `toolbar: true` outside `when@dev`, `_profiler` routes in prod |
+
+## Drupal
+
+| Area | Patterns to search |
+|------|-------------------|
+| Routes | `*.routing.yml`: `_access: 'TRUE'`, routes without `requirements`, state-changing paths (`/delete`, `/close`, `/approve`) without `_csrf_token` |
+| Controllers | controller methods taking an id without `->access\(` or a `currentUser\(\)->id\(\)` condition |
+| Database | `->query\(".*\$\|"\s*\.`, `db_query\(`, `->where\(` with concatenation; `->condition\(\$` field names from input |
+| Rendering | `Markup::create\(`, `'#children'`, `'#markup' => .*\$` without `\$this->t\(`/`#plain_text`, `\|raw` in Twig |
+| Permissions | `*.permissions.yml` without `restrict access` on sensitive permissions; `user_role_grant_permissions\(` in install hooks |
+| Tools | `composer audit --locked` or osv-scanner on `composer.lock`; Psalm `--taint-analysis` (TaintedSql, TaintedHtml) as candidates, run by the user in a sandbox |

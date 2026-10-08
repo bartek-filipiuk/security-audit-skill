@@ -228,3 +228,45 @@ Applies when the repo has `firebase.json`, `firestore.rules`, `storage.rules`, `
 - [ ] Storage rules check ownership (path segment or `firestore.get()` of the parent document), size and content type on writes
 - [ ] Admin SDK credentials (service-account JSON, `FIREBASE_PRIVATE_KEY`) stay on the server, never in client bundles or committed files (category `exposure`). The web config `apiKey` is public by design
 - [ ] Cloud Functions: `onCall` handlers check `request.auth` and ownership before using the Admin SDK, which bypasses rules; `onRequest` handlers verify an ID token (`verifyIdToken`) or a webhook signature. App Check (`enforceAppCheck`) is abuse protection, not authorization
+
+## Stack profile: Laravel
+
+Applies when the repo has `artisan`, `routes/web.php`/`routes/api.php`, Blade views or `laravel/framework` in `composer.json`. Entry points are the routes in `routes/*.php` (the pre-pass lists them with the middleware of their groups and the controller method they call); `routes/api.php` is served under `/api`. Category `auth` unless noted.
+
+- [ ] Every route that is not public sits behind `auth` (or `auth:sanctum` for the API) in its own chain or an enclosing `Route::middleware(...)->group()`; a route added after the group closes, or `withoutMiddleware('auth')`, has none
+- [ ] Staff and admin routes add `can:<ability>` (or a policy/Gate check in the controller); `auth` alone means any signed-in user, which with open registration is anyone
+- [ ] Controllers load records through the user (`$request->user()->tickets()->findOrFail($id)`), a global scope, or check a policy (`$this->authorize('view', $ticket)`, `Gate::authorize`) before returning or changing them. `Model::find($id)`/`findOrFail($id)` and implicit route-model binding (`Ticket $ticket`) load any row by id
+- [ ] Mass assignment (category `injection`): no `$guarded = []` on models with privileged columns (`is_admin`, `role`, `user_id`, `team_id`, `balance`, `email_verified_at`); `create()`/`update()`/`fill()` take `$request->validated()` or `$request->only([...])`, never `$request->all()`. Validation of some fields does not filter the others out of `all()`
+- [ ] Raw SQL (category `injection`): `DB::raw`, `DB::select/statement/unprepared`, `whereRaw`, `orderByRaw`, `havingRaw`, `selectRaw` bind values (`?` and an array) and never interpolate request data; column and sort names from the request go through an allow-list
+- [ ] Blade (category `xss`): `{!! !!}` only for HTML the app built or sanitized itself (`{!! nl2br(e($x)) !!}` is fine); user content goes through `{{ }}`. Also `Blade::compileString`, `@php echo`, `HtmlString` on user input
+- [ ] CSRF (category `config`): `VerifyCsrfToken::$except` or `validateCsrfTokens(except: [...])` lists only webhooks that verify a signature; a wildcard on account, settings or payment paths turns CSRF off for state changes
+- [ ] Uploads (category `upload`): validated with `mimes:`/`image` and `max:`; stored with a generated name (`store()`), not `getClientOriginalName()`; private files on a non-public disk and served through a controller that checks access. The `public` disk is reachable at `/storage/...`
+- [ ] Signed URLs: routes that rely on a signature carry the `signed` middleware (or call `hasValidSignature()`); temporary links expire (`temporarySignedRoute`); a signature is not a substitute for an ownership check when the link can be forwarded
+- [ ] Configuration (category `config`): `APP_DEBUG=false` and `APP_ENV=production` in production (`'debug'` must not default to true in `config/app.php`); `APP_KEY` set and not committed; Telescope, Horizon and Debugbar gated or not installed in production
+- [ ] Dependencies (category `dependency`): `composer.lock` is committed and scanned (osv-scanner, or `composer audit --locked`); a missing lockfile is a coverage gap
+
+## Stack profile: Symfony
+
+Applies when the repo has `config/packages/*.yaml`, `config/bundles.php`, `symfony.lock` or `symfony/framework-bundle` in `composer.json`. Entry points are `#[Route]` attributes (and `@Route` annotations) on controllers and `config/routes*.yaml`; the pre-pass lists each with its `#[IsGranted]`, `denyAccessUnlessGranted` and the matching `access_control` rule. Category `auth` unless noted.
+
+- [ ] Every non-public route is covered by `#[IsGranted]` on the method or class, `denyAccessUnlessGranted()` in the body, or an `access_control` rule in `security.yaml` (first match wins, the path is a regex: `^/admin` does not cover `/api/admin`)
+- [ ] `ROLE_USER` or `IS_AUTHENTICATED` only proves login: objects loaded by id (`$repo->find($id)`, `#[MapEntity]`/ParamConverter arguments) are checked with a voter (`#[IsGranted('VIEW', 'invoice')]`, `denyAccessUnlessGranted('EDIT', $obj)`) or loaded with an owner filter
+- [ ] Doctrine (category `injection`): DQL (`createQuery`), QueryBuilder (`where`/`andWhere`) and DBAL (`executeQuery`, `prepare`) bind parameters (`:name` + `setParameter`) and never concatenate request data; `orderBy` fields come from an allow-list
+- [ ] Repository methods used by controllers filter by the current user, customer or tenant when the entity has an owner (`findBy(['id' => $id])` is not scoped)
+- [ ] Twig (category `xss`): `|raw` only on HTML the app built or sanitized; autoescape not turned off (`{% autoescape false %}`); `Markup` objects not built from user input
+- [ ] Forms keep CSRF protection on (`csrf_protection: true`); state-changing actions outside forms check `isCsrfTokenValid()` (category `config`)
+- [ ] Production config (category `config`): `APP_ENV=prod`, `APP_DEBUG=0`, the web profiler and debug toolbar only `when@dev`, `APP_SECRET` not committed; `_profiler`/`_wdt` routes not reachable in production
+- [ ] Dependencies: `composer.lock` scanned as for Laravel
+
+## Stack profile: Drupal
+
+Applies when the repo has `*.info.yml`/`*.routing.yml` (custom modules under `modules/custom/`) or `drupal/core` in `composer.json`. Entry points are the routes in `*.routing.yml`; the pre-pass lists their requirements and controller. Core and contributed modules are out of scope: audit custom code. Category `auth` unless noted.
+
+- [ ] Every route has a real access requirement: `_permission`, `_role`, `_entity_access`, `_custom_access` or `_user_is_logged_in`. `_access: 'TRUE'` is for content meant for everyone; a route that returns user data with it is a finding
+- [ ] Controllers that take an id (`{node}`, `{ticket_id}`) check that the current user may see that record (`$entity->access('view')`, an owner condition on `currentUser()->id()`); a permission like `access helpdesk portal` does not restrict which records
+- [ ] Database (category `injection`): `\Drupal::database()->query()`, `db_query()` and `->where()` use placeholders (`:name` and an args array); no concatenation of request values; `->condition()` field names are constants
+- [ ] Rendering (category `xss`): `Markup::create()`, `'#children'` and `{{ x|raw }}` never get user input; `'#markup'` passes through `Xss::filterAdmin` (which still allows many tags), so user text uses `'#plain_text'`, `$this->t()` with `@`/`%` placeholders, or Twig autoescaping
+- [ ] CSRF (category `config`): routes that change state on GET (close, delete, approve, toggle links) carry `_csrf_token: 'TRUE'` or are forms (`_form`) with Form API tokens
+- [ ] `hook_permission`/`*.permissions.yml`: sensitive permissions set `restrict access: true`; permissions are not granted to anonymous or authenticated by config or an install hook
+- [ ] Settings (category `config`): `$settings['hash_salt']` and database credentials not committed; `trusted_host_patterns` set; error display off in production
+- [ ] Dependencies: `composer.lock` scanned as for Laravel; contributed modules with security advisories are listed there

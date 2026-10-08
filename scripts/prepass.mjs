@@ -16,12 +16,13 @@
 // --stack forces the profile (js, php, python, go, rust, ruby, java, dotnet, generic, or an alias such as
 // laravel, django, nextjs) instead of the one detected from the manifests (stack.mjs). stack.mjs is the
 // only stack detector: tools.mjs picks semgrep rulesets from its result.
+// Psalm taint analysis for PHP is reported NOT RUN with how to run it (it would execute the project's autoloader).
 // Secrets are always redacted (gitleaks --redact) so no secret value lands on disk or in agent context.
 
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
-import { inScope, LOCKFILES, rankHotspots, scanEntryPoints, scanScope, walk } from "./surface.mjs";
+import { inScope, LOCKFILES, phpTaintStatus, rankHotspots, scanEntryPoints, scanScope, walk } from "./surface.mjs";
 import { detectStack, label as stackLabel, resolveStack, stackMarkdown } from "./stack.mjs";
 import { inventory, mergeNotAssessed, renderTools, rulesetStack, runTools } from "./tools.mjs";
 import { changedSince, loadItems, loadPreviousRun, planIncremental, readAliases, resolveCommit, trackedFiles, writeCarried } from "./incremental.mjs";
@@ -114,6 +115,7 @@ if (incremental?.mode === "incremental") {
 const deps = runDeps();
 const secrets = runSecrets();
 const toolResults = runCodeTools();
+const phpTaint = phpTaintStatus(files);
 
 writeFileSync(join(toolsDir, "stack.json"), JSON.stringify(stack, null, 2));
 writeFileSync(join(toolsDir, "entry-points.json"), JSON.stringify(entries, null, 2));
@@ -131,6 +133,7 @@ writeFileSync(join(toolsDir, "summary.json"), JSON.stringify({
   entry_points: entries.length, scope_candidates: scope.sites.filter((s) => s.status !== "scoped").length,
   deps: { status: deps.status, rows: deps.rows }, secrets: { status: secrets.status, rows: secrets.rows },
   tools: Object.fromEntries(toolResults.map((t) => [t.tool, { status: t.status, candidates: t.total }])),
+  ...(phpTaint ? { php_taint: { status: phpTaint } } : {}),
 }, null, 2));
 writeFileSync(join(out, "prepass.md"), render());
 
@@ -371,6 +374,7 @@ function render() {
   L.push(`- Dependencies: ${deps.status}`);
   L.push(`- Secrets: ${secrets.status}`);
   for (const t of toolResults) L.push(`- ${t.tool}: ${t.status}`);
+  if (phpTaint) L.push(`- PHP taint analysis (Psalm): ${phpTaint}`);
   L.push("");
   L.push(`Anything marked NOT RUN or FAILED is a coverage gap: report it under "Not assessed", never as secure.`);
   L.push("");

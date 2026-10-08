@@ -14,7 +14,7 @@ from here you cannot tell whether "faster" cost recall.
 
 ## Run
 
-    node benchmark/setup.mjs                  # prints the run directory (--app supabase-notes for the second app)
+    node benchmark/setup.mjs                  # prints the run directory (--app supabase-notes or --app php-tickets)
     cd <run>/app && claude                    # fresh session, then: /security-audit
     node benchmark/score.mjs <run> --label "what changed"
     node benchmark/usage.mjs <session id>       # tokens and API-price cost, subagents included
@@ -65,6 +65,33 @@ callable Cloud Function without an auth check (App Check only). Decoys: a public
 SECURITY DEFINER functions, column-limited profile updates, browser updates guarded by RLS, a public avatars
 bucket with owner-scoped writes, a server-only service-role client, the anon key and Firebase web config, a
 webhook Edge Function that verifies an HMAC, and owner-scoped rules and callables.
+
+## Third app: php-tickets
+
+`benchmark/php-tickets/` is the benchmark of the PHP profile (roadmap R05): a Laravel helpdesk (routes,
+controllers, models, a CSRF middleware, Blade views) with a Symfony billing service in `billing/` (attribute
+routes, Doctrine repository, voter, `security.yaml`) and a Drupal custom module in `portal/` (routing.yml,
+controller). Plain PHP files laid out like the real frameworks: no `vendor/`, nothing to install, nothing to
+run. 13 seeded bugs and 14 decoys; the key is `benchmark/php-tickets/answer-key.json`.
+
+    node benchmark/setup.mjs --app php-tickets      # one commit, meta.json records bench_app
+    cd <run>/app && claude                          # fresh session, then: /security-audit
+    node benchmark/score.mjs <run> --label "what changed"
+
+Laravel keeps its code in `app/`, the same name as the run directory: the scorer compares a cited path with
+and without the leading `app/`, so `app/Http/...` and `app/app/Http/...` both match. There is no
+`composer.lock`, so the dependency scan has nothing to read; Psalm taint analysis is NOT RUN by design.
+Seeded classes: Laravel `findOrFail($id)` without a user scope or policy, `whereRaw` with an interpolated
+search term, `update($request->all())` on a model with `$guarded = []`, an API route outside the
+`auth:sanctum` group, `{!! !!}` on comment bodies, a CSRF exception on `account/*`, uploads stored on the
+public disk under the client file name; Symfony DQL built by concatenation (and not scoped to the customer)
+and `find($id)` behind a login-only `IsGranted`; Drupal `_access: 'TRUE'` on a route serving tickets, a
+concatenated `database()->query()`, a state-changing GET route without `_csrf_token`, and `Markup::create()`
+on user text. Decoys: a policy-checked update, a bound `whereRaw`, `create($request->validated())`, an
+HMAC-verified webhook outside auth and CSRF, an admin group with `can:admin`, `{!! nl2br(e()) !!}`, a
+validated avatar upload, a parameterised QueryBuilder, a voter-checked PDF download, a public status route,
+a placeholder query, a reopen route with `_csrf_token`, `#markup` through `t()` placeholders and
+`APP_DEBUG=true` only in `.env.example`.
 
 ## Rules
 

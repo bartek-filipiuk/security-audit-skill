@@ -34,7 +34,7 @@ const PATH = String.raw`[\w.()[\]@-]+(?:\/[\w.()[\]@-]+)*`;
 const LOC = new RegExp(String.raw`(${PATH}|\.env(?![.\w]))(?::(\d+)(?:\s*[-\u2013]\s*(\d+))?)?`, "g");
 
 // File names a finding may cite: code, config, manifests, CI workflows, Dockerfiles and IaC.
-const SOURCE_FILE = /\.(?:[cm]?[jt]sx?|json|ya?ml|md|example|env|toml|tf|hcl|dockerfile|sql|rules)$|^\.env|^(?:Dockerfile|Containerfile)(?:\.[\w-]+)?$|^\.npmrc$/;
+const SOURCE_FILE = /\.(?:[cm]?[jt]sx?|json|ya?ml|md|example|env|toml|tf|hcl|dockerfile|sql|rules|php|twig|module|inc|install|theme)$|^\.env|^(?:Dockerfile|Containerfile)(?:\.[\w-]+)?$|^\.npmrc$/;
 
 const normalize = (p) => p.replace(/^\((?![^/]*\))/, "").replace(/^\.\//, "").replace(/^app\//, "");
 
@@ -66,7 +66,9 @@ export function primaryLocation(text) {
   return parseLocation(body);
 }
 
-const samePath = (cited, file) => cited === file || cited.endsWith("/" + file);
+// Cited paths lose a leading `app/` (the run directory); a key file under Laravel's own `app/` is compared
+// with and without it, so `app/Http/X.php` and `app/app/Http/X.php` both match it.
+const samePath = (cited, file) => [...new Set([file, normalize(file)])].some((f) => cited === f || cited.endsWith("/" + f));
 
 // Distance in lines between a finding location and a key location; Infinity when the file differs
 // or the finding has no line.

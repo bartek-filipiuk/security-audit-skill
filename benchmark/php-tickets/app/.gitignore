@@ -1,0 +1,9 @@
+/vendor
+/node_modules
+/storage/*.key
+.env
+billing/vendor
+billing/var
+portal/vendor
+portal/web/core
+portal/web/sites/*/files
