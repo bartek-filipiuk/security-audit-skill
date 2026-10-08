@@ -5,8 +5,14 @@
 // and what it does not. `--stack <name>` forces a profile; a forced profile that the code does not match
 // is applied anyway, with a warning.
 // ponytail: manifest names and dependency names only, no lockfile resolution and no source parsing.
-// A dependency that is declared but unused still counts; a framework vendored without a manifest is missed.
+// A dependency that is declared but unused still counts.
+// This is the one stack detector of the skill. Besides the manifest walk it owns:
+// - framework profiles (Supabase, Firebase, Laravel, Symfony, Drupal, Django, FastAPI, Flask), detected from
+//   the manifest frameworks above plus marker files and SDK names anywhere in the tracked files; each one
+//   adds its `Stack profile:` checklist section and pattern sections to the briefs (briefs.mjs);
+// - file languages (LANG_EXT, languagesOf) for the briefs' pattern rows and the semgrep rulesets (tools.mjs).
 
+import { spawnSync } from "node:child_process";
 import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 
@@ -58,7 +64,7 @@ const JAVA_FRAMEWORKS = [["spring-boot", "Spring Boot"], ["org.springframework.b
 // Libraries that are not frameworks (no entry points, no profile gap) but pick semgrep rulesets (tools.mjs).
 const JS_LIBRARIES = [["react", "React"]];
 const COMMON_GAPS = [
-  "rule scanners (semgrep, zizmor, hadolint, trivy) run only when installed or docker is available; one that did not run is listed in not-assessed.md",
+  "rule scanners (semgrep, zizmor, hadolint, trivy, bandit) run only when installed or docker is available; one that did not run is listed in not-assessed.md",
 ];
 
 // Profiles the pre-pass can apply. `dedicated: false` means: the general checklist only.
@@ -78,30 +84,39 @@ export const PROFILES = {
       ...COMMON_GAPS,
     ],
   },
+  // php and python: dedicated when one of `supports` is detected (roadmap R05, R06); a [framework, text]
+  // cover applies only when that framework is detected.
   php: {
-    name: "PHP", dedicated: false, lang: "php", roadmap: "R05",
+    name: "PHP", dedicated: false, supports: ["Laravel", "Symfony", "Drupal"], lang: "php",
     covers: [
-      "Drupal *.routing.yml entry points with their access requirements",
-      "PHP stack patterns for the auditors",
+      ["Laravel", "Laravel routes/*.php entry points with their middleware groups, prefixes and withoutMiddleware"],
+      ["Symfony", "Symfony #[Route]/@Route and config/routes*.yaml entry points with IsGranted, denyAccessUnlessGranted and the security.yaml access_control rule"],
+      ["Drupal", "Drupal *.routing.yml entry points with their access requirements and controllers"],
+      "PHP hotspot ranking by the controller method a route calls: no auth middleware, _access TRUE, GET state change without _csrf_token, record loaded by id with no ownership check, *Raw/DB:: or DQL/SQL built from strings, $request->all() mass assignment, uploads under the client file name, Markup::create/#markup, unserialize, shell calls; Blade {!! !!}, Twig |raw, $guarded = [], debug on and CSRF exceptions",
+      "PHP, Laravel, Symfony and Drupal stack patterns and checklist sections for the auditors",
       "dependency advisories on composer.lock (osv-scanner, composer audit as fallback) and secrets in git history (gitleaks)",
     ],
     gaps: [
-      "Laravel and Symfony routes, controllers and middleware are not enumerated: recon finds entry points by reading the code",
-      "no Eloquent or Doctrine tenant-scope scan",
-      "no Psalm taint analysis (roadmap R05)",
+      "no Eloquent or Doctrine tenant-scope scan: the ranking flags id loads without an ownership check, auditors confirm the scope by hand",
+      "Psalm taint analysis is not run: it executes the project's autoloader and plugins (prepass.md says how to run it in a sandbox)",
+      "routes of other PHP frameworks (WordPress, Slim, CakePHP, Yii, Laminas) are not enumerated: recon finds those entry points by reading the code",
       ...COMMON_GAPS,
     ],
   },
   python: {
-    name: "Python", dedicated: false, lang: "python", roadmap: "R06",
+    name: "Python", dedicated: false, supports: ["Django", "FastAPI", "Flask"], lang: "python",
     covers: [
-      "Python stack patterns for the auditors",
-      "dependency advisories on the Python lockfile or requirements (osv-scanner) and secrets in git history (gitleaks)",
+      ["Django", "Django urls.py entry points through the include() chain and DRF router.register rows, with login_required/permission_required/mixins, permission_classes or the REST_FRAMEWORK default, csrf_exempt and read-only viewsets"],
+      ["FastAPI", "FastAPI @app/@router entry points with APIRouter/include_router prefixes, auth dependencies (Depends/Security) and response_model"],
+      ["Flask", "Flask @bp.route/@bp.get entry points with blueprint prefixes, *_required decorators and before_request session checks"],
+      "Python hotspot ranking by the view body: no auth guard, csrf_exempt without a signature check, records loaded by id or user-owned models queried without a filter on the caller, secret fields in response_model, raw/text()/execute SQL built from strings, render_template_string, send_file and os.path.join with request data, pickle/yaml.load, outbound requests to a caller URL, shell=True; |safe, autoescape off, DEBUG, ALLOWED_HOSTS, literal secret keys and CORS with credentials",
+      "Python, Django, FastAPI and Flask stack patterns and checklist sections for the auditors",
+      "dependency advisories on the Python lockfile or requirements (osv-scanner, pip-audit --no-deps --disable-pip as fallback) and secrets in git history (gitleaks)",
+      "bandit through the rule-scanner runner when it is installed (it parses the code, never imports it)",
     ],
     gaps: [
-      "Django URLconfs, FastAPI and Flask routes are not enumerated: recon finds entry points by reading the code",
-      "no Django ORM or SQLAlchemy tenant-scope scan",
-      "bandit and pip-audit are not run (roadmap R06)",
+      "regex and indentation, not an AST: DRF @action routes, routes added in loops, i18n_patterns and blueprints registered under computed names are not seen",
+      "routes of other Python frameworks (Starlette alone, Litestar, aiohttp, Tornado, Sanic) are not enumerated: recon finds those entry points by reading the code",
       ...COMMON_GAPS,
     ],
   },
@@ -172,6 +187,35 @@ const esc = (s) => s.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
 // A dependency name as a whole token in a manifest's text (requirements, pyproject, Gemfile, Cargo.toml).
 const declares = (text, dep) => new RegExp(`(^|[\\s"'\\[,(])${esc(dep)}([\\s"'\\]<>=~!;,:@)]|$)`, "im").test(text);
 
+// Framework profiles: `stack` is the language stack the framework belongs to (null: no own stack, e.g. a
+// Supabase or Firebase backend used from a JS app), `label` the framework name in that stack's list.
+export const FRAMEWORK_PROFILES = {
+  supabase: { stack: null, label: "Supabase", files: /(^|\/)supabase\/(?:migrations\/[^/]+\.sql|functions\/.+|config\.toml)$/, sdk: /"@supabase\/(?:supabase-js|ssr)"/ },
+  firebase: { stack: null, label: "Firebase", files: /(^|\/)(?:firestore\.rules|storage\.rules|database\.rules\.json|firebase\.json)$/, sdk: /"firebase(?:-admin|-functions)?"\s*:/ },
+  laravel: { stack: "php", label: "Laravel", files: /(^|\/)(?:artisan|routes\/(?:web|api)\.php|app\/Http\/Kernel\.php|[\w/-]+\.blade\.php)$/, sdk: /"laravel\/framework"\s*:/ },
+  symfony: { stack: "php", label: "Symfony", files: /(^|\/)(?:symfony\.lock|config\/bundles\.php|config\/packages\/[\w.-]+\.ya?ml)$/, sdk: /"symfony\/(?:framework-bundle|http-kernel)"\s*:/ },
+  drupal: { stack: "php", label: "Drupal", files: /(^|\/)[\w-]+\.(?:info|routing)\.yml$/, sdk: /"drupal\/core(?:-recommended)?"\s*:/ },
+  // Python requirement lines (`Django==5.2`, `"fastapi>=0.115"`); flask-login and djangorestframework do not count.
+  django: { stack: "python", label: "Django", files: /(^|\/)(?:manage\.py|urls\.py)$/, sdk: /(?:^|["'])\s*django\s*(?:\[[^\]]*\]\s*)?(?:[=<>~!;"',]|$)/im },
+  fastapi: { stack: "python", label: "FastAPI", sdk: /(?:^|["'])\s*fastapi\s*(?:\[[^\]]*\]\s*)?(?:[=<>~!;"',]|$)/im },
+  flask: { stack: "python", label: "Flask", sdk: /(?:^|["'])\s*flask\s*(?:\[[^\]]*\]\s*)?(?:[=<>~!;"',]|$)/im },
+};
+const PROFILE_OF_FRAMEWORK = { Supabase: "supabase", "Firebase Admin": "firebase", Laravel: "laravel", Symfony: "symfony", Drupal: "drupal", Django: "django", FastAPI: "fastapi", Flask: "flask" };
+const SDK_MANIFEST = /(^|\/)(?:(?:package|composer)\.json|requirements[\w.-]*\.txt|pyproject\.toml|Pipfile)$/;
+
+// Source languages by file extension. ts is separate for semgrep; the briefs fold it into js.
+export const LANG_EXT = {
+  js: /\.[cm]?jsx?$/, ts: /\.[cm]?tsx?$/, php: /\.(?:php|module|inc|theme|install)$/, python: /\.py$/,
+  go: /\.go$/, ruby: /\.rb$/, rust: /\.rs$/, java: /\.(?:java|kt)$/,
+};
+export const languagesOf = (paths) => Object.keys(LANG_EXT).filter((l) => paths.some((p) => LANG_EXT[l].test(p)));
+
+// Tracked files of the project (git ls-files), without dependency trees; [] outside a git repository.
+export function projectFiles(root) {
+  const r = spawnSync("git", ["-C", root, "ls-files"], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  return (r.status === 0 ? r.stdout.split("\n") : []).filter((f) => f && !/node_modules|vendor\//.test(f));
+}
+
 // One directory: which stacks its manifests declare.
 function detectDir(dir) {
   const names = new Set(readdirSync(dir));
@@ -235,7 +279,7 @@ function detectDir(dir) {
   return found;
 }
 
-export function detectStack(root, { force = null } = {}) {
+export function detectStack(root, { force = null, files = null } = {}) {
   const groups = new Map(); // id -> { id, dirs, manifests, frameworks, unsupported, notes }
   (function rec(dir, depth) {
     const rel = relative(root, dir).split(sep).join("/") || ".";
@@ -257,6 +301,24 @@ export function detectStack(root, { force = null } = {}) {
       if (lstatSync(p).isDirectory()) rec(p, depth + 1);
     }
   })(root, 0);
+
+  // Framework profiles: manifest frameworks plus marker files and SDK names anywhere in the tracked files.
+  // A PHP or Python framework seen only through its files (a Drupal module without composer.json, a Django
+  // app without requirements) joins, or creates, its language's stack.
+  const tracked = files ?? projectFiles(root);
+  const manifestText = tracked.filter((f) => SDK_MANIFEST.test(f)).map((f) => read(join(root, f)));
+  const fromManifests = new Set([...groups.values()].flatMap((g) => g.frameworks).map((f) => PROFILE_OF_FRAMEWORK[f]).filter(Boolean));
+  const frameworkProfiles = Object.keys(FRAMEWORK_PROFILES).filter((id) => {
+    const fp = FRAMEWORK_PROFILES[id];
+    return fromManifests.has(id) || tracked.some((f) => fp.files?.test(f)) || manifestText.some((m) => fp.sdk?.test(m));
+  });
+  for (const id of frameworkProfiles) {
+    const { stack: sid, label: fwLabel } = FRAMEWORK_PROFILES[id];
+    if (!sid) continue;
+    const g = groups.get(sid) ?? { id: sid, dirs: [], manifests: [], frameworks: [], libraries: [], unsupported: [], notes: ["detected from its files, no manifest"] };
+    if (!g.frameworks.includes(fwLabel)) g.frameworks.push(fwLabel);
+    groups.set(sid, g);
+  }
 
   // A stack seen only at a framework-less workspace root still has a location: the root.
   const detected = [...groups.values()]
@@ -282,17 +344,18 @@ export function detectStack(root, { force = null } = {}) {
     const p = PROFILES[id];
     const d = detected.find((x) => x.id === id);
     const fw = d?.frameworks ?? [];
-    const covers = p.covers.filter((c) => !(id === "php" && /Drupal/.test(c) && !fw.includes("Drupal")));
+    const covers = p.covers.filter((c) => typeof c === "string" || fw.includes(c[0])).map((c) => (typeof c === "string" ? c : c[1]));
+    const dedicated = p.supports ? p.supports.some((f) => fw.includes(f)) : p.dedicated;
     const gaps = [...p.gaps];
-    if (d?.unsupported.length) gaps.unshift(`detected without a pre-pass convention: ${d.unsupported.join(", ")} (auditors find these entry points and queries by hand)`);
-    return { id, name: p.name, dedicated: p.dedicated, roadmap: p.roadmap ?? "", frameworks: fw, dirs: d?.dirs ?? [], covers, gaps };
+    if (d?.unsupported?.length) gaps.unshift(`detected without a pre-pass convention: ${d.unsupported.join(", ")} (auditors find these entry points and queries by hand)`);
+    return { id, name: p.name, dedicated, roadmap: p.roadmap ?? "", frameworks: fw, dirs: d?.dirs ?? [], covers, gaps };
   });
   if (force) {
     for (const d of detected.filter((x) => x.id !== applied[0])) {
       profiles[0].gaps.push(`${label(d)}: detected but not profiled because --stack forced ${PROFILES[applied[0]].name}`);
     }
   }
-  return { detected, applied, forced: force ? resolveStack(force) : null, forced_as: force ?? null, warning, profiles };
+  return { detected, applied, forced: force ? resolveStack(force) : null, forced_as: force ?? null, warning, profiles, framework_profiles: frameworkProfiles };
 }
 
 export function label(d) {
@@ -318,6 +381,7 @@ export function stackMarkdown(stack, heading = "##") {
     L.push(`- Covers: ${p.covers.join("; ")}.`);
     L.push(`- Does not cover: ${p.gaps.join("; ")}.`);
   }
+  if (stack.framework_profiles?.length) L.push("", `Framework checklists: ${stack.framework_profiles.map((id) => FRAMEWORK_PROFILES[id].label).join(", ")} (their \`Stack profile:\` checklist sections go to the auditor that owns 2.1, their patterns to every brief).`);
   const notes = stack.detected.flatMap((d) => d.notes);
   if (notes.length) L.push("", `Notes: ${notes.join("; ")}.`);
   L.push("");

@@ -107,8 +107,8 @@ Python files laid out like the real frameworks: no virtualenv, nothing to instal
     cd <run>/app && claude                          # fresh session, then: /security-audit
     node benchmark/score.mjs <run> --label "what changed"
 
-The scorer parses `.py`, `.html`, `.txt`, `.cfg` and `.ini` locations. bandit is NOT RUN by the pre-pass
-until R07; osv-scanner reads the three `requirements.txt` files, and an advisory it reports for a pinned
+The scorer parses `.py`, `.html`, `.txt`, `.cfg` and `.ini` locations. bandit runs in the pre-pass
+tool runner when it is installed (native only); osv-scanner reads the three `requirements.txt` files, and an advisory it reports for a pinned
 version is not in the key (it shows up as an unmatched finding, not as a decoy false positive).
 Seeded classes: Django `get_object_or_404(pk=)` without a patient filter, `.raw()` with an f-string, a DRF
 viewset whose queryset is every patient's prescriptions, a patient CSV export without `login_required`,

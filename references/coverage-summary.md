@@ -15,7 +15,8 @@ Pre-pass (deterministic, seconds): hotspot ranking, entry points by framework co
   Supabase/Firebase policy scan, PHP routes (Laravel, Symfony, Drupal) ranked by their controller method,
   Python routes (Django, FastAPI, Flask) ranked by their view, with a user-owned model scan,
   dependency advisories (osv-scanner, composer audit and pip-audit fallbacks), secrets across git history (gitleaks, redacted);
-  Psalm taint analysis reported NOT RUN (it would execute the project's autoloader), bandit NOT RUN until R07
+  rule scanners semgrep, zizmor, hadolint, trivy (native or pinned docker image) and bandit (native) as candidates;
+  Psalm taint analysis reported NOT RUN (it would execute the project's autoloader)
 
 Categories:
  1. Authentication & Authorization — session IDs, JWT, BOLA, BFLA, account lockout, CSRF (origin checks, SameSite, OAuth state),
@@ -40,8 +41,9 @@ Benchmark (OWASP Juice Shop v19.2.1, public, likely in model training data):
   45 non-issues documented | FN rate: 7.6%
 
 Modes: Standard (<20 endpoints) | Triage (20-50) | Parallel (>50) | partial: --scope auth|payments|...|<path>|topN
-Stack: detected from manifests; dedicated profile for JS/TS (Node), general checklist for PHP, Python, Go, Rust,
-  Ruby, JVM, .NET (the report says which); --stack <name> forces a profile
+Stack: detected from manifests and framework files; dedicated profile for JS/TS (Node), PHP (Laravel, Symfony, Drupal)
+  and Python (Django, FastAPI, Flask), general checklist for Go, Rust, Ruby, JVM, .NET (the report says which);
+  --stack <name> forces a profile
 Report: report.md + report.html (to fix / verified safe / not assessed)
 Private benchmark: benchmark/ (Ledgerly, own stack, 23 seeded bugs + 13 decoys; supabase-notes, 10 + 12; php-tickets, 13 + 14; py-clinic, 18 + 18), see benchmark/README.md
 Models: sonnet for the mechanical phases (1, 2, 4); Phase 3 verifier inherits the session model

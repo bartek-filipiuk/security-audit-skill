@@ -17,9 +17,9 @@ Update with `git -C ~/.claude/skills/security-audit pull`. Check the scripts (se
 Requirements: Claude Code, Node 20+. For dependency and secret scanning, either `osv-scanner` and `gitleaks` on
 `PATH` or a running docker daemon; without them the report lists those two checks as not run. Optional rule
 scanners, used when the project has something for them: `semgrep` (code), `zizmor` (GitHub Actions), `hadolint`
-(Dockerfiles), `trivy` (Dockerfiles and IaC). Install them (`pipx install semgrep zizmor`, `brew install hadolint
-trivy`) or run docker, and the pre-pass uses their official images pinned by digest. Each one that applies but
-cannot run is listed as not assessed. Tested on Linux.
+(Dockerfiles), `trivy` (Dockerfiles and IaC), `bandit` (Python, native only). Install them (`pipx install semgrep
+zizmor bandit`, `brew install hadolint trivy`) or run docker, and the pre-pass uses the official images of the
+first four, pinned by digest. Each one that applies but cannot run is listed as not assessed. Tested on Linux.
 
 Optional live progress panel (a Claude Code mod, 2.1.287+): `cp -r ~/.claude/skills/security-audit/audit-live
 ~/.claude/skills/`. It only reads `.security-audit/`; see `audit-live/README.md`.
@@ -83,7 +83,7 @@ A deterministic pre-pass (seconds) followed by a 5-phase agent pipeline (Recon �
 ```
 prepass.mjs (no LLM) → entry points by framework convention, Drizzle scope scan,
                        osv-scanner advisories, gitleaks over git history,
-                       semgrep / zizmor / hadolint / trivy candidates → prepass.md
+                       semgrep / zizmor / hadolint / trivy / bandit candidates → prepass.md
         ↓
 Recon Scanner (Sonnet) → maps exposed surface + authorization map, writes .security-audit/recon.md
         ↓
@@ -136,7 +136,7 @@ scripts/
   prepass.mjs                     # Phase 0: deterministic pre-pass (node, no deps; docker for scanners)
   surface.mjs                     # Entry point enumeration + Drizzle scope scan
   stack.mjs                       # Stack detection from manifests, profiles, --stack
-  tools.mjs                       # semgrep, zizmor, hadolint, trivy: detect, run, normalize candidates
+  tools.mjs                       # semgrep, zizmor, hadolint, trivy, bandit: detect, run, normalize candidates
   incremental.mjs                 # --since: changed files -> re-audit targets, carried findings
   audit-state.mjs                 # Validates findings, generates remediation.json
   report-html.mjs                 # Renders report.html: to fix / verified safe / not assessed
@@ -153,7 +153,7 @@ benchmark/
   COMPARISON.md                   # Head-to-head with the Claude Security plugin
 ```
 
-Requirements: Node 20+. For dependency and secret scanning, either `osv-scanner` and `gitleaks` on PATH or a running docker daemon (official images are pulled on first use). The rule scanners `semgrep`, `zizmor`, `hadolint` and `trivy` are optional the same way: native binary first, then the official image pinned by digest. Without them the pre-pass says NOT RUN with how to enable it and the report lists the gap. Their hits are candidates for the auditors, never findings.
+Requirements: Node 20+. For dependency and secret scanning, either `osv-scanner` and `gitleaks` on PATH or a running docker daemon (official images are pulled on first use). The rule scanners `semgrep`, `zizmor`, `hadolint` and `trivy` are optional the same way: native binary first, then the official image pinned by digest; `bandit` (Python) runs natively only. Without them the pre-pass says NOT RUN with how to enable it and the report lists the gap. Their hits are candidates for the auditors, never findings.
 
 ## Key features
 

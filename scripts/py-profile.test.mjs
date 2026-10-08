@@ -1,6 +1,6 @@
 // Run: node --test scripts/
-// Python profile (roadmap R06): Django, FastAPI and Flask entry points, Python hotspot signals, the bandit
-// NOT RUN status and pip-audit fallback, profile briefs and the py-clinic benchmark app with its answer key.
+// Python profile (roadmap R06): Django, FastAPI and Flask entry points, Python hotspot signals, bandit in the
+// R07 tool runner and the pip-audit fallback, profile briefs and the py-clinic benchmark app with its answer key.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
@@ -11,7 +11,8 @@ import { fileURLToPath } from "node:url";
 import { benchApp, listApps } from "../benchmark/apps.mjs";
 import { primaryLocation, score } from "../benchmark/score.mjs";
 import { detectLanguages, patternsFor, profileSections, writeBriefs } from "./briefs.mjs";
-import { drfDefaultPermissions, pyOwnerModels, pythonToolStatus, rankHotspots, scanDjangoUrls, scanEntryPoints, scanPyFiles, scanPyRoutes, scanScope, walk } from "./surface.mjs";
+import { inventory, runTools } from "./tools.mjs";
+import { drfDefaultPermissions, pyOwnerModels, rankHotspots, scanDjangoUrls, scanEntryPoints, scanPyFiles, scanPyRoutes, scanScope, walk } from "./surface.mjs";
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), "..");
 const bench = benchApp("py-clinic");
@@ -423,12 +424,31 @@ test("Python file signals: templates, settings, Flask secrets and debug, csrf_ex
   assert.equal(rows.find((r) => r.file === "s/settings.py" && r.line === 4).score, 6);
 });
 
-test("bandit is reported NOT RUN for Python projects, pip-audit is a read-only dependency fallback", () => {
-  assert.match(pythonToolStatus(files), /^NOT RUN: .*R07.*bandit -r \. -f json/);
-  assert.equal(pythonToolStatus([{ path: "src/index.ts", text: "" }]), null);
-  assert.equal(pythonToolStatus([{ path: "tests/test_x.py", text: "" }]), null, "test files alone are not a Python project");
+test("bandit runs in the R07 tool runner for Python projects (native only), pip-audit is a read-only dependency fallback", () => {
+  const inv = inventory(bench.app);
+  assert.ok(inv.python > 0);
+  const none = runTools({ root: bench.app, inv, stack: [], only: ["bandit"], runner: { installed: () => false, run: () => assert.fail("must not run"), dockerOk: true } });
+  assert.equal(none[0].state, "not-run");
+  assert.match(none[0].status, /^NOT RUN: bandit not installed \(no docker fallback\); to enable: `pipx install bandit`/);
+
+  const out = JSON.stringify({ errors: [], results: [
+    { filename: "./appointments/views.py", line_number: 29, test_id: "B608", test_name: "hardcoded_sql_expressions", issue_severity: "MEDIUM", issue_confidence: "LOW", issue_text: "Possible SQL injection vector through string-based query construction." },
+  ] });
+  const calls = [];
+  const ran = runTools({ root: bench.app, inv, stack: [], only: ["bandit"], runner: { installed: (c) => c === "bandit", run: (c, a) => { calls.push([c, a]); return { status: 1, stdout: out, stderr: "" }; } } });
+  assert.deepEqual(calls[0].slice(0, 1), ["bandit"]);
+  for (const a of ["-r", ".", "-f", "json"]) assert.ok(calls[0][1].includes(a), a);
+  assert.equal(ran[0].status, "bandit: 1 candidates");
+  assert.deepEqual([ran[0].rows[0].file, ran[0].rows[0].line, ran[0].rows[0].rule, ran[0].rows[0].severity], ["appointments/views.py", 29, "B608 hardcoded_sql_expressions", "medium"]);
+
+  const testsOnly = mkdtempSync(join(tmpdir(), "sa-r06-bandit-"));
+  mkdirSync(join(testsOnly, "tests"));
+  writeFileSync(join(testsOnly, "tests", "test_x.py"), "x = 1\n");
+  const skipped = runTools({ root: testsOnly, inv: inventory(testsOnly), stack: [], only: ["bandit"], runner: { installed: () => true, run: () => assert.fail("must not run") } });
+  assert.equal(skipped[0].status, "skipped: no Python source outside tests", "test files alone are not a Python project");
+
   const prepass = readFileSync(join(repo, "scripts", "prepass.mjs"), "utf8");
-  assert.match(prepass, /Python static analysis \(bandit\): \$\{pyStatic\}/);
+  assert.match(prepass, /"bandit\.json"/, "a previous run's bandit output is removed");
   assert.match(prepass, /\["requirements\.txt", "pip-audit", \["-r", "requirements\.txt", "--no-deps", "--disable-pip"/);
   assert.match(prepass, /"pip-audit\.json"/, "a previous run's pip-audit output is removed");
 });

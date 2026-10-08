@@ -3,16 +3,21 @@
 //   zizmor    GitHub Actions workflows (.github/workflows), offline audits only
 //   hadolint  Dockerfiles
 //   trivy     `trivy config`: misconfigurations in Dockerfiles, compose, Terraform, Kubernetes, Helm
+//   bandit    Python source outside tests (R06). Native only: it parses the code and never imports or runs
+//             it. No docker fallback, because there is no official image pinned here.
+// Psalm (PHP taint analysis) is deliberately not here: it loads the project's autoloader and plugins,
+// which executes the audited code (surface.mjs phpTaintStatus reports it NOT RUN with how to run it).
 // Each tool first decides whether it applies (no workflows = skipped, with the reason), then runs
-// natively if installed, else through its official docker image pinned by digest, else reports NOT RUN
+// natively if installed, else through its official docker image pinned by digest (when one is listed in
+// IMAGES), else reports NOT RUN
 // with how to enable it. Hits are normalized to candidates (file:line, rule, short note), deduplicated
 // and capped; the raw output goes to tools/. A candidate is a lead for an auditor, never a finding.
 // The runner is injected so tests never execute a real scanner.
 
 import { lstatSync, readdirSync } from "node:fs";
 import { join, relative, sep } from "node:path";
-import { SKIP_DIRS } from "./surface.mjs";
-import { detectStack } from "./stack.mjs";
+import { NON_RUNTIME, SKIP_DIRS } from "./surface.mjs";
+import { detectStack, LANG_EXT } from "./stack.mjs";
 
 // Official images, pinned by the manifest-list digest read from each registry on 2026-10-06 (no pull).
 // Update tag and digest together; docker ignores the tag when a digest is given.
@@ -30,17 +35,18 @@ const INSTALL = {
   zizmor: "`pipx install zizmor`, `brew install zizmor` or `cargo install --locked zizmor`",
   hadolint: "`brew install hadolint` or the binary from its GitHub releases",
   trivy: "`brew install trivy` or the binary from its GitHub releases",
+  bandit: "`pipx install bandit` (it only parses the code, it never imports or runs it)",
 };
 
 // ---------------------------------------------------------------- inventory and stack
 
 const DOCKERFILE_RE = /^(?:Dockerfile|Containerfile)(?:\..+)?$|\.(?:dockerfile|containerfile)$/i;
 const COMPOSE_RE = /^(?:docker-)?compose(?:\.[\w-]+)?\.ya?ml$/i;
-const LANG = { js: /\.[cm]?jsx?$/, ts: /\.[cm]?tsx?$/, php: /\.(?:php|module|inc|theme)$/, python: /\.py$/, go: /\.go$/, ruby: /\.rb$/, rust: /\.rs$/, java: /\.(?:java|kt)$/ };
 
-// One walk over the project for what the tools need: language counts, workflows, infra files.
+// One walk over the project for what the tools need: language counts (LANG_EXT from stack.mjs), Python
+// runtime files, workflows, infra files.
 export function inventory(root) {
-  const inv = { root, langs: {}, workflows: [], dockerfiles: [], iac: [] };
+  const inv = { root, langs: {}, python: 0, workflows: [], dockerfiles: [], iac: [] };
   (function rec(dir) {
     let names;
     try { names = readdirSync(dir); } catch { return; }
@@ -51,7 +57,8 @@ export function inventory(root) {
       if (st.isSymbolicLink()) continue;
       if (st.isDirectory()) { rec(p); continue; }
       const rel = relative(root, p).split(sep).join("/");
-      for (const [lang, re] of Object.entries(LANG)) if (re.test(name)) inv.langs[lang] = (inv.langs[lang] ?? 0) + 1;
+      for (const [lang, re] of Object.entries(LANG_EXT)) if (re.test(name)) inv.langs[lang] = (inv.langs[lang] ?? 0) + 1;
+      if (LANG_EXT.python.test(name) && !NON_RUNTIME.test(rel)) inv.python++;
       if (/^\.github\/workflows\/[^/]+\.ya?ml$/.test(rel)) inv.workflows.push(rel);
       if (DOCKERFILE_RE.test(name)) inv.dockerfiles.push(rel);
       if (COMPOSE_RE.test(name) || /\.tf$/.test(name) || name === "Chart.yaml" || /^kustomization\.ya?ml$/.test(name)) inv.iac.push(rel);
@@ -111,6 +118,15 @@ export function parseSemgrep(stdout, root) {
   if (!Array.isArray(data.results)) throw new Error("no results array");
   return data.results.map((r) => ({
     file: normPath(r.path, root), line: r.start?.line ?? 0, rule: r.check_id, severity: sev(r.extra?.severity), note: note(r.extra?.message),
+  }));
+}
+
+export function parseBandit(stdout, root) {
+  const data = JSON.parse(stdout);
+  if (!Array.isArray(data.results)) throw new Error("no results array");
+  return data.results.map((r) => ({
+    file: normPath(r.filename, root), line: r.line_number ?? 0, rule: [r.test_id, r.test_name].filter(Boolean).join(" "),
+    severity: sev(r.issue_severity), note: note(`${r.issue_text ?? ""}${r.issue_confidence ? ` (confidence ${String(r.issue_confidence).toLowerCase()})` : ""}`),
   }));
 }
 
@@ -201,6 +217,18 @@ export const TOOLS = [
     raw: "trivy.json",
     parse: parseTrivy,
   },
+  {
+    name: "bandit",
+    category: "code",
+    check: () => "Python static analysis (bandit)",
+    applies: (ctx) => (ctx.inv.python ? null : "no Python source outside tests"),
+    version: ["--version"],
+    // bandit exits 1 when it reports issues; the runner reads stdout whatever the status.
+    native: () => ["bandit", ["-r", ".", "-f", "json", "-x", "./.venv,./venv,./node_modules,./.security-audit,./tests"]],
+    docker: null,
+    raw: "bandit.json",
+    parse: parseBandit,
+  },
 ];
 
 // ---------------------------------------------------------------- run
@@ -219,10 +247,11 @@ export function runTools({ root, inv, stack, runner, write = () => {}, only = nu
     if (runner.installed(cmd, t.version)) {
       via = t.name;
       res = runner.run(cmd, argv, { cwd: root });
-    } else if (runner.dockerOk) {
+    } else if (runner.dockerOk && IMAGES[t.name]) {
       via = `${t.name} (docker)`;
       res = runner.run("docker", ["run", "--rm", "-v", `${root}:/src:ro`, "-w", "/src", IMAGES[t.name], ...t.docker(ctx)], { cwd: root });
     } else {
+      if (!IMAGES[t.name]) return { ...base, state: "not-run", status: `NOT RUN: ${t.name} not installed (no docker fallback); to enable: ${INSTALL[t.name]}` };
       const docker = runner.dockerDisabled ? "docker disabled by --no-docker" : "docker unavailable";
       return { ...base, state: "not-run", status: `NOT RUN: ${t.name} not installed and ${docker}; to enable: ${INSTALL[t.name]}, or a running docker (pulls ${IMAGES[t.name].split("@")[0]}, pinned by digest)` };
     }
@@ -253,7 +282,7 @@ export function dedupe(rows) {
 
 export function renderTools(results, table) {
   const L = [];
-  L.push(`## Tool Candidates (semgrep, zizmor, hadolint, trivy)`);
+  L.push(`## Tool Candidates (semgrep, zizmor, hadolint, trivy, bandit)`);
   L.push("");
   L.push(`Rule hits from deterministic tools. Each row is a candidate, never a finding: the auditor who owns the file (infra for workflows, Dockerfiles and IaC) reads the code and resolves it to a finding, a non-issue citing the control, or a false positive. Rule severity is the tool's, not the audit's. Full lists: tools/tool-candidates.json.`);
   L.push("");

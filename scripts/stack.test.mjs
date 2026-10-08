@@ -29,15 +29,18 @@ test("Ledgerly is detected as the dedicated JS/TS profile with its frameworks", 
   assert.ok(p.gaps.some((g) => g.includes("ORMs other than Drizzle")));
 });
 
-test("a Laravel app is PHP with no dedicated profile; its vite package.json is not a second stack", () => {
+test("a Laravel app gets the dedicated PHP profile (R05); its vite package.json is not a second stack", () => {
   const s = detectStack(fixture("laravel"));
   assert.deepEqual(s.applied, ["php"]);
   assert.deepEqual(s.detected[0].frameworks, ["Laravel"]);
   assert.ok(s.detected[0].notes.some((n) => n.includes("frontend build tooling")));
   const p = s.profiles[0];
-  assert.equal(p.dedicated, false);
-  assert.ok(p.gaps.some((g) => g.includes("Laravel and Symfony routes")));
-  assert.ok(!p.covers.some((c) => c.includes("Drupal")), "Drupal routing only claimed for Drupal");
+  assert.equal(p.dedicated, true);
+  assert.ok(p.covers.some((c) => c.startsWith("Laravel routes/*.php entry points")));
+  assert.ok(p.gaps.some((g) => g.includes("Psalm taint analysis is not run")));
+  assert.ok(!p.covers.some((c) => /^(Drupal|Symfony) /.test(c)), "routing only claimed for the detected frameworks");
+  const plain = detectStack(fixture("django"), { force: "php" }).profiles[0];
+  assert.equal(plain.dedicated, false, "PHP without Laravel, Symfony or Drupal stays on the general checklist");
 });
 
 test("Django (requirements.txt + manage.py) and FastAPI (pyproject.toml) are Python", () => {
@@ -47,8 +50,11 @@ test("Django (requirements.txt + manage.py) and FastAPI (pyproject.toml) are Pyt
   const fa = detectStack(fixture("fastapi"));
   assert.deepEqual(fa.applied, ["python"]);
   assert.deepEqual(fa.detected[0].frameworks, ["FastAPI", "SQLAlchemy"]);
-  assert.equal(fa.profiles[0].dedicated, false);
-  assert.ok(fa.profiles[0].gaps.some((g) => g.includes("bandit and pip-audit")));
+  assert.equal(fa.profiles[0].dedicated, true, "dedicated Python profile (R06)");
+  assert.ok(fa.profiles[0].covers.some((c) => c.startsWith("FastAPI @app/@router entry points")));
+  assert.ok(!fa.profiles[0].covers.some((c) => c.startsWith("Django urls.py")), "Django routing only claimed for Django");
+  assert.ok(fa.profiles[0].covers.some((c) => c.includes("pip-audit") && c.includes("bandit") === false));
+  assert.ok(fa.profiles[0].covers.some((c) => c.startsWith("bandit through the rule-scanner runner")));
 });
 
 test("monorepo: every stack gets its own profile, in the package directories, and unsupported frameworks are named", () => {
@@ -79,12 +85,12 @@ test("prepass writes the profile to prepass.md and summary.json, and the reports
   const proj = copy("laravel");
   const r = prepass(proj);
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /profile php \(general checklist\)/);
+  assert.match(r.stdout, /profile php(?! \(general checklist\))/);
   const audit = join(proj, ".security-audit");
   const md = readFileSync(join(audit, "prepass.md"), "utf8");
   assert.match(md, /## Stack and Profile/);
-  assert.match(md, /\*\*Profile: PHP \(Laravel\): no dedicated profile, the general checklist applies \(profile planned as R05\)\.\*\*/);
-  assert.match(md, /- Does not cover: Laravel and Symfony routes/);
+  assert.match(md, /\*\*Profile: PHP \(Laravel\): dedicated profile\.\*\*/);
+  assert.match(md, /- Does not cover: no Eloquent or Doctrine tenant-scope scan/);
   const sum = JSON.parse(readFileSync(join(audit, "tools", "summary.json"), "utf8"));
   assert.deepEqual(sum.stack.applied, ["php"]);
   assert.equal(sum.stack.forced, null);
@@ -93,11 +99,11 @@ test("prepass writes the profile to prepass.md and summary.json, and the reports
   const { renderReportMd } = await import("./report-md.mjs");
   const rep = renderReportMd(audit);
   assert.match(rep, /## Stack and Profile/);
-  assert.match(rep, /Does not cover: Laravel and Symfony routes/);
+  assert.match(rep, /Does not cover: no Eloquent or Doctrine tenant-scope scan/);
   const { renderReport } = await import("./report-html.mjs");
   const html = renderReport(audit);
-  assert.match(html, /Profile: PHP \(Laravel\): no dedicated profile, the general checklist applies/);
-  assert.match(html, /Does not cover: Laravel and Symfony routes/);
+  assert.match(html, /Profile: PHP \(Laravel\): dedicated profile/);
+  assert.match(html, /Does not cover: no Eloquent or Doctrine tenant-scope scan/);
 });
 
 test("prepass --stack: conflict warning in the output and the files, forced language in the briefs, bad name exits 2", async () => {
@@ -128,4 +134,30 @@ test("old audits without a stack record render without the section", async () =>
   const { renderReport } = await import("./report-html.mjs");
   assert.ok(!renderReportMd(dir).includes("Stack and Profile"));
   assert.ok(!renderReport(dir).includes("Profile:"));
+});
+
+test("one detector: framework profiles, briefs languages and semgrep rulesets all come from stack.mjs", async () => {
+  const { detectLanguages } = await import("./briefs.mjs");
+  const { inventory, rulesetStack } = await import("./tools.mjs");
+  const app = (name) => join(repo, "benchmark", name, "app");
+  const cases = [
+    [join(repo, "benchmark", "app"), [], "js"],
+    [app("supabase-notes"), ["supabase", "firebase"], "js,supabase,firebase"],
+    [app("php-tickets"), ["laravel", "symfony", "drupal"], "php,laravel,symfony,drupal"],
+    [app("py-clinic"), ["django", "fastapi", "flask"], "python,django,fastapi,flask"],
+  ];
+  for (const [root, fps, briefs] of cases) {
+    const s = detectStack(root);
+    assert.deepEqual(s.framework_profiles, fps, root);
+    assert.equal(detectLanguages(root).join(","), briefs, root);
+  }
+  // The Drupal module has no composer.json within reach of the manifest walk: its files put Drupal on the PHP stack.
+  const php = detectStack(app("php-tickets"));
+  assert.deepEqual(php.detected[0].frameworks, ["Laravel", "Symfony", "Drupal"]);
+  assert.equal(php.profiles[0].dedicated, true);
+  assert.ok(php.profiles[0].covers.some((c) => c.startsWith("Drupal *.routing.yml")));
+  const py = app("py-clinic");
+  const tags = rulesetStack(inventory(py), detectStack(py));
+  for (const t of ["python", "django", "fastapi", "flask"]) assert.ok(tags.includes(t), t);
+  assert.ok(rulesetStack(inventory(join(repo, "benchmark", "app"))).includes("react"), "React from the stack's libraries");
 });
