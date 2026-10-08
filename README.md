@@ -3,7 +3,7 @@
 A Claude Code skill that audits the security of your own code and hands back a report: what to fix, what is
 verified safe (with the control's file:line) and what could not be checked. Open source, MIT.
 
-Project page: https://security-audit.dev
+Project page: https://security-audit.dev · Build log (daily stand-ups): https://www.youtube.com/@SecurityAuditDev
 
 ## Install
 
