@@ -79,7 +79,7 @@ These gates govern the pipeline. Violating them invalidates the audit. (Most app
 8. **Dead code is not a finding.** No route, no caller, no entry point = unreachable. Note as non-issue with cleanup recommendation.
 9. **Defensive failures are not vulnerabilities.** A security control that is too strict (blocks legitimate access) is a functionality bug, not a security vulnerability → **REJECT** with `rejection_reason: defensive_failure` and surface it under Recommended Actions. (One terminal outcome — do not also "cap at LOW"; that double-path made the rating non-reproducible.)
 10. **Prerequisite chains affect severity.** Count the admin/config steps required *before* the weakness is reachable (privileged setup steps, not the steps of the person who triggers it), then downgrade: **2–3 prerequisites → −1 level, 4+ → −2 levels, floor at LOW.** CRITICAL is exempt from downgrade **because for RCE / data-loss impact dominates likelihood** — state this rationale so raters apply it consistently. Document the full prerequisite chain.
-11. **No reassurance without evidence.** A non-issue cites the file:line of the control that makes the code safe. "No grep hits", a tool that did not run, or a pattern the scanner does not understand is a coverage gap: record it in `.security-audit/not-assessed.md`, never as a non-issue.
+11. **No reassurance without evidence.** A non-issue cites the file:line of the control that makes the code safe. "No grep hits", a tool that did not run, or a pattern the scanner does not understand is a coverage gap: record it as `not_assessed` in the coverage ledger, never as a non-issue.
 12. **Finding frontmatter is the single source of truth.** `remediation.json` is generated from it by `scripts/audit-state.mjs`, never written by hand. Run the script after every phase that writes findings; it must exit 0 before the report is assembled.
 
 **Principles shared with all agents:**
@@ -101,7 +101,7 @@ Entry points found in Phase 1?
   └── > 50   → Parallel Mode  (multi-agent pipeline described below)
 ```
 
-**Standard Mode:** One agent runs all 4 phases sequentially. Use the checklist in `references/audit-checklist.md`, the Deep Dive loop, and produce the report per `references/report-template.md`. No subagents needed.
+**Standard Mode:** One agent runs all 4 phases sequentially. Use the checklist in `references/audit-checklist.md`, the Deep Dive loop, and produce the report per `references/report-template.md`. No subagents needed. Record coverage in `.security-audit/coverage/coordinator.json` as you go (Triage and Quick-Run modes too).
 
 **Triage Mode:** One agent, but after Recon, group endpoints by risk domain (HIGH: auth/payments/admin/upload, MEDIUM: CRUD/search, LOW: health/static). Audit HIGH domains first. If context runs low, report what you have and mark uncovered areas.
 
@@ -123,6 +123,8 @@ All agents read from and write to `.security-audit/` in the project root. This i
 │   └── ...
 ├── non-issues/              # Areas examined and found secure, each citing the control's file:line
 ├── not-assessed.md          # Coverage gaps: checks that could not be done, and why
+├── coverage/                # Coverage ledger, one JSON file per writer: entry points and classes checked, not applicable, not assessed
+├── coverage.json            # GENERATED: the merged ledger (scripts/coverage.mjs --write)
 ├── tests/                   # Phase 3 regression tests for HIGH/CRITICAL, in the project's own runner (never in the source tree)
 ├── briefs/                  # Phase 2 per-auditor briefs (scripts/briefs.mjs)
 ├── test-quality.md          # Phase 4 output
@@ -235,12 +237,12 @@ node "$SKILL_DIR/scripts/briefs.mjs"
 2. Its domain from the triage table, in a few lines
 3. **Its number range**: auditor k writes every file it creates, findings and non-issues alike, with numbers k01–k99 (first auditor 101–199, second 201–299, …). Two auditors share categories on big projects, and equal numbers overwrite each other's files.
 4. The pre-pass sections they own: Entry Points + Authorization Map + Data Scope Scan to the Auth Auditor; Dependency Advisories + Secret Scan to the Infra Auditor; Entry Points to everyone; and every auditor gets the Hotspots rows in its domain as its first targets (plus the in-scope target list on a `--scope` run)
-5. Instruction to write findings to `.security-audit/findings/`, non-issues to `.security-audit/non-issues/`, and coverage gaps as lines in `.security-audit/not-assessed.md`
+5. Instruction to write findings to `.security-audit/findings/`, non-issues to `.security-audit/non-issues/`, and its coverage ledger to `.security-audit/coverage/auditor-<name>.json` (format: Coverage Ledger in `references/finding-format.md`): one row per entry point or project-wide check and class it owns, `checked` with evidence, `not_applicable` or `not_assessed` with a reason. Coverage gaps go there, not into `not-assessed.md`
 
 **All agents run in parallel** — their number ranges keep their files apart.
 
 **Wait for all to complete.** Then:
-1. Run `node "$SKILL_DIR/scripts/audit-state.mjs" --summary` and have the owning auditor fix any format problem now, before verification. The summary replaces reading every file.
+1. Run `node "$SKILL_DIR/scripts/audit-state.mjs" --summary` and have the owning auditor fix any format problem now, before verification. The summary replaces reading every file. Then `node "$SKILL_DIR/scripts/coverage.mjs" --summary`: it must exit 0, and the classes it lists as not recorded and the entry points without a row are "not looked at". Send the owning auditor back for those that should have been covered; the rest reach Not Assessed by themselves.
 2. Check that every Data Scope Scan candidate ended as a finding or a non-issue; send the Auth Auditor back for any that did not
 3. Report progress to user: "Phase 2 complete. N raw findings across M categories."
 
@@ -291,6 +293,7 @@ You write only `.security-audit/summary.md`, following the top of `references/re
 ```bash
 node "$SKILL_DIR/scripts/audit-state.mjs" --final --write --source baseline-from-audit   # Phase 5.5, remediation.json
 node "$SKILL_DIR/scripts/workspace-check.mjs"    # what changed outside the audit dir during the run
+node "$SKILL_DIR/scripts/coverage.mjs" --write   # validates the coverage ledger, merges it into coverage.json; must exit 0
 node "$SKILL_DIR/scripts/report-md.mjs"          # summary.md + findings + non-issues + gaps → report.md
 node "$SKILL_DIR/scripts/report-html.mjs"        # → report.html
 ```
@@ -372,7 +375,7 @@ For fast single-pass audit without subagents (any project size):
 - Apply EXPAND/TRACE/VERIFY/REJECT inline during Phase 2
 - Skip Phase 3 Deep Dive loop
 - Still write to `.security-audit/` for persistence
-- Still run the Phase 5 script sequence at the end (`audit-state.mjs --final --write`, `workspace-check.mjs`, `report-md.mjs`, `report-html.mjs`)
+- Still run the Phase 5 script sequence at the end (`audit-state.mjs --final --write`, `workspace-check.mjs`, `coverage.mjs --write`, `report-md.mjs`, `report-html.mjs`)
 - Work through the pre-pass Hotspots first; for an even faster pass combine with `--scope top20`
 - Still produce full report with Non-Issues
 
@@ -406,6 +409,7 @@ This methodology is stack-agnostic. Phase 1 discovers the stack; Phase 2 adapts.
 | `scripts/briefs.mjs` | Phase 2 dispatch | One brief per auditor: its checklist sections + stack patterns for the repo's languages |
 | `scripts/report-md.mjs` | Phase 5 | Assembles `report.md` from the coordinator's `summary.md` and the audit files |
 | `scripts/workspace-check.mjs` | Phase 5 | Lists files changed outside `.security-audit/` since prepass `--new-run` |
+| `scripts/coverage.mjs` | After Phase 2, Phase 5 | Validates the coverage ledger (`references/coverage-ledger.schema.json`); report-md and report-html derive Coverage and Not Assessed from it |
 | `agents/recon-scanner.md` | Phase 1 dispatch | Recon agent prompt |
 | `agents/category-auditor.md` | Phase 2 dispatch | Category auditor agent prompt |
 | `agents/deep-dive-verifier.md` | Phase 3 dispatch | Deep Dive verifier agent prompt |

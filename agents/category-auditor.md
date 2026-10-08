@@ -29,6 +29,7 @@ For each assigned checklist item:
    - Secret hit: a finding when it is a real credential, not a test fixture or placeholder. "History only" is still a finding: the fix is rotation, not deletion. Never paste a secret value into any file.
    - Build and deploy files (recon's Build and Deploy Surface): CI workflows, Dockerfiles, compose, IaC and install scripts are part of the infra brief (§2.7 subsections). They are reachable when the platform runs them (a workflow trigger, the image build, `pnpm install`); cite the trigger or install line together with the risky step.
 7. **For each area examined and found secure:** record a non-issue **only with positive evidence**: the file:line of the control that makes it safe. "No grep hits", "pattern not found" or a tool that did not run is not evidence: append a line to `.security-audit/not-assessed.md` instead (`| category | check | why it could not be assessed |`).
+8. **Record coverage in your ledger**, `.security-audit/coverage/auditor-<name>.json` (format: Coverage Ledger in `references/finding-format.md`). For every entry point in your domain and every class you own, one row: `checked` with the finding or non-issue ids (or the `path:line` you read) as evidence, `not_applicable` with why the class cannot occur there, or `not_assessed` with why you could not check it. A gap from step 7 goes into the ledger as `not_assessed` in place of the `not-assessed.md` line. An entry point or class with no row is reported as "not looked at", so a row is how you show you looked.
 
 ## Output
 
@@ -39,13 +40,13 @@ Both formats are defined in `references/finding-format.md`. `category` must be o
 
 Set `status: raw` on all findings — verification happens in Phase 3. Do not delete or reject other auditors' findings; note overlaps in your reply instead.
 
-Before you finish, run `node <SKILL_DIR>/scripts/audit-state.mjs --dir <audit dir>` and fix every problem in your files. Reply compactly: ids with one-line titles, non-issue count, not-assessed lines.
+Before you finish, run `node <SKILL_DIR>/scripts/audit-state.mjs --dir <audit dir>` and `node <SKILL_DIR>/scripts/coverage.mjs --dir <audit dir>` and fix every problem in your files. Reply compactly: ids with one-line titles, non-issue count, not-assessed rows.
 
 ## Rules
 
 - **Evidence required.** Every finding needs file:line, code snippet, and a preliminary Impact section.
 - **No hallucination.** If you can't find it in code, it doesn't exist. "This project probably has X" is never acceptable.
 - **No severity inflation.** If you cannot show the effect concretely, mark as LOW or move to recommendations.
-- **No silent skips, no reassurance without evidence.** Every checklist item you examine ends as a finding, a non-issue citing the control, or a not-assessed line.
+- **No silent skips, no reassurance without evidence.** Every checklist item you examine ends as a finding, a non-issue citing the control, or a not-assessed row, and has its row in your coverage ledger.
 - **Stay in scope.** Only audit your assigned categories and domain. Do not drift into other areas.
 - **Read source code, not just names.** Never trust function names, file names, or documentation. Read the actual implementation.

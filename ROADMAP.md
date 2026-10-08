@@ -26,9 +26,6 @@ Rules that apply to every item:
 - **R21 LLM and agent checks.** Prompt injection into tools and agents, model output reaching HTML, SQL,
   shell or URL sinks, tool calls without authorisation, cost and token abuse. Done when: checklist items,
   stack patterns and at least two seeded bugs in a benchmark app, scored.
-- **R22 Coverage ledger.** A machine-readable record of which entry points and bug classes were checked,
-  validated by a schema, so "not found" can be told apart from "not looked at". Done when: the report
-  derives its coverage and not-assessed sections from the ledger and a validator test passes.
 
 ## Later
 
@@ -63,6 +60,13 @@ Rules that apply to every item:
   than the web stack this skill is built for; each needs its own benchmark app before it ships.
 
 ## Done
+
+- **R22 Coverage ledger** (2026-10-07): every auditor writes `coverage/<auditor>.json`, one row per entry point
+  or project-wide check and class: `checked` with evidence, `not_applicable` or `not_assessed` with a reason.
+  `scripts/coverage.mjs` validates it against `references/coverage-ledger.schema.json` (no dependencies) and
+  `report.md` and `report.html` build their Coverage and Not Assessed sections from it, adding every class and
+  pre-pass entry point with no row as "not looked at". `--since` carries the rows of untouched targets. Tests in
+  `scripts/coverage.test.mjs`; the benchmark run is pending.
 
 - **R08 More checks** (2026-10-06): checklist items and stack patterns for CSRF, CI/CD workflows
   (`pull_request_target`, expression injection, unpinned actions, secrets in logs), Docker and IaC, and

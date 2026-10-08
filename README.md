@@ -108,6 +108,7 @@ All agents communicate via `.security-audit/` directory:
 ├── findings/         # One file per finding (raw → verified/rejected)
 ├── non-issues/       # Areas examined and found secure (with the control's file:line)
 ├── not-assessed.md   # Coverage gaps
+├── coverage/         # Coverage ledger: per auditor, which entry points and classes were checked (JSON, schema-validated)
 ├── tests/            # Regression tests for HIGH/CRITICAL
 ├── test-quality.md   # Test coverage assessment
 ├── report.md         # Final report
@@ -142,6 +143,7 @@ scripts/
   report-md.mjs                   # Assembles report.md from the coordinator's summary.md + audit files
   briefs.mjs                      # Per-auditor briefs (checklist sections + patterns for the repo's languages)
   workspace-check.mjs             # What changed in the project while the audit ran
+  coverage.mjs                    # Validates the coverage ledger, renders the Coverage and Not Assessed sections
   selftest.test.mjs               # node --test scripts/
 benchmark/
   app/                            # Ledgerly: seeded-bug app in the target stack
@@ -158,6 +160,7 @@ Requirements: Node 20+. For dependency and secret scanning, either `osv-scanner`
 - **Evidence-based**: every finding requires file:line, code snippet, and an Impact section (who can do what they should not)
 - **Deterministic first**: entry points, tenant-scope candidates, CVEs and secrets in git history come from scripts and scanners, not from model memory
 - **Anti-hallucination**: 12 hard rules + mandatory 4-part REJECT gate (evidence, reachability, direction, dedup); no "secure" without the control's file:line
+- **Coverage ledger**: auditors record every entry point and class as checked, not applicable or not assessed; the report lists what nobody looked at, so "not found" is never confused with "not looked at"
 - **Proof labels**: every HIGH/CRITICAL is marked `test` (a regression test fails today) or `static` (code reading only)
 - **Measurement-driven**: Deep Dive iterates (max 3) and stops on set-convergence (no new findings / status changes / chains); score is a reporting metric
 - **Separate verification**: a different agent re-reads the code for every finding and rejects what it cannot confirm
