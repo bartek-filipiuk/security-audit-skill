@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Creates a fresh, hint-free copy of a benchmark app outside the skill repo, with a git history.
-//   node benchmark/setup.mjs [--app ledgerly|supabase-notes|php-tickets] [--dest DIR]
+//   node benchmark/setup.mjs [--app ledgerly|supabase-notes|php-tickets|py-clinic] [--dest DIR]
 // Default app: ledgerly (benchmark/app); others live in benchmark/<name>/app (see apps.mjs).
 // Default DIR: $TMPDIR/<app>-bench-<timestamp>. The audit runs in DIR/app; meta.json and the
 // answer key stay outside it. Ledgerly gets a seeded two-commit history: the leaked key is generated

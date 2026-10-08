@@ -1,0 +1,323 @@
+{
+  "version": 2,
+  "app": "py-clinic",
+  "note": "Ground truth for benchmark/py-clinic/app (a Django patient portal with a FastAPI lab service in labs/ and a Flask back office in backoffice/). Never copy this file into the audited directory. Same format and matching rules as benchmark/answer-key.json: `locations` are files relative to app/ with 1-based inclusive line ranges of the vulnerable statement or of the code a fix changes; a finding matches by its primary location only (window, nearest entry wins). When a real finding is scored as unmatched, check the range against the code, then fix the key, not the finding.",
+  "window": 2,
+  "seeded": [
+    {
+      "id": "B01",
+      "class": "Django: get_object_or_404 by pk without a patient filter (IDOR)",
+      "severity": "HIGH",
+      "locations": [
+        { "file": "appointments/views.py", "lines": [35, 38] },
+        { "file": "appointments/urls.py", "lines": [11, 11] }
+      ],
+      "detect": "llm+entrypoints",
+      "why": "GET /appointments/<pk>/ loads any appointment by id with its message thread for any signed-in patient; list, upcoming and post_message all filter by patient=request.user, this view does not."
+    },
+    {
+      "id": "B02",
+      "class": "Django: .raw() with an f-string (SQL injection)",
+      "severity": "HIGH",
+      "locations": [
+        { "file": "appointments/views.py", "lines": [28, 30] }
+      ],
+      "detect": "llm+hotspot",
+      "why": "The search term q is interpolated into Appointment.objects.raw(f\"... ILIKE '%{term}%'\"); the patient filter in the same string does not help, a quote in q rewrites the query and can read other patients' rows or other tables."
+    },
+    {
+      "id": "B03",
+      "class": "DRF: viewset queryset not scoped to the user (IDOR)",
+      "severity": "HIGH",
+      "locations": [
+        { "file": "appointments/api.py", "lines": [23, 25] }
+      ],
+      "detect": "llm+hotspot",
+      "why": "PrescriptionViewSet serves Prescription.objects (every patient's prescriptions, with the patient id) to any authenticated user; AppointmentViewSet next to it filters in get_queryset, this one has none."
+    },
+    {
+      "id": "B04",
+      "class": "Django: patient export view without login_required (missing auth)",
+      "severity": "CRITICAL",
+      "locations": [
+        { "file": "records/views.py", "lines": [51, 60] },
+        { "file": "records/urls.py", "lines": [12, 12] }
+      ],
+      "detect": "llm+entrypoints",
+      "why": "GET /records/export/patients.csv has no decorator: anonymous callers download the name, e-mail and phone of every patient."
+    },
+    {
+      "id": "B05",
+      "class": "Django template: |safe on message bodies (stored XSS)",
+      "severity": "HIGH",
+      "locations": [
+        { "file": "appointments/templates/appointments/detail.html", "lines": [13, 13] }
+      ],
+      "detect": "llm+hotspot",
+      "why": "post_message stores the body as typed and the thread renders it with {{ message.body|safe }}, so a patient's message runs script in the doctor's session."
+    },
+    {
+      "id": "B06",
+      "class": "Django: csrf_exempt on a session view that changes the account e-mail (CSRF)",
+      "severity": "HIGH",
+      "locations": [
+        { "file": "appointments/views.py", "lines": [49, 58] }
+      ],
+      "detect": "llm+hotspot",
+      "why": "update_contact is csrf_exempt, session-authenticated and also writes request.user.email; any site can post to it from a signed-in patient's browser and set its own address, then use the password reset (sent to the account e-mail) to take the account over."
+    },
+    {
+      "id": "B07",
+      "class": "Django: SECRET_KEY falls back to a literal",
+      "severity": "HIGH",
+      "locations": [
+        { "file": "clinic/settings.py", "lines": [6, 6] }
+      ],
+      "detect": "llm+hotspot",
+      "why": "Without DJANGO_SECRET_KEY the app signs with a key that is in the repository; password-reset tokens and signed values can then be forged by anyone who reads the source."
+    },
+    {
+      "id": "B08",
+      "class": "Django: upload path from a form field (path traversal on write)",
+      "severity": "HIGH",
+      "locations": [
+        { "file": "records/views.py", "lines": [26, 29] }
+      ],
+      "detect": "llm+hotspot",
+      "why": "The optional filename field is joined into the target path unchecked; ../ segments write the upload outside media/records, for example over application code. Django strips paths from upload.name, not from a POST field."
+    },
+    {
+      "id": "B09",
+      "class": "Django: yaml.load with yaml.Loader on an uploaded file (unsafe deserialization)",
+      "severity": "CRITICAL",
+      "locations": [
+        { "file": "records/views.py", "lines": [45, 45] }
+      ],
+      "detect": "llm+hotspot",
+      "why": "import_history parses the uploaded history file with the full Loader, which builds arbitrary Python objects: any signed-in patient runs code on the server."
+    },
+    {
+      "id": "B10",
+      "class": "FastAPI: PDF route without the auth dependency, loads any result by id (missing auth + IDOR)",
+      "severity": "CRITICAL",
+      "locations": [
+        { "file": "labs/routers/results.py", "lines": [49, 54] }
+      ],
+      "detect": "llm+entrypoints",
+      "why": "GET /results/{id}/pdf only depends on get_db: anonymous callers download any patient's lab result PDF by counting ids; every other results route depends on get_current_user and filters by patient_id."
+    },
+    {
+      "id": "B11",
+      "class": "FastAPI: SQLAlchemy text() with an f-string (SQL injection)",
+      "severity": "HIGH",
+      "locations": [
+        { "file": "labs/routers/results.py", "lines": [25, 28] }
+      ],
+      "detect": "llm+hotspot",
+      "why": "q is interpolated into text(f\"... ILIKE '%{q}%'\") while pid is bound; the injected SQL can read lab_results of every patient and the accounts table."
+    },
+    {
+      "id": "B12",
+      "class": "FastAPI: BackgroundTasks posts to a caller-chosen URL and stores the response (SSRF)",
+      "severity": "HIGH",
+      "locations": [
+        { "file": "labs/routers/orders.py", "lines": [39, 40] },
+        { "file": "labs/routers/orders.py", "lines": [14, 20] }
+      ],
+      "detect": "llm+hotspot",
+      "why": "create_order queues notify_callback with the callback_url from the body; the server posts to any host, including internal addresses, and keeps the first 2000 characters of the reply in callback_response, which the order routes return to the caller."
+    },
+    {
+      "id": "B13",
+      "class": "FastAPI: response_model with password hashes and TOTP secrets (data exposure)",
+      "severity": "HIGH",
+      "locations": [
+        { "file": "labs/routers/staff.py", "lines": [18, 20] },
+        { "file": "labs/schemas.py", "lines": [40, 43] }
+      ],
+      "detect": "llm+hotspot",
+      "why": "GET /staff/technicians returns AccountRecord, which adds password_hash and totp_secret to the public fields; any technician reads every colleague's hash and second-factor seed."
+    },
+    {
+      "id": "B14",
+      "class": "FastAPI: CORS any origin with credentials",
+      "severity": "HIGH",
+      "locations": [
+        { "file": "labs/main.py", "lines": [10, 11] }
+      ],
+      "detect": "llm+hotspot",
+      "why": "allow_origins=[\"*\"] with allow_credentials=True: Starlette echoes the caller's Origin for requests with cookies, so any website can read lab results with the patient's lab_session cookie."
+    },
+    {
+      "id": "B15",
+      "class": "Flask: render_template_string on the letter body (SSTI)",
+      "severity": "CRITICAL",
+      "locations": [
+        { "file": "backoffice/views.py", "lines": [64, 65] }
+      ],
+      "detect": "llm+hotspot",
+      "why": "letter_preview concatenates the form body into the template source; Jinja2 evaluates {{ ... }} in it, so any signed-in clerk runs code on the server."
+    },
+    {
+      "id": "B16",
+      "class": "Flask: send_file with a joined path from the query string (path traversal)",
+      "severity": "HIGH",
+      "locations": [
+        { "file": "backoffice/views.py", "lines": [77, 78] }
+      ],
+      "detect": "llm+hotspot",
+      "why": "download_export joins request.args['name'] to EXPORT_DIR and sends the file; ../ reads any file the process can read (configuration, keys). The reports route next to it uses send_from_directory with secure_filename."
+    },
+    {
+      "id": "B17",
+      "class": "Flask: role change route without login_required (missing auth)",
+      "severity": "CRITICAL",
+      "locations": [
+        { "file": "backoffice/views.py", "lines": [53, 58] }
+      ],
+      "detect": "llm+entrypoints",
+      "why": "POST /backoffice/staff/<id>/role has neither login_required nor admin_required: an anonymous request makes any account an admin."
+    },
+    {
+      "id": "B18",
+      "class": "Flask: literal secret_key (forged sessions)",
+      "severity": "CRITICAL",
+      "locations": [
+        { "file": "backoffice/app.py", "lines": [9, 9] }
+      ],
+      "detect": "llm+hotspot",
+      "why": "Flask keeps the session in a cookie signed with secret_key and Flask-Login stores _user_id in it; with the key from the repository anyone signs a session for any staff account, admins included."
+    }
+  ],
+  "decoys": [
+    {
+      "id": "D01",
+      "locations": [
+        { "file": "appointments/views.py", "lines": [12, 12] }
+      ],
+      "why": "appointment_list filters by patient=request.user."
+    },
+    {
+      "id": "D02",
+      "locations": [
+        { "file": "appointments/views.py", "lines": [18, 21] }
+      ],
+      "why": "upcoming uses raw() with %s and a parameter list; the only value is the caller's own id."
+    },
+    {
+      "id": "D03",
+      "locations": [
+        { "file": "appointments/views.py", "lines": [44, 45] }
+      ],
+      "why": "post_message loads the appointment with pk and patient=request.user; Django CSRF protection applies."
+    },
+    {
+      "id": "D04",
+      "locations": [
+        { "file": "appointments/api.py", "lines": [10, 14] }
+      ],
+      "why": "AppointmentViewSet scopes get_queryset to the user and sets the patient on create; the DRF default permission is IsAuthenticated."
+    },
+    {
+      "id": "D05",
+      "locations": [
+        { "file": "appointments/api.py", "lines": [17, 20] }
+      ],
+      "why": "AllowAny on a read-only viewset of doctors' names, specialties and bios: the public directory of the clinic."
+    },
+    {
+      "id": "D06",
+      "locations": [
+        { "file": "appointments/templatetags/clinic_tags.py", "lines": [12, 12] }
+      ],
+      "why": "format_html escapes both arguments; the CSS class comes from a fixed dict."
+    },
+    {
+      "id": "D07",
+      "locations": [
+        { "file": "payments/views.py", "lines": [13, 21] }
+      ],
+      "why": "csrf_exempt on the payment webhook, which refuses without a secret and checks an HMAC-SHA256 signature with compare_digest before acting."
+    },
+    {
+      "id": "D08",
+      "locations": [
+        { "file": "clinic/settings.py", "lines": [8, 10] },
+        { "file": ".env.example", "lines": [2, 2] }
+      ],
+      "why": "DEBUG is off unless DJANGO_DEBUG=1 (set only in .env.example for local use) and ALLOWED_HOSTS comes from the environment."
+    },
+    {
+      "id": "D09",
+      "locations": [
+        { "file": "records/views.py", "lines": [38, 39] }
+      ],
+      "why": "download filters by owner=request.user before opening the stored path."
+    },
+    {
+      "id": "D10",
+      "locations": [
+        { "file": "labs/routers/results.py", "lines": [41, 46] }
+      ],
+      "why": "get_result depends on get_current_user and filters by id and the caller's patient_id."
+    },
+    {
+      "id": "D11",
+      "locations": [
+        { "file": "labs/routers/results.py", "lines": [34, 37] }
+      ],
+      "why": "results_by_code uses text() with bound :pid and :code."
+    },
+    {
+      "id": "D12",
+      "locations": [
+        { "file": "labs/routers/staff.py", "lines": [10, 15] }
+      ],
+      "why": "The staff router has dependencies=[Depends(require_staff)], so every /staff route is technicians only; /staff/me returns AccountPublic."
+    },
+    {
+      "id": "D13",
+      "locations": [
+        { "file": "labs/main.py", "lines": [21, 23] }
+      ],
+      "why": "Public health check that returns a constant."
+    },
+    {
+      "id": "D14",
+      "locations": [
+        { "file": "backoffice/views.py", "lines": [70, 71] }
+      ],
+      "why": "letter_send passes the body to render_template as a variable; Jinja2 autoescapes it in letter.html."
+    },
+    {
+      "id": "D15",
+      "locations": [
+        { "file": "backoffice/views.py", "lines": [83, 84] }
+      ],
+      "why": "report uses send_from_directory with secure_filename and requires login."
+    },
+    {
+      "id": "D16",
+      "locations": [
+        { "file": "backoffice/views.py", "lines": [91, 91] }
+      ],
+      "why": "import_prices uses yaml.safe_load, behind login_required and admin_required."
+    },
+    {
+      "id": "D17",
+      "locations": [
+        { "file": "backoffice/app.py", "lines": [11, 11] },
+        { "file": ".env.example", "lines": [16, 16] }
+      ],
+      "why": "Flask DEBUG is on only when FLASK_DEBUG=1, which only .env.example sets for local use."
+    },
+    {
+      "id": "D18",
+      "locations": [
+        { "file": "backoffice/views.py", "lines": [36, 43] }
+      ],
+      "why": "The sign-in view is public by design and checks the password hash."
+    }
+  ],
+  "known_extras": []
+}

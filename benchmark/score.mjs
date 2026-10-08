@@ -38,7 +38,7 @@ const normalize = (p) => p.replace(/^\((?![^/]*\))/, "").replace(/^\.\//, "").re
 export function parseLocation(text) {
   for (const m of text.matchAll(LOC)) {
     const file = m[1];
-    if (file !== ".env" && !/\.(?:[cm]?[jt]sx?|json|ya?ml|md|example|env|sql|rules|toml|php|twig|module|inc|install|theme)$|^\.env/.test(file.split("/").pop())) continue;
+    if (file !== ".env" && !/\.(?:[cm]?[jt]sx?|json|ya?ml|md|example|env|sql|rules|toml|php|twig|module|inc|install|theme|py|html?|txt|cfg|ini)$|^\.env/.test(file.split("/").pop())) continue;
     const start = m[2] ? Number(m[2]) : null;
     const end = m[3] ? Math.max(Number(m[3]), start) : start;
     return { file: normalize(file), start, end };

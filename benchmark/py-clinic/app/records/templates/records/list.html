@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block content %}
+<ul>
+  {% for record in records %}
+    <li><a href="{% url 'records:download' record.pk %}">{{ record.title }}</a> {{ record.uploaded_at|date:"j M Y" }}</li>
+  {% empty %}
+    <li>No records yet.</li>
+  {% endfor %}
+</ul>
+<form method="post" action="{% url 'records:upload' %}" enctype="multipart/form-data">
+  {% csrf_token %}
+  <input type="text" name="title">
+  <input type="file" name="file">
+  <button type="submit">Upload</button>
+</form>
+{% endblock %}
