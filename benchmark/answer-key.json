@@ -148,7 +148,7 @@
       "severity": "CRITICAL",
       "advisory": true,
       "locations": [
-        { "file": "package.json", "lines": [28, 28] },
+        { "file": "package.json", "lines": [29, 29] },
         { "file": "pnpm-lock.yaml", "lines": [47, 49] },
         { "file": "pnpm-lock.yaml", "lines": [150, 151] },
         { "file": "pnpm-lock.yaml", "lines": [238, 239] },
@@ -177,6 +177,50 @@
       ],
       "detect": "llm",
       "why": "Any website can read a logged-in user's invoices from /api/public with fetch(..., { credentials: 'include' })."
+    },
+    {
+      "id": "B17",
+      "class": "CSRF: state-changing route handler with cookie auth and no origin check",
+      "severity": "HIGH",
+      "locations": [
+        { "file": "src/app/api/team/invite/route.ts", "lines": [9, 12] },
+        { "file": "src/app/api/team/invite/route.ts", "lines": [21, 21] }
+      ],
+      "detect": "llm",
+      "why": "POST /api/team/invite reads a form-encoded body and trusts the session cookie (SameSite=None, see B16) with no Origin check or token; route handlers, unlike server actions, get no built-in origin check, so any site a logged-in org admin visits can add a member with role admin."
+    },
+    {
+      "id": "B18",
+      "class": "CI: pull_request_target checks out and builds the pull request head with secrets",
+      "severity": "CRITICAL",
+      "locations": [
+        { "file": ".github/workflows/preview.yml", "lines": [4, 5] },
+        { "file": ".github/workflows/preview.yml", "lines": [16, 17] },
+        { "file": ".github/workflows/preview.yml", "lines": [23, 27] }
+      ],
+      "detect": "llm",
+      "why": "pull_request_target runs with the base repository's secrets and a token that can write to pull requests; the job checks out the fork's head commit and runs its install scripts and build with database, auth and deploy secrets in the environment, so any outside contributor's pull request code runs with those secrets."
+    },
+    {
+      "id": "B19",
+      "class": "Container: runtime secrets baked into the image through build ARG and ENV",
+      "severity": "HIGH",
+      "locations": [
+        { "file": "Dockerfile", "lines": [17, 22] }
+      ],
+      "detect": "llm",
+      "why": "DATABASE_URL, BETTER_AUTH_SECRET and STRIPE_SECRET_KEY are build arguments copied into ENV of the runtime stage, so they persist in the image config and build history; anyone who can pull the image (registry, CI cache, a leaked tarball) reads them."
+    },
+    {
+      "id": "B20",
+      "class": "Supply chain: install script downloads and runs an unpinned remote script",
+      "severity": "HIGH",
+      "any_category": true,
+      "locations": [
+        { "file": "package.json", "lines": [14, 14] }
+      ],
+      "detect": "llm",
+      "why": "postinstall pipes a mutable URL into sh on every install (developer machines, CI with secrets, the Docker build) with no version, checksum or signature; whoever controls that host or its DNS runs code in all three. Lockfile integrity does not cover it."
     }
   ],
   "decoys": [
@@ -236,6 +280,27 @@
         { "file": "src/server/api/keys.ts", "lines": [6, 19] }
       ],
       "why": "Keys are hashed, compared with timingSafeEqual, and looked up by prefix by design."
+    },
+    {
+      "id": "D09",
+      "locations": [
+        { "file": "src/app/(app)/settings/notifications/actions.ts", "lines": [9, 14] }
+      ],
+      "why": "Server action without a CSRF token: Next.js rejects server action POSTs whose Origin does not match the host (no serverActions.allowedOrigins), and the update is scoped to the session user."
+    },
+    {
+      "id": "D10",
+      "locations": [
+        { "file": ".github/workflows/ci.yml", "lines": [28, 31] }
+      ],
+      "why": "PR title and head ref reach run: through env and quoted shell variables, not ${{ }} interpolation; the workflow uses pull_request (no secrets for forks), read-only permissions and SHA-pinned actions."
+    },
+    {
+      "id": "D11",
+      "locations": [
+        { "file": "docker-compose.yml", "lines": [7, 9] }
+      ],
+      "why": "Local Postgres: password is required from the environment (no default) and the port is bound to 127.0.0.1 only."
     }
   ],
   "known_extras": [
@@ -243,7 +308,7 @@
       "id": "X01",
       "advisory": true,
       "locations": [
-        { "file": "package.json", "lines": [27, 27] },
+        { "file": "package.json", "lines": [28, 28] },
         { "file": "pnpm-lock.yaml", "lines": [44, 46] },
         { "file": "pnpm-lock.yaml", "lines": [147, 148] },
         { "file": "pnpm-lock.yaml", "lines": [236, 236] },
@@ -276,7 +341,7 @@
       "id": "X04",
       "advisory": true,
       "locations": [
-        { "file": "package.json", "lines": [46, 46] },
+        { "file": "package.json", "lines": [47, 47] },
         { "file": "pnpm-lock.yaml", "lines": [198, 199] },
         { "file": "pnpm-lock.yaml", "lines": [278, 278] }
       ],

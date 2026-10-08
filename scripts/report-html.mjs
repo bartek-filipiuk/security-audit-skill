@@ -17,7 +17,7 @@ import { profileHeadline } from "./stack.mjs";
 const SEVERITY = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
 const CATEGORY = {
   auth: "Authentication & authorization", injection: "Injection & SSRF", "rate-limit": "Rate limiting & abuse",
-  exposure: "Data exposure & secrets", config: "Headers, CORS & configuration", upload: "File upload & storage",
+  exposure: "Data exposure & secrets", config: "Headers, CORS, build & deploy configuration", upload: "File upload & storage",
   dependency: "Dependencies", crypto: "Cryptography", concurrency: "Concurrency & races",
   "docs-vs-reality": "Documentation vs reality", "business-logic": "Business logic", logging: "Logging & monitoring",
   "test-gap": "Test gaps", chain: "Chains",

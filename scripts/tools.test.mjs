@@ -69,7 +69,7 @@ test("inventory finds workflows, Dockerfiles and IaC outside skipped directories
   assert.deepEqual(semgrepConfigs([]), []);
 });
 
-test("on Ledgerly semgrep applies and the CI, Dockerfile and IaC tools are skipped with a reason", () => {
+test("on Ledgerly every tool applies (R08 seeds a workflow, Dockerfile and compose file) and none runs without a binary or docker", () => {
   const root = join(repo, "benchmark", "app");
   const inv = inventory(root);
   const stack = rulesetStack(inv);
@@ -80,9 +80,10 @@ test("on Ledgerly semgrep applies and the CI, Dockerfile and IaC tools are skipp
   const by = Object.fromEntries(res.map((r) => [r.tool, r]));
   assert.equal(by.semgrep.state, "not-run");
   assert.match(by.semgrep.status, /^NOT RUN: semgrep not installed and docker unavailable; to enable: `pipx install semgrep`/);
-  assert.equal(by.zizmor.status, "skipped: no .github/workflows/*.yml");
-  assert.equal(by.hadolint.status, "skipped: no Dockerfile");
-  assert.match(by.trivy.status, /^skipped: no Dockerfile, compose/);
+  assert.deepEqual(inv.workflows, [".github/workflows/ci.yml", ".github/workflows/preview.yml"]);
+  assert.deepEqual(inv.dockerfiles, ["Dockerfile"]);
+  assert.deepEqual(inv.iac, ["docker-compose.yml"]);
+  for (const t of ["zizmor", "hadolint", "trivy"]) assert.match(by[t].status, new RegExp(`^NOT RUN: ${t} not installed and docker unavailable`), t);
 });
 
 test("parsers normalize paths, severities and notes; dedupe keeps the most severe copy", () => {

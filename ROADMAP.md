@@ -23,9 +23,6 @@ Rules that apply to every item:
 - **R07 Deterministic tools in the pre-pass.** semgrep rulesets per stack, `zizmor` for GitHub Actions,
   `hadolint` and `trivy` for Dockerfiles and images. Done when: each tool runs natively or via docker,
   reports NOT RUN honestly, and its hits appear as candidates in `prepass.md`.
-- **R08 More checks.** CSRF, CI/CD (secrets in logs, `pull_request_target`, unpinned actions), Docker
-  and IaC, supply chain (install scripts, lockfile integrity). Done when: each has checklist items and
-  at least one seeded bug in a benchmark.
 - **R21 LLM and agent checks.** Prompt injection into tools and agents, model output reaching HTML, SQL,
   shell or URL sinks, tool calls without authorisation, cost and token abuse. Done when: checklist items,
   stack patterns and at least two seeded bugs in a benchmark app, scored.
@@ -66,6 +63,12 @@ Rules that apply to every item:
   than the web stack this skill is built for; each needs its own benchmark app before it ships.
 
 ## Done
+
+- **R08 More checks** (2026-10-06): checklist items and stack patterns for CSRF, CI/CD workflows
+  (`pull_request_target`, expression injection, unpinned actions, secrets in logs), Docker and IaC, and
+  supply chain (install scripts, lockfile integrity, unpinned sources). Ledgerly gained one seeded bug per
+  area (B17 to B20) and three decoys (D09 to D11): 20 seeded bugs and 11 decoys. Recall from earlier runs is
+  out of 16; the first scored run on the new key is the next benchmark round.
 
 - **R04 Stack detection and `--stack`** (2026-10-05): the pre-pass detects each stack from its manifests
   (JS/TS, PHP, Python, Go, Rust, Ruby, JVM, .NET, with frameworks such as Next.js, Laravel, Django, FastAPI),

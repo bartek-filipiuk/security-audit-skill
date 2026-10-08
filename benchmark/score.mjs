@@ -16,7 +16,8 @@
 //   across seeded bugs, decoys and known extras, so neighbouring ranges in one file stay apart.
 // - `advisory: true` entries (vulnerable dependency versions) match only findings in category
 //   `dependency`, and dependency findings match only advisory entries. Findings without a category
-//   (other tools) may match either.
+//   (other tools) may match either. `any_category: true` entries (supply-chain settings in a manifest,
+//   which an auditor may file as `config` or `dependency`) match findings of any category.
 // - A finding without a line, or outside every window, matches nothing and is listed for review.
 
 import { appendFileSync, existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
@@ -30,13 +31,16 @@ export const DEFAULT_WINDOW = 2;
 const PATH = String.raw`[\w.()[\]@-]+(?:\/[\w.()[\]@-]+)*`;
 const LOC = new RegExp(String.raw`(${PATH}|\.env(?![.\w]))(?::(\d+)(?:\s*[-\u2013]\s*(\d+))?)?`, "g");
 
+// File names a finding may cite: code, config, manifests, CI workflows, Dockerfiles and IaC.
+const SOURCE_FILE = /\.(?:[cm]?[jt]sx?|json|ya?ml|md|example|env|toml|tf|hcl|dockerfile)$|^\.env|^(?:Dockerfile|Containerfile)(?:\.[\w-]+)?$|^\.npmrc$/;
+
 const normalize = (p) => p.replace(/^\((?![^/]*\))/, "").replace(/^\.\//, "").replace(/^app\//, "");
 
 // The first path in `text` that looks like a source file, with its line or line range when given.
 export function parseLocation(text) {
   for (const m of text.matchAll(LOC)) {
     const file = m[1];
-    if (file !== ".env" && !/\.(?:[cm]?[jt]sx?|json|ya?ml|md|example|env)$|^\.env/.test(file.split("/").pop())) continue;
+    if (file !== ".env" && !SOURCE_FILE.test(file.split("/").pop())) continue;
     const start = m[2] ? Number(m[2]) : null;
     const end = m[3] ? Math.max(Number(m[3]), start) : start;
     return { file: normalize(file), start, end };
@@ -72,7 +76,8 @@ export function distance(loc, keyLoc) {
   return 0;
 }
 
-const compatible = (finding, entry) => finding.category == null || (finding.category === "dependency") === Boolean(entry.advisory);
+const compatible = (finding, entry) =>
+  finding.category == null || entry.any_category === true || (finding.category === "dependency") === Boolean(entry.advisory);
 
 // Entries a finding matches: the nearest within the window, ties all count.
 export function matchFinding(finding, entries, window = DEFAULT_WINDOW) {
