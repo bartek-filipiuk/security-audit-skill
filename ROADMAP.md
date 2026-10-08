@@ -17,6 +17,7 @@ Rules that apply to every item:
   points and the `benchmark/supabase-notes` app (10 seeded bugs, 12 decoys, `--app` in setup and score) are
   in; it moves to Done with its first scored run.
 
+  Merged to main 2026-10-08 (#9 via #12). Its benchmark app is not scored yet; it moves to Done with its first scored run.
 ## Next
 
 - **R05 PHP profile: Laravel, Symfony, Drupal.** Route-based entry points, unscoped Eloquent/Doctrine
@@ -24,6 +25,7 @@ Rules that apply to every item:
   Status (2026-10-07): checklist sections, stack patterns, Laravel/Symfony entry points (Drupal's existed)
   ranked by their controller method, PHP template/model/CSRF signals, Psalm reported NOT RUN, and the
   `benchmark/php-tickets` app (13 seeded bugs, 14 decoys) are in; it moves to Done with its first scored run.
+  Merged to main 2026-10-08 (#10 via #12). Its benchmark app is not scored yet; it moves to Done with its first scored run.
 - **R06 Python profile: Django, FastAPI, Flask.** Unscoped ORM queries, `bandit`, `pip-audit`.
   Done when: its benchmark app scores.
   Status (2026-10-08): checklist sections, stack patterns, Django (urls.py include chain, DRF routers and
@@ -31,46 +33,19 @@ Rules that apply to every item:
   `*_required`, `before_request`) entry points ranked by their view, a user-owned model scan, Python
   template/settings/CORS signals, bandit in the R07 tool runner (native only), `pip-audit` as a read-only dependency fallback,
   and the `benchmark/py-clinic` app (18 seeded bugs, 18 decoys) are in; it moves to Done with its first scored run.
+  Merged to main 2026-10-08 (#11 via #12). Its benchmark app is not scored yet; it moves to Done with its first scored run.
 - **R07 Deterministic tools in the pre-pass.** semgrep rulesets per stack, `zizmor` for GitHub Actions,
   `hadolint` and `trivy` for Dockerfiles and images. Done when: each tool runs natively or via docker,
   reports NOT RUN honestly, and its hits appear as candidates in `prepass.md`.
-- **R21 LLM and agent checks.** Prompt injection into tools and agents, model output reaching HTML, SQL,
-  shell or URL sinks, tool calls without authorisation, cost and token abuse. Done when: checklist items,
-  stack patterns and at least two seeded bugs in a benchmark app, scored.
 
-## Later
-
-- **R09 Go profile** (`gosec`, error handling) and **R10 Rust profile** (`cargo-audit`, unsafe).
-  Done when: their benchmark apps score.
-- **R11 Export.** SARIF for GitHub code scanning; tasks to Linear and Jira with file, line and fix.
-  Done when: one command produces the file or the tasks from `remediation.json`.
-- **R12 Audit diff.** New, fixed and regressed findings between two runs, building on `--verify-fixes`.
-  Done when: the report has a "since last audit" section.
-- **R13 Cheaper auditors.** Measure on the benchmark whether auditors can run on a lighter model without
-  losing recall. Done when: the number is published, whatever it says.
-- **R14 Production checklist.** Generated from the not-assessed rows: headers, limits, env vars, backups,
-  each with how to check it. Done when: it is a section of the report.
-- **R23 Resource exhaustion and spend.** Unbounded queries, uploads, queues and workers; paid APIs
-  (SMS, e-mail, AI) that anonymous callers can drive. Done when: checklist items and a seeded bug, scored.
-- **R24 Data lifecycle.** Tenant isolation in caches, search and exports; erasure that misses backups,
-  files or derived data; restores that bring deleted people back. Done when: checklist items and a seeded
-  bug, scored.
-- **R25 Client-side checks.** DOM injection, `postMessage` trust, prototype pollution, UI redress.
-  Done when: checklist items and a seeded bug in a benchmark app, scored.
-- **R26 Any coding agent.** Install and run outside Claude Code (skills CLI), with the same report.
-  Done when: the benchmark runs end to end in at least one other agent and the result is published.
-
-## Ideas
-
-- **R15 Audit on every pull request**, headless, in CI.
-- **R16 Ruby on Rails profile** (`brakeman`).
-- **R17 audit-live:** phase timing, per-auditor view, token counter.
-- **R18 Second private benchmark app**, never published, for measuring changes without training-data risk.
-- **R27 Native code and memory safety** (C, C++, unsafe Rust), **R28 mobile and local IPC** (deep links,
-  webviews, exported components), **R29 protocols and RPC** (gRPC, queues, brokers, streaming). Wider scope
-  than the web stack this skill is built for; each needs its own benchmark app before it ships.
-
+  Merged to main 2026-10-08 (#5 via #12). The tools were not installed on the benchmark host, so no real
+  tool run is recorded yet.
 ## Done
+
+- **R21 LLM and agent checks** (2026-10-08, #7 via #12): checklist items and stack patterns for prompt injection
+  into tools and agents, model output reaching HTML/SQL/shell/URL sinks, tool calls without authorisation and
+  cost/token abuse; three seeded Ledgerly bugs (B21-B23). Benchmark 2026-10-08 (batch #12, Ledgerly x1): recall 20/23, 0 decoy false positives. B21 and B22 found exactly; B23 was found
+  (cited at the route signature, outside the key window).
 
 - **R22 Coverage ledger** (2026-10-07): every auditor writes `coverage/<auditor>.json`, one row per entry point
   or project-wide check and class: `checked` with evidence, `not_applicable` or `not_assessed` with a reason.
@@ -78,18 +53,21 @@ Rules that apply to every item:
   `report.md` and `report.html` build their Coverage and Not Assessed sections from it, adding every class and
   pre-pass entry point with no row as "not looked at". `--since` carries the rows of untouched targets. Tests in
   `scripts/coverage.test.mjs`; the benchmark run is pending.
+  Benchmark 2026-10-08 (batch #12, Ledgerly x1): recall 20/23, 0 decoy false positives.
 
 - **R08 More checks** (2026-10-06): checklist items and stack patterns for CSRF, CI/CD workflows
   (`pull_request_target`, expression injection, unpinned actions, secrets in logs), Docker and IaC, and
   supply chain (install scripts, lockfile integrity, unpinned sources). Ledgerly gained one seeded bug per
   area (B17 to B20) and three decoys (D09 to D11): 20 seeded bugs and 11 decoys. Recall from earlier runs is
   out of 16; the first scored run on the new key is the next benchmark round.
+  Benchmark 2026-10-08 (batch #12, Ledgerly x1): recall 20/23, 0 decoy false positives.
 
 - **R04 Stack detection and `--stack`** (2026-10-05): the pre-pass detects each stack from its manifests
   (JS/TS, PHP, Python, Go, Rust, Ruby, JVM, .NET, with frameworks such as Next.js, Laravel, Django, FastAPI),
   and `prepass.md`, `report.md` and `report.html` name the applied profile, what it covers and what it does not;
   stacks without a dedicated profile say "general checklist". `--stack` forces a profile and warns on a
   conflict. Ledgerly, a Laravel fixture and Django/FastAPI fixtures are detected correctly (`scripts/stack.test.mjs`).
+  Benchmark 2026-10-08 (batch #12, Ledgerly x1): recall 20/23, 0 decoy false positives.
 
 - **R03 Exact benchmark scoring** (2026-10-05): findings match the answer key by the file and line of their
   primary evidence (window of 2 lines, nearest entry wins), with no keyword fallback. Re-scoring the four R01
