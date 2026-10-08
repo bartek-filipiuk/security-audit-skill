@@ -16,13 +16,15 @@
 // --stack forces the profile (js, php, python, go, rust, ruby, java, dotnet, generic, or an alias such as
 // laravel, django, nextjs) instead of the one detected from the manifests (stack.mjs). stack.mjs is the
 // only stack detector: tools.mjs picks semgrep rulesets from its result.
-// Psalm taint analysis for PHP is reported NOT RUN with how to run it (it would execute the project's autoloader).
+// Psalm taint analysis for PHP is reported NOT RUN with how to run it (it would execute the project's autoloader);
+// bandit for Python likewise until R07 adds tool runners. Without osv-scanner and docker, the dependency
+// fallback runs `pip-audit --no-deps --disable-pip` on requirements.txt (reads the file, installs nothing).
 // Secrets are always redacted (gitleaks --redact) so no secret value lands on disk or in agent context.
 
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
-import { inScope, LOCKFILES, phpTaintStatus, rankHotspots, scanEntryPoints, scanScope, walk } from "./surface.mjs";
+import { inScope, LOCKFILES, phpTaintStatus, pythonToolStatus, rankHotspots, scanEntryPoints, scanScope, walk } from "./surface.mjs";
 import { detectStack, label as stackLabel, resolveStack, stackMarkdown } from "./stack.mjs";
 import { inventory, mergeNotAssessed, renderTools, rulesetStack, runTools } from "./tools.mjs";
 import { changedSince, loadItems, loadPreviousRun, planIncremental, readAliases, resolveCommit, trackedFiles, writeCarried } from "./incremental.mjs";
@@ -116,6 +118,7 @@ const deps = runDeps();
 const secrets = runSecrets();
 const toolResults = runCodeTools();
 const phpTaint = phpTaintStatus(files);
+const pyStatic = pythonToolStatus(files);
 
 writeFileSync(join(toolsDir, "stack.json"), JSON.stringify(stack, null, 2));
 writeFileSync(join(toolsDir, "entry-points.json"), JSON.stringify(entries, null, 2));
@@ -134,6 +137,7 @@ writeFileSync(join(toolsDir, "summary.json"), JSON.stringify({
   deps: { status: deps.status, rows: deps.rows }, secrets: { status: secrets.status, rows: secrets.rows },
   tools: Object.fromEntries(toolResults.map((t) => [t.tool, { status: t.status, candidates: t.total }])),
   ...(phpTaint ? { php_taint: { status: phpTaint } } : {}),
+  ...(pyStatic ? { python_static: { status: pyStatic } } : {}),
 }, null, 2));
 writeFileSync(join(out, "prepass.md"), render());
 
@@ -189,7 +193,7 @@ function incrementalSummary() {
 // ---------------------------------------------------------------- dependencies
 
 function runDeps() {
-  for (const f of ["osv.json", "pnpm-audit.json", "npm-audit.json", "composer-audit.json"]) rmSync(join(toolsDir, f), { force: true });
+  for (const f of ["osv.json", "pnpm-audit.json", "npm-audit.json", "composer-audit.json", "pip-audit.json"]) rmSync(join(toolsDir, f), { force: true });
   if (!lockfiles.length) return { status: "no lockfile found", rows: [] };
   let res;
   let via;
@@ -277,14 +281,16 @@ function fallbackAudit() {
     ["pnpm-lock.yaml", "pnpm", ["audit", "--json"]],
     ["package-lock.json", "npm", ["audit", "--json"]],
     ["composer.lock", "composer", ["audit", "--locked", "--format=json"]],
+    // --no-deps --disable-pip: read the pinned requirements only, never resolve or install packages.
+    ["requirements.txt", "pip-audit", ["-r", "requirements.txt", "--no-deps", "--disable-pip", "--progress-spinner", "off", "--format", "json"]],
   ];
   const done = [];
   for (const [lock, cmd, argv] of tries) {
     if (!existsSync(join(depRoot, lock)) || !installed(cmd)) continue;
     const res = run(cmd, argv, { cwd: depRoot, timeout: 180_000 });
-    const file = `${cmd}-audit.json`;
+    const file = cmd.endsWith("-audit") ? `${cmd}.json` : `${cmd}-audit.json`;
     writeFileSync(join(toolsDir, file), res.stdout || res.stderr || "");
-    done.push(`${cmd} audit -> tools/${file}`);
+    done.push(`${cmd.replace(/-audit$/, "")} audit -> tools/${file}`);
   }
   return {
     status: done.length
@@ -375,6 +381,7 @@ function render() {
   L.push(`- Secrets: ${secrets.status}`);
   for (const t of toolResults) L.push(`- ${t.tool}: ${t.status}`);
   if (phpTaint) L.push(`- PHP taint analysis (Psalm): ${phpTaint}`);
+  if (pyStatic) L.push(`- Python static analysis (bandit): ${pyStatic}`);
   L.push("");
   L.push(`Anything marked NOT RUN or FAILED is a coverage gap: report it under "Not assessed", never as secure.`);
   L.push("");

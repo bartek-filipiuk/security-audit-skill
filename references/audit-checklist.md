@@ -270,3 +270,45 @@ Applies when the repo has `*.info.yml`/`*.routing.yml` (custom modules under `mo
 - [ ] `hook_permission`/`*.permissions.yml`: sensitive permissions set `restrict access: true`; permissions are not granted to anonymous or authenticated by config or an install hook
 - [ ] Settings (category `config`): `$settings['hash_salt']` and database credentials not committed; `trusted_host_patterns` set; error display off in production
 - [ ] Dependencies: `composer.lock` scanned as for Laravel; contributed modules with security advisories are listed there
+
+## Stack profile: Django
+
+Applies when the repo has `manage.py`, `urls.py` or `Django` in `requirements*.txt`/`pyproject.toml`. Entry points are the `path()`/`re_path()` rows of every `urls.py` reached through `include()`, and DRF `router.register()` rows; the pre-pass lists each with the prefix of its include chain, the view it resolves to and that view's guards. Category `auth` unless noted.
+
+- [ ] Every view that is not public has `@login_required` (or `permission_required`, `user_passes_test`, `staff_member_required`), an auth mixin (`LoginRequiredMixin`, `PermissionRequiredMixin`), a `login_required()` wrapper in `urls.py`, or DRF `permission_classes`. A view without any of them is public; Django has no global default
+- [ ] DRF: `permission_classes = [AllowAny]` only on views meant for anonymous callers, read-only where possible; a view with no `permission_classes` gets `REST_FRAMEWORK["DEFAULT_PERMISSION_CLASSES"]`, which is `AllowAny` when the setting is missing
+- [ ] Object access: `get_object_or_404(Model, pk=pk)`, `Model.objects.get(pk=...)` and a viewset's `queryset = Model.objects.all()` serve any row by id; models that belong to a user are loaded through `request.user` (`filter(owner=request.user)`, `get_queryset()` filtered by `self.request.user`) or checked with `has_object_permission`/`has_perm`. `IsAuthenticated` alone only proves login
+- [ ] Raw SQL (category `injection`): `.raw()`, `.extra()`, `RawSQL()` and `cursor.execute()` take parameters (`%s` and a list) and never f-strings, `%` or `.format()` with request data; column and order names come from an allow-list
+- [ ] Templates (category `xss`): `|safe`, `{% autoescape off %}`, `mark_safe()` and `format_html()` with pre-built strings only on HTML the app built or sanitized (bleach/nh3); user text goes through normal `{{ }}` escaping
+- [ ] CSRF (category `config`): `CsrfViewMiddleware` stays enabled; `@csrf_exempt` only on webhooks that verify a signature (`hmac.compare_digest`), never on session-authenticated views that change state (e-mail, password, payments)
+- [ ] Settings (category `config`): `DEBUG` off by default (not `True`, not an env default of `"1"`); `ALLOWED_HOSTS` is not `['*']`; `SECRET_KEY` comes from the environment with no literal fallback (it signs sessions, password-reset tokens and `signing` values); `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE`, HSTS in production
+- [ ] Uploads (category `upload`): files are saved through `FileField`/`default_storage` with generated names; a path joined from a form field or client file name (`os.path.join(root, request.POST["filename"])`) can leave the upload directory; downloads check the owner before `FileResponse`
+- [ ] Deserialization (category `injection`): no `pickle.loads`, `yaml.load` without `SafeLoader` (`yaml.Loader`/`UnsafeLoader` build arbitrary objects), `marshal` or `jsonpickle` on uploaded files, cookies or cache values an attacker can write
+- [ ] Mass assignment: `Model.objects.create(**request.data)`/`**request.POST`, `ModelForm` with `fields = "__all__"` and serializers with `fields = "__all__"` on models with `is_staff`, `is_superuser`, `owner`, `role` or balance columns
+- [ ] Dependencies (category `dependency`): pinned `requirements.txt`, `poetry.lock`, `uv.lock` or `Pipfile.lock` scanned (osv-scanner, or `pip-audit`); unpinned requirements are a coverage gap
+
+## Stack profile: FastAPI
+
+Applies when `fastapi` is in `requirements*.txt` or `pyproject.toml`. Entry points are `@app.get/post/...` and `@router.get/post/...` decorators; the pre-pass resolves `APIRouter(prefix=...)` and `include_router(prefix=...)` and lists the auth dependencies of the route, its router, its app and its mount. Category `auth` unless noted.
+
+- [ ] Every non-public route has an auth dependency: `Depends(get_current_user)`/`Security(...)` in its signature, `dependencies=[Depends(...)]` on the decorator, the `APIRouter`, the `FastAPI()` app or the `include_router()` call. One route in a router without router-level dependencies that forgets the parameter is public
+- [ ] Object access: `db.get(Model, id)`, `select(Model).where(Model.id == id)` and `session.query(Model).get(id)` on models with an owner column also filter by the caller (`Model.user_id == user.id`) or check it before returning
+- [ ] `response_model` (category `exposure`): the schema returned is not the ORM row or an internal schema with `password_hash`, tokens, TOTP secrets or other users' data; routes without `response_model` that return ORM objects serialize every column
+- [ ] SQL (category `injection`): SQLAlchemy `text()` takes bound parameters (`:name` and a dict), never f-strings or `%`/`.format()`; `order_by` columns come from an allow-list
+- [ ] Outbound requests (category `ssrf`): URLs from the request body (callbacks, webhooks, avatars, imports) passed to `httpx`/`requests`, often inside `BackgroundTasks.add_task`, are restricted to an allow-list of hosts and resolve to public addresses; a response stored or returned to the caller turns a blind request into a read
+- [ ] CORS (category `config`): `CORSMiddleware` with `allow_origins=["*"]` (or `allow_origin_regex=".*"`) and `allow_credentials=True` lets any site read authenticated responses: Starlette then echoes the caller's origin for requests with cookies. Credentials need an explicit origin list
+- [ ] Cookie auth (category `config`): session cookies are `HttpOnly`, `Secure` and `SameSite`; state-changing routes authenticated by cookie need CSRF protection when `SameSite=None`
+- [ ] Docs and debug: `/docs`, `/redoc` and `/openapi.json` are disabled or protected in production when the API is not public; `debug=True` is off
+
+## Stack profile: Flask
+
+Applies when `flask` is in `requirements*.txt` or `pyproject.toml`. Entry points are `@app.route`/`@bp.route` (and `@bp.get`/`@bp.post`) decorators; the pre-pass resolves `Blueprint(url_prefix=...)` and `register_blueprint(url_prefix=...)` and lists `*_required` decorators and `before_request` hooks. Category `auth` unless noted.
+
+- [ ] Every non-public view carries `@login_required` (Flask-Login) or the app's own `*_required` decorator, placed below `@bp.route`, or its blueprint has a `before_request` hook that rejects anonymous users; admin views add a role check (`@admin_required`), not just login
+- [ ] Object access: `Model.query.get(id)`, `db.get_or_404(Model, id)` and `filter_by(id=...)` on owned records also compare the owner with `current_user`
+- [ ] SSTI (category `injection`): `render_template_string()` never receives a string built from request data (f-string, `+`, `%`, `.format()`): Jinja2 evaluates it and runs code on the server. User text goes into `render_template(..., value=...)` as a variable
+- [ ] Files (category `upload`): `send_file(os.path.join(DIR, name))` with a name from the request can leave the directory; use `send_from_directory(DIR, secure_filename(name))` and an ownership check. Uploads are saved under `secure_filename()` or a generated name
+- [ ] Sessions (category `config`): `SECRET_KEY`/`app.secret_key` comes from the environment, never a literal or a literal fallback: Flask's default session is a signed cookie, so whoever knows the key can sign in as any user (Flask-Login keeps `_user_id` there)
+- [ ] Debug (category `config`): `app.run(debug=True)`, `FLASK_DEBUG=1` and `app.config["DEBUG"] = True` never reach production; the Werkzeug debugger executes code
+- [ ] CSRF (category `config`): forms that change state use Flask-WTF `CSRFProtect` (or `SameSite=Lax/Strict` session cookies with no state change on GET)
+- [ ] Deserialization and YAML (category `injection`): `pickle.loads` of cookies or uploads, `yaml.load` without `SafeLoader`

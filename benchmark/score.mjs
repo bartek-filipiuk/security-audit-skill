@@ -34,7 +34,7 @@ const PATH = String.raw`[\w.()[\]@-]+(?:\/[\w.()[\]@-]+)*`;
 const LOC = new RegExp(String.raw`(${PATH}|\.env(?![.\w]))(?::(\d+)(?:\s*[-\u2013]\s*(\d+))?)?`, "g");
 
 // File names a finding may cite: code, config, manifests, CI workflows, Dockerfiles and IaC.
-const SOURCE_FILE = /\.(?:[cm]?[jt]sx?|json|ya?ml|md|example|env|toml|tf|hcl|dockerfile|sql|rules|php|twig|module|inc|install|theme)$|^\.env|^(?:Dockerfile|Containerfile)(?:\.[\w-]+)?$|^\.npmrc$/;
+const SOURCE_FILE = /\.(?:[cm]?[jt]sx?|json|ya?ml|md|example|env|toml|tf|hcl|dockerfile|sql|rules|php|twig|module|inc|install|theme|py|html?|txt|cfg|ini)$|^\.env|^(?:Dockerfile|Containerfile)(?:\.[\w-]+)?$|^\.npmrc$/;
 
 const normalize = (p) => p.replace(/^\((?![^/]*\))/, "").replace(/^\.\//, "").replace(/^app\//, "");
 
