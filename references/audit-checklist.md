@@ -198,3 +198,33 @@ For every security claim found in Phase 1.4:
 - [ ] Logs don't contain sensitive data: no passwords, tokens, session IDs, or PII in log output. Search for `console.log`, `logger`, `logging` near sensitive variables
 - [ ] Log injection: user input included in logs should be sanitized to prevent log forging (newline injection, ANSI escape sequences)
 - [ ] Monitoring hooks: verify application has some mechanism to detect anomalies (rate spikes, mass failures) — even if just structured logging for external SIEM
+
+## Stack profile: Supabase
+
+Applies when the repo has `supabase/` (migrations, `config.toml`, Edge Functions) or uses `@supabase/supabase-js`. The browser talks to Postgres through the Data API with the public anon key, so RLS policies are the access control: read them like route handlers. Category `auth` unless noted. Evidence is the migration line of the policy or function, or the client file:line. Resolve every pre-pass policy row to a finding or a non-issue.
+
+- [ ] RLS enabled on every table in an exposed schema (`public` and any schema in `config.toml` `[api] schemas`). A table without `enable row level security` is readable and writable by anyone holding the anon key
+- [ ] No `using (true)` / `with check (true)` on tables holding personal or tenant data; `true` is fine for public catalogue data, and the non-issue names the columns
+- [ ] Policies compare the row's owner or tenant column with `auth.uid()` (or a membership table keyed by it). `auth.role() = 'authenticated'`, `auth.uid() is not null` or `to authenticated` with no row condition means any signed-in user, which with open sign-up is anyone
+- [ ] UPDATE policies keep ownership columns fixed: without `with check`, USING doubles as the check, so a login-only USING lets a user move rows to themselves. Column grants (`grant update (col, ...)`) or a trigger stop users writing privileged columns (`role`, `plan`, an `email` used for lookups)
+- [ ] Policies that read `auth.jwt() -> 'user_metadata'` trust a field the user can edit (`auth.updateUser({ data })`); roles and tenants come from `app_metadata` or a table
+- [ ] Views in exposed schemas use `security_invoker = true`, or they run as their owner and skip the base tables' RLS
+- [ ] SECURITY DEFINER functions: `set search_path = ''` (or a fixed list), an explicit `auth.uid()` ownership or role check inside, and `revoke execute ... from public, anon` unless anonymous use is intended. Every function in an exposed schema is callable through `/rest/v1/rpc`
+- [ ] Storage: a bucket is `public` only for files meant for everyone (category `upload`); policies on `storage.objects` tie the object path or `owner` to `auth.uid()` (`(storage.foldername(name))[1] = auth.uid()::text`), not only `bucket_id = '...'`; signed URLs are created after an ownership check
+- [ ] The service-role key (`SUPABASE_SERVICE_ROLE_KEY`, `sb_secret_...`) stays in server code: never behind `NEXT_PUBLIC_`/`VITE_`/`EXPO_PUBLIC_`, never in a module imported by a `"use client"` file or a mobile app (category `exposure`). The anon or publishable key is public by design: a finding about it alone is a false positive
+- [ ] Server code that uses the service-role client takes the user id from the verified session (`auth.getUser()` / `auth.getClaims()`), never from the body or query; `auth.getSession()` on the server is not an authorization check
+- [ ] Edge Functions: `verify_jwt = false` in `config.toml` only for webhooks that verify a signature or for intentionally public functions; a function acting for a user reads the user from the `Authorization` JWT, not from the body
+- [ ] Auth settings (category `config`): `site_url` and `additional_redirect_urls` are exact (no wildcards on shared domains), email confirmation is on for open sign-up
+
+## Stack profile: Firebase
+
+Applies when the repo has `firebase.json`, `firestore.rules`, `storage.rules`, `database.rules.json` or uses the `firebase` / `firebase-admin` SDKs. Clients read and write Firestore, Realtime Database and Storage directly, so the rules files are the access control. Category `auth` unless noted.
+
+- [ ] No `allow read, write: if true` (or a test-mode `request.time < timestamp.date(...)` rule) on anything but public data; Realtime Database: no `".read": true` / `".write": true` above private data
+- [ ] `if request.auth != null` alone means any signed-in user; rules compare `request.auth.uid` with the owner field or path segment (`resource.data.ownerId`, `{userId}`), and `create` checks `request.resource.data.ownerId == request.auth.uid`
+- [ ] Rules are OR-ed: a broad rule on a parent path, a recursive wildcard (`{document=**}`, `{allPaths=**}`) or a subcollection rule must not grant more than the narrow ones intend
+- [ ] Updates validate fields: users cannot set `role`, `plan`, `ownerId` or counters (`request.resource.data.diff(resource.data).affectedKeys().hasOnly([...])`)
+- [ ] Custom-claim checks (`request.auth.token.admin == true`) rely on claims that only server code sets
+- [ ] Storage rules check ownership (path segment or `firestore.get()` of the parent document), size and content type on writes
+- [ ] Admin SDK credentials (service-account JSON, `FIREBASE_PRIVATE_KEY`) stay on the server, never in client bundles or committed files (category `exposure`). The web config `apiKey` is public by design
+- [ ] Cloud Functions: `onCall` handlers check `request.auth` and ownership before using the Admin SDK, which bypasses rules; `onRequest` handlers verify an ID token (`verifyIdToken`) or a webhook signature. App Check (`enforceAppCheck`) is abuse protection, not authorization

@@ -26,7 +26,7 @@ a test app with 23 seeded bugs and 13 decoys, plus the scorer and the usage coun
 4. **Scripts have tests.** `node --test scripts/` must pass; the mod: `cd audit-live && claude plugin
    validate . && claude plugin test`. Add a test for every new script behaviour.
 5. **No real projects.** No names, paths, findings or numbers from anyone's real project in the repo.
-   Ledgerly is the only project that may be named. Never commit `.security-audit/` output or `.env` files.
+   Ledgerly and the other benchmark apps under `benchmark/` are the only projects that may be named. Never commit `.security-audit/` output or `.env` files.
 
 ## Stack profiles
 

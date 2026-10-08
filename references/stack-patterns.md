@@ -315,3 +315,27 @@ Model call sites first: `generateText\(|streamText\(|generateObject\(|streamObje
 | Lockfile integrity | `pnpm-lock.yaml` entries with `tarball:` and no `integrity:`, `package-lock.json` `"resolved": "http://` or an unexpected host, entries without `"integrity"` |
 | Lockfile enforced | `npm install`, `pnpm install` without `--frozen-lockfile`, `yarn install` without `--immutable` in CI workflows and Dockerfiles |
 | Registry | `.npmrc` `registry=http://`, `strict-ssl=false`, `_authToken=` followed by a literal (not `${…}`), internal `@scope/` packages with no `@scope:registry=` line |
+
+## Supabase
+
+Policies and functions live in `supabase/migrations/*.sql`; the pre-pass policy scan lists tables without RLS, `true` and login-only policies, bucket-wide storage policies, public buckets and SECURITY DEFINER functions as hotspots (kind `policy`). Read all policies of a table together: permissive policies are OR-ed.
+
+| Area | Patterns to search |
+|------|-------------------|
+| RLS | `create table` without a matching `enable row level security`; `disable row level security`; `create view` without `security_invoker` |
+| Policies | `using \(true\)`, `with check \(true\)`, `auth\.role\(\)`, `auth\.uid\(\) is not null`, `user_metadata`, `for update` without `with check` |
+| Functions | `security definer` without `set search_path`; `grant execute .* to anon`; no `revoke execute .* from public`; `\.rpc\(` call sites |
+| Storage | `storage\.buckets` with `public`, `on storage\.objects` policies without `foldername`/`auth\.uid\(\)`, `createSignedUrl\(`, `getPublicUrl\(` |
+| Keys | `SERVICE_ROLE`, `service_role`, `sb_secret_`, `NEXT_PUBLIC_\w*SERVICE`, a service-key `createClient\(` in a module imported from `"use client"` |
+| Server | `auth\.getSession\(\)` used for authorization; `userId`/`user_id` from `request\.json\(\)` next to a service-role client |
+| Edge Functions | `supabase/functions/*/index.ts` (`Deno\.serve`), `verify_jwt = false` in `supabase/config.toml`, body fields used as the user id |
+
+## Firebase
+
+| Area | Patterns to search |
+|------|-------------------|
+| Rules | `firestore.rules`, `storage.rules`, `database.rules.json`: `if true`, `request\.time <`, `if request\.auth != null;`, `\{document=\*\*\}`, `\{allPaths=\*\*\}`, `"\.read": true`, `"\.write": true` |
+| Ownership | `allow` lines without `request\.auth\.uid ==` or `== request\.auth\.uid`; updates without `affectedKeys\(\)` |
+| Admin SDK | `firebase-admin`, `credential\.cert`, `private_key`, `FIREBASE_PRIVATE_KEY`, `serviceAccount` in client code or committed JSON |
+| Functions | `onCall\(` without `request\.auth`/`context\.auth`; `onRequest\(` without `verifyIdToken`; `enforceAppCheck` treated as authorization |
+| Client | `NEXT_PUBLIC_FIREBASE_API_KEY` is public by design; client queries that rely on the UI to filter by owner |

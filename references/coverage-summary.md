@@ -1,12 +1,14 @@
 ```
 Security Audit Skill — Coverage Summary
 
-12 security categories, 124 checklist items, 31 pattern sections
+12 security categories + 2 stack profiles, 144 checklist items, 33 pattern sections
 OWASP Top 10 2021: 10/10 | OWASP API Security Top 10 2023: 10/10
 Stack patterns: JS/TS (Next.js App Router, tRPC, Hono, Drizzle, Better-Auth, AI SDK tools), Python, PHP, Go, Ruby, Java;
   GitHub Actions, Dockerfile and compose, Terraform/Kubernetes/CloudFormation, package manifests and lockfiles;
-  LLM and agent features (AI SDK, openai, @anthropic-ai/sdk, LangChain/LangGraph, MCP)
+  LLM and agent features (AI SDK, openai, @anthropic-ai/sdk, LangChain/LangGraph, MCP);
+  Supabase (RLS, storage, SECURITY DEFINER, Edge Functions, service-role keys), Firebase (rules, Cloud Functions, Admin SDK)
 Pre-pass (deterministic, seconds): hotspot ranking, entry points by framework convention, Drizzle tenant-scope scan,
+  Supabase/Firebase policy scan,
   dependency advisories (osv-scanner), secrets across git history (gitleaks, redacted)
 
 Categories:
@@ -35,7 +37,7 @@ Modes: Standard (<20 endpoints) | Triage (20-50) | Parallel (>50) | partial: --s
 Stack: detected from manifests; dedicated profile for JS/TS (Node), general checklist for PHP, Python, Go, Rust,
   Ruby, JVM, .NET (the report says which); --stack <name> forces a profile
 Report: report.md + report.html (to fix / verified safe / not assessed)
-Private benchmark: benchmark/ (Ledgerly, own stack, 23 seeded bugs + 13 decoys), see benchmark/README.md
+Private benchmark: benchmark/ (Ledgerly, own stack, 23 seeded bugs + 13 decoys; supabase-notes, 10 + 12), see benchmark/README.md
 Models: sonnet for the mechanical phases (1, 2, 4); Phase 3 verifier inherits the session model
 Proof labels: HIGH/CRITICAL are marked test (a regression test fails today) or static (code reading)
 Coverage ledger: every auditor records per entry point and class checked / not applicable / not assessed
