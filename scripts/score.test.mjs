@@ -155,11 +155,42 @@ test("R21 key ranges point at the seeded statements", () => {
   assert.match(at(loc("B21").file, loc("B21").lines[0]), /HTML fragment/);
   assert.match(at(loc("B21", 1).file, loc("B21", 1).lines[0]), /dangerouslySetInnerHTML=\{\{ __html: summaryHtml \}\}/);
   assert.match(at(loc("B22").file, 16), /\.where\(eq\(invoices\.id, invoiceId\)\)/);
-  assert.match(at(loc("B23").file, loc("B23").lines[0]), /body\.model/);
+  assert.match(at(loc("B23").file, loc("B23").lines[0]), /type Body = .*model\?: string; maxTokens\?: number; maxSteps\?: number/);
+  assert.match(at(loc("B23").file, 16), /body\.model/);
   assert.match(at(loc("B23").file, loc("B23").lines[1]), /body\.maxSteps/);
   assert.match(at(loc("D12").file, 34), /escapeHtml\(text\)/);
   assert.match(at(loc("D13").file, 25), /needsApproval: true/);
   assert.match(at(loc("D13").file, 30), /eq\(invoices\.orgId, ctx\.orgId\)/);
+});
+
+test("B23 range covers the request Body type through the generateText options", () => {
+  const r = run(
+    finding("rate-limit-001", { file: "src/app/api/assistant/billing/route.ts:6" }),
+    finding("rate-limit-002", { file: "src/app/api/assistant/billing/route.ts:8" }),
+    finding("rate-limit-003", { file: "src/app/api/assistant/billing/route.ts:20" }),
+    finding("rate-limit-004", { file: "src/app/api/assistant/billing/route.ts:21" }),
+  );
+  assert.deepEqual(entriesOf(r, "rate-limit-001"), ["B23"], "cited at the Body type, as in the 2026-10-08 run");
+  assert.deepEqual(entriesOf(r, "rate-limit-002"), ["B23"], "the handler signature");
+  assert.deepEqual(entriesOf(r, "rate-limit-003"), ["B23"], "two lines below the generateText options");
+  assert.deepEqual(entriesOf(r, "rate-limit-004"), [], "three lines below is outside the window");
+  const decoys = key.decoys.flatMap((d) => d.locations).filter((l) => l.file === "src/app/api/assistant/billing/route.ts");
+  assert.deepEqual(decoys, [], "no decoy shares the widened B23 file");
+});
+
+test("file_level: a finding citing the file with no line matches only entries that declare it", () => {
+  const r = run(finding("exposure-001", { file: ".env", extra: "" }));
+  assert.equal(r.matches.find((m) => m.finding === "exposure-001").distance, 0);
+  assert.deepEqual(entriesOf(r, "exposure-001"), ["B15"]);
+  assert.equal(r.seeded.find((s) => s.id === "B15").result, "found");
+  const history = { stem: "exposure-002", data: { id: "exposure-002", category: "exposure", severity: "HIGH", status: "verified" }, body: "", text: "## Evidence\n- **File**: `.env` in commit 3ec2d73, removed in e9915ab\n" };
+  assert.deepEqual(entriesOf(score([history], key), "exposure-002"), ["B15"], "the 2026-10-08 evidence line");
+  assert.deepEqual(entriesOf(run(finding("exposure-003", { file: ".env:4" })), "exposure-003"), ["B15"], "a line still matches by range");
+  assert.deepEqual(entriesOf(run(finding("exposure-004", { file: ".env:9" })), "exposure-004"), [], "a line outside the window does not fall back to file level");
+  assert.deepEqual(entriesOf(run(finding("rate-limit-005", { file: "src/app/api/assistant/billing/route.ts" })), "rate-limit-005"), [], "entries without file_level still need a line");
+  assert.deepEqual(entriesOf(run(finding("exposure-005", { file: ".env.example" })), "exposure-005"), [], "another file with the same prefix does not match");
+  const keyed = [...key.seeded, ...key.decoys, ...key.known_extras].filter((e) => e.file_level).map((e) => e.id);
+  assert.deepEqual(keyed, ["B15"], "file_level is the exception, not the rule");
 });
 
 test("every match is exact and the scorer reports no loose matches", () => {

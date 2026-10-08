@@ -1,7 +1,7 @@
 {
   "version": 2,
   "app": "ledgerly",
-  "note": "Ground truth for benchmark/app. Never copy this file into the audited directory. Each entry lists `locations`: a file (path relative to app/) and the 1-based inclusive line range of the vulnerable statement or of the code a fix changes. A finding matches by its primary location (the first `**File**:` in Evidence) only; see score.mjs for the window and tie rules. `advisory: true` marks a vulnerable dependency version: only findings in category `dependency` match it, and dependency findings match nothing else. When a real finding is scored as unmatched, check the range against the code, then fix the key, not the finding.",
+  "note": "Ground truth for benchmark/app. Never copy this file into the audited directory. Each entry lists `locations`: a file (path relative to app/) and the 1-based inclusive line range of the vulnerable statement or of the code a fix changes. A finding matches by its primary location (the first `**File**:` in Evidence) only; see score.mjs for the window and tie rules. `advisory: true` marks a vulnerable dependency version: only findings in category `dependency` match it, and dependency findings match nothing else. `file_level: true` marks a bug whose evidence is a whole file that may exist only in git history (a committed secret): a finding that cites that file with no line matches it; findings with a line still match by range. When a real finding is scored as unmatched, check the range against the code, then fix the key, not the finding.",
   "window": 2,
   "seeded": [
     {
@@ -161,6 +161,7 @@
       "id": "B15",
       "class": "Live secret in git history",
       "severity": "HIGH",
+      "file_level": true,
       "locations": [
         { "file": ".env", "lines": [3, 4] }
       ],
@@ -248,10 +249,10 @@
       "class": "LLM cost abuse: the caller chooses model, output tokens and agent steps, with no per-user limit",
       "severity": "MEDIUM",
       "locations": [
-        { "file": "src/app/api/assistant/billing/route.ts", "lines": [16, 18] }
+        { "file": "src/app/api/assistant/billing/route.ts", "lines": [6, 18] }
       ],
       "detect": "llm",
-      "why": "POST /api/assistant/billing passes body.model, body.maxTokens and body.maxSteps straight to generateText with no allowlist, cap, or per-user rate or spend limit, so any signed-in user can run the most expensive model at full output length and many tool steps, in a loop, on the organization's API key."
+      "why": "POST /api/assistant/billing passes body.model, body.maxTokens and body.maxSteps straight to generateText with no allowlist, cap, or per-user rate or spend limit, so any signed-in user can run the most expensive model at full output length and many tool steps, in a loop, on the organization's API key. The range runs from the Body type that declares the caller-controlled fields (line 6) through the generateText options (16-18): a fix changes both, and auditors cite either end."
     }
   ],
   "decoys": [
