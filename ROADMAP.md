@@ -16,8 +16,9 @@ Rules that apply to every item:
   Status (2026-10-07): checklist sections, stack patterns, a pre-pass policy scan, Edge/Cloud Function entry
   points and the `benchmark/supabase-notes` app (10 seeded bugs, 12 decoys, `--app` in setup and score) are
   in; it moves to Done with its first scored run.
+  Merged to main 2026-10-08 (#9 via #12). Its benchmark app is not scored yet; it moves to Done with its first
+  scored run.
 
-  Merged to main 2026-10-08 (#9 via #12). Its benchmark app is not scored yet; it moves to Done with its first scored run.
 ## Next
 
 - **R05 PHP profile: Laravel, Symfony, Drupal.** Route-based entry points, unscoped Eloquent/Doctrine
@@ -25,7 +26,8 @@ Rules that apply to every item:
   Status (2026-10-07): checklist sections, stack patterns, Laravel/Symfony entry points (Drupal's existed)
   ranked by their controller method, PHP template/model/CSRF signals, Psalm reported NOT RUN, and the
   `benchmark/php-tickets` app (13 seeded bugs, 14 decoys) are in; it moves to Done with its first scored run.
-  Merged to main 2026-10-08 (#10 via #12). Its benchmark app is not scored yet; it moves to Done with its first scored run.
+  Merged to main 2026-10-08 (#10 via #12). Its benchmark app is not scored yet; it moves to Done with its first
+  scored run.
 - **R06 Python profile: Django, FastAPI, Flask.** Unscoped ORM queries, `bandit`, `pip-audit`.
   Done when: its benchmark app scores.
   Status (2026-10-08): checklist sections, stack patterns, Django (urls.py include chain, DRF routers and
@@ -33,19 +35,55 @@ Rules that apply to every item:
   `*_required`, `before_request`) entry points ranked by their view, a user-owned model scan, Python
   template/settings/CORS signals, bandit in the R07 tool runner (native only), `pip-audit` as a read-only dependency fallback,
   and the `benchmark/py-clinic` app (18 seeded bugs, 18 decoys) are in; it moves to Done with its first scored run.
-  Merged to main 2026-10-08 (#11 via #12). Its benchmark app is not scored yet; it moves to Done with its first scored run.
+  Merged to main 2026-10-08 (#11 via #12). Its benchmark app is not scored yet; it moves to Done with its first
+  scored run.
 - **R07 Deterministic tools in the pre-pass.** semgrep rulesets per stack, `zizmor` for GitHub Actions,
   `hadolint` and `trivy` for Dockerfiles and images. Done when: each tool runs natively or via docker,
   reports NOT RUN honestly, and its hits appear as candidates in `prepass.md`.
-
   Merged to main 2026-10-08 (#5 via #12). The tools were not installed on the benchmark host, so no real
   tool run is recorded yet.
+
+## Later
+
+- **R09 Go profile** (`gosec`, error handling) and **R10 Rust profile** (`cargo-audit`, unsafe).
+  Done when: their benchmark apps score.
+- **R11 Export.** SARIF for GitHub code scanning; tasks to Linear and Jira with file, line and fix.
+  Done when: one command produces the file or the tasks from `remediation.json`.
+- **R12 Audit diff.** New, fixed and regressed findings between two runs, building on `--verify-fixes`.
+  Done when: the report has a "since last audit" section.
+- **R13 Cheaper auditors.** Measure on the benchmark whether auditors can run on a lighter model without
+  losing recall. Done when: the number is published, whatever it says.
+- **R14 Production checklist.** Generated from the not-assessed rows: headers, limits, env vars, backups,
+  each with how to check it. Done when: it is a section of the report.
+- **R23 Resource exhaustion and spend.** Unbounded queries, uploads, queues and workers; paid APIs
+  (SMS, e-mail, AI) that anonymous callers can drive. Done when: checklist items and a seeded bug, scored.
+- **R24 Data lifecycle.** Tenant isolation in caches, search and exports; erasure that misses backups,
+  files or derived data; restores that bring deleted people back. Done when: checklist items and a seeded
+  bug, scored.
+- **R25 Client-side checks.** DOM injection, `postMessage` trust, prototype pollution, UI redress.
+  Done when: checklist items and a seeded bug in a benchmark app, scored.
+- **R26 Any coding agent.** Install and run outside Claude Code (skills CLI), with the same report.
+  Done when: the benchmark runs end to end in at least one other agent and the result is published.
+
+## Ideas
+
+- **R30 Mini benchmarks on real advisories.** Small audits of real modules pinned to a version before a public
+  security fix (for example a Drupal contrib module with a published advisory), scored on whether the skill
+  finds the published issue. Defensive only: public advisories, no exploit code.
+- **R15 Audit on every pull request**, headless, in CI.
+- **R16 Ruby on Rails profile** (`brakeman`).
+- **R17 audit-live:** phase timing, per-auditor view, token counter.
+- **R18 Second private benchmark app**, never published, for measuring changes without training-data risk.
+- **R27 Native code and memory safety** (C, C++, unsafe Rust), **R28 mobile and local IPC** (deep links,
+  webviews, exported components), **R29 protocols and RPC** (gRPC, queues, brokers, streaming). Wider scope
+  than the web stack this skill is built for; each needs its own benchmark app before it ships.
+
 ## Done
 
 - **R21 LLM and agent checks** (2026-10-08, #7 via #12): checklist items and stack patterns for prompt injection
   into tools and agents, model output reaching HTML/SQL/shell/URL sinks, tool calls without authorisation and
-  cost/token abuse; three seeded Ledgerly bugs (B21-B23). Benchmark 2026-10-08 (batch #12, Ledgerly x1): recall 20/23, 0 decoy false positives. B21 and B22 found exactly; B23 was found
-  (cited at the route signature, outside the key window).
+  cost/token abuse; three seeded Ledgerly bugs (B21-B23). Benchmark 2026-10-08 (batch #12, Ledgerly x1): recall 20/23, 0 decoy false positives.
+  B21 and B22 found exactly; B23 was found but cited at the route signature, outside the key window.
 
 - **R22 Coverage ledger** (2026-10-07): every auditor writes `coverage/<auditor>.json`, one row per entry point
   or project-wide check and class: `checked` with evidence, `not_applicable` or `not_assessed` with a reason.
