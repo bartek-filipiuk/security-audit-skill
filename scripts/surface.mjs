@@ -2,7 +2,7 @@
 // 1. Entry points by framework convention (Next.js App/Pages Router, server actions, proxy/middleware,
 //    tRPC, Hono/Express, pg-boss/BullMQ/cron, AI SDK / MCP tools, Drupal routing.yml, Supabase Edge
 //    Functions, Firebase Cloud Functions, Laravel routes/*.php, Symfony #[Route] attributes and
-//    config/routes*.yaml).
+//    config/routes*.yaml, Django urls.py, FastAPI and Flask route decorators).
 // 2. Drizzle scope scan: query sites on tables that carry an owner/tenant column but whose statement
 //    never references that column.
 // 3. Policy scan (roadmap R02): Supabase migrations (RLS, policies, SECURITY DEFINER functions, storage
@@ -25,11 +25,14 @@ const DRUPAL_RE = /\.routing\.yml$/;
 const PHP_RE = /\.(?:php|module|inc|theme|install)$/;
 const TWIG_RE = /\.twig$/;
 const SYMFONY_CFG_RE = /(^|\/)config\/(?:routes(?:\/[^/]+)?|packages\/security)\.ya?ml$/;
+// Python profile (roadmap R06): Python sources and Django/Jinja templates under a templates/ directory.
+const PY_RE = /\.py$/;
+const PY_TEMPLATE_RE = /(^|\/)templates\/.+\.html?$/;
 // Read for the policy scan only, never scanned as code.
 const POLICY_RE = /(^|\/)supabase\/(?:migrations\/[^/]+\.sql|config\.toml)$|(^|\/)(?:firestore|storage)\.rules$/;
 export const LOCKFILES = new Set([
   "pnpm-lock.yaml", "package-lock.json", "yarn.lock", "bun.lock", "composer.lock",
-  "poetry.lock", "uv.lock", "requirements.txt", "go.sum", "Cargo.lock", "Gemfile.lock",
+  "poetry.lock", "uv.lock", "requirements.txt", "Pipfile.lock", "go.sum", "Cargo.lock", "Gemfile.lock",
 ]);
 
 export function walk(root) {
@@ -44,7 +47,7 @@ export function walk(root) {
       if (st.isDirectory()) { rec(p); continue; }
       const rel = relative(root, p).split(sep).join("/");
       if (LOCKFILES.has(name)) lockfiles.push(rel);
-      if ((CODE_RE.test(name) || DRUPAL_RE.test(name) || POLICY_RE.test(rel) || PHP_RE.test(name) || TWIG_RE.test(name) || SYMFONY_CFG_RE.test(rel)) && st.size < 1_000_000) {
+      if ((CODE_RE.test(name) || DRUPAL_RE.test(name) || POLICY_RE.test(rel) || PHP_RE.test(name) || TWIG_RE.test(name) || SYMFONY_CFG_RE.test(rel) || PY_RE.test(name) || PY_TEMPLATE_RE.test(rel)) && st.size < 1_000_000) {
         files.push({ path: rel, text: readFileSync(p, "utf8") });
       }
     }
@@ -141,6 +144,11 @@ export function scanEntryPoints(files) {
 
     if (PHP_RE.test(path) || TWIG_RE.test(path) || SYMFONY_CFG_RE.test(path)) {
       for (const e of phpEntryPoints(f, files)) out.push(e);
+      continue;
+    }
+    if (PY_TEMPLATE_RE.test(path)) continue;
+    if (PY_RE.test(path)) {
+      for (const e of pyEntryPoints(f, files)) out.push(e);
       continue;
     }
 
@@ -440,6 +448,368 @@ function phpCallees(files, body) {
   return extra;
 }
 
+// ---------------------------------------------------------------- Python entry points (roadmap R06)
+
+// Django urls.py (path/re_path/url with include() prefixes, DRF router.register), FastAPI and Flask route
+// decorators (router and blueprint prefixes, include_router/register_blueprint mounts). Each route carries
+// the auth markers found on it: login_required and friends, auth mixins, DRF permission_classes (or the
+// REST_FRAMEWORK default, AllowAny when unset), Depends()/Security() on the route, its router, its app or
+// its mount, Flask *_required decorators and before_request hooks.
+// ponytail: regex and indentation over source text, not an AST. Routes added in loops, DRF @action routes,
+// i18n_patterns, app factories that register blueprints under computed names and Python imports for
+// --since are invisible. Each row is a candidate, never a verdict.
+const PY_KINDS = new Set(["django-route", "fastapi-route", "flask-route"]);
+
+// Like scan() for Python source: skips strings (triple-quoted too) and # comments.
+function pyScan(text, from, stop) {
+  let depth = 0;
+  for (let i = from; i < text.length; i++) {
+    const c = text[i];
+    if (c === "#") { const nl = text.indexOf("\n", i); if (nl < 0) return text.length; i = nl - 1; continue; }
+    if (c === '"' || c === "'") {
+      const q3 = c.repeat(3);
+      if (text.startsWith(q3, i)) { const end = text.indexOf(q3, i + 3); if (end < 0) return text.length; i = end + 2; continue; }
+      for (i++; i < text.length && text[i] !== c && text[i] !== "\n"; i++) if (text[i] === "\\") i++;
+      continue;
+    }
+    if (c === "(" || c === "[" || c === "{") depth++;
+    else if (c === ")" || c === "]" || c === "}") depth--;
+    const r = stop(c, depth, i);
+    if (r !== undefined) return r;
+  }
+  return text.length;
+}
+const pyMatchClose = (text, open) => pyScan(text, open, (c, depth, i) => (depth === 0 ? i : undefined));
+
+// Top-level arguments of the call whose `(` is at `open`.
+function pyArgs(text, open) {
+  const close = pyMatchClose(text, open);
+  const body = text.slice(open + 1, close);
+  const parts = [];
+  let last = 0;
+  pyScan(body, 0, (c, depth, i) => { if (c === "," && depth === 0) { parts.push(body.slice(last, i)); last = i + 1; } });
+  parts.push(body.slice(last));
+  return { close, parts: parts.map((s) => s.trim()).filter(Boolean) };
+}
+const pyStr = (s) => s?.match(/^[rRbBuU]{0,2}(["'])(.*?)\1/s)?.[2] ?? null;
+const pyKw = (parts, name) => parts.find((p) => new RegExp(`^${name}\\s*=`).test(p))?.replace(new RegExp(`^${name}\\s*=\\s*`), "") ?? null;
+// Dependencies in `Depends(x)` / `Security(x)` whose name looks like an auth check (get_db does not).
+const AUTH_DEP = /user|auth|login|token|staff|admin|permission|role|verify|require|principal|current|api_?key|scope|guard|jwt|bearer/i;
+const authDeps = (s) => [...new Set([...(s ?? "").matchAll(/\b(?:Depends|Security)\(\s*([\w.]+)/g)].map((m) => m[1]).filter((n) => AUTH_DEP.test(n)))];
+
+// The `def`/`class` statement on `line` (1-based) and every following line indented deeper.
+function pyBlock(text, line, max = 250) {
+  const lines = text.split("\n");
+  const i = line - 1;
+  const indent = (lines[i] ?? "").match(/^[ \t]*/)[0].length;
+  let j = i + 1;
+  for (; j < lines.length && j < i + max; j++) {
+    const l = lines[j];
+    if (!l.trim() || /^\s*#/.test(l) || /^[ \t]*[)\]}]/.test(l)) continue;
+    if (l.match(/^[ \t]*/)[0].length <= indent) break;
+  }
+  return lines.slice(i, j).join("\n").replace(/\s+$/, "");
+}
+
+// Decorator lines stacked directly above the `def`/`class` on `line`.
+function pyDecorators(text, line) {
+  const lines = text.split("\n");
+  const indent = (lines[line - 1] ?? "").match(/^[ \t]*/)[0].length;
+  const out = [];
+  for (let j = line - 2; j >= 0; j--) {
+    const l = lines[j];
+    if (!l.trim()) break;
+    const ind = l.match(/^[ \t]*/)[0].length;
+    if (ind < indent || (ind === indent && !/^\s*[@)\]]/.test(l))) break;
+    out.unshift(l);
+  }
+  return out.join("\n");
+}
+
+function pyBlockAt(files, h) {
+  const f = files.find((x) => x.path === h.file);
+  return f ? { file: f.path, line: h.line, body: pyBlock(f.text, h.line) } : null;
+}
+
+// Top-level `def name`/`class name`, preferring <mod>.py next to the file that names it.
+function pyFindDef(files, name, near, mod) {
+  const re = new RegExp(`^(?:async\\s+)?(def|class)\\s+${name}\\b`, "m");
+  const dirOf = (p) => (p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "");
+  const rank = (f) => (basename(f.path) === `${mod}.py` ? 2 : 0) + (dirOf(f.path) === dirOf(near) ? 1 : 0);
+  const hit = files.filter((f) => PY_RE.test(f.path) && !NON_RUNTIME.test(f.path) && re.test(f.text)).sort((a, b) => rank(b) - rank(a))[0];
+  if (!hit) return null;
+  const m = hit.text.match(re);
+  return { file: hit.path, line: hit.text.slice(0, m.index).split("\n").length, kind: m[1], text: hit.text };
+}
+
+const DJ_DECOR_GUARD = /^\s*@(login_required|permission_required|user_passes_test|staff_member_required|superuser_required)\b/gm;
+const DJ_MIXIN = /\b(LoginRequiredMixin|PermissionRequiredMixin|UserPassesTestMixin|AccessMixin|StaffRequiredMixin|SuperuserRequiredMixin)\b/;
+const DRF_VIEW = /\b(?:APIView|GenericAPIView|\w*ViewSet|(?:List|Retrieve|Create|Update|Destroy|ListCreate|RetrieveUpdate|RetrieveDestroy|RetrieveUpdateDestroy)APIView)\b/;
+const DRF_READ_ONLY = /\b(?:ReadOnlyModelViewSet|ListAPIView|RetrieveAPIView)\b/;
+const lastNames = (s) => s.split(",").map((x) => x.trim().replace(/^["']|["']$/g, "").split(".").pop()).filter(Boolean);
+
+// DEFAULT_PERMISSION_CLASSES of settings.REST_FRAMEWORK; DRF's own default is AllowAny.
+export function drfDefaultPermissions(files) {
+  const s = files.find((f) => PY_RE.test(f.path) && /^REST_FRAMEWORK\s*=\s*\{/m.test(f.text));
+  const m = s?.text.match(/["']DEFAULT_PERMISSION_CLASSES["']\s*:\s*[[(]([^\])]*)[\])]/);
+  const names = m ? lastNames(m[1]) : [];
+  return names.length ? names : ["AllowAny"];
+}
+
+// What a urls.py view expression resolves to, with its guards.
+function djangoView(files, urlFile, expr, drfDefault) {
+  const res = { guards: [], csrfExempt: false, methods: "ANY", allowAny: false, readOnly: false, handler: null };
+  let e = expr.trim();
+  const WRAP = /^(login_required|staff_member_required|superuser_required|csrf_exempt|never_cache|permission_required\([^()]*\)|user_passes_test\([^()]*\)|cache_page\([^()]*\))\(\s*([\s\S]*)\)$/;
+  for (let m; (m = e.match(WRAP));) {
+    const w = m[1].replace(/\([\s\S]*$/, "");
+    if (w === "csrf_exempt") res.csrfExempt = true;
+    else if (!/^(?:never_cache|cache_page)$/.test(w)) res.guards.push(`${w} (in urls)`);
+    e = m[2].trim();
+  }
+  const ref = e.match(/^((?:\w+\.)*)(\w+)(?:\.as_view\([\s\S]*\))?$/);
+  if (!ref) return res;
+  const def = pyFindDef(files, ref[2], urlFile, ref[1].replace(/\.$/, "").split(".").pop());
+  if (!def) return res;
+  res.handler = { file: def.file, line: def.line, name: ref[2] };
+  const decos = pyDecorators(def.text, def.line);
+  const block = pyBlock(def.text, def.line);
+  res.guards.push(...[...decos.matchAll(DJ_DECOR_GUARD)].map((m) => m[1]));
+  if (/@(?:method_decorator\(\s*)?csrf_exempt\b/.test(decos)) res.csrfExempt = true;
+  const listed = decos.match(/@(?:require_http_methods|api_view)\(\s*\[([^\]]*)\]/)?.[1];
+  const verb = decos.match(/@require_(POST|GET|safe)\b/)?.[1];
+  if (verb) res.methods = verb === "POST" ? "POST" : "GET";
+  else if (listed) res.methods = quoted(listed).map((x) => x.toUpperCase()).join(",") || "ANY";
+  let perms = null;
+  let drf = false;
+  if (def.kind === "class") {
+    const bases = block.match(/^class\s+\w+\s*\(([^)]*)\)/)?.[1] ?? "";
+    const mixin = bases.match(DJ_MIXIN)?.[1];
+    if (mixin) res.guards.push(mixin);
+    const md = (decos + "\n" + block).match(/method_decorator\(\s*(login_required|permission_required|user_passes_test|staff_member_required)/)?.[1];
+    if (md) res.guards.push(`method_decorator(${md})`);
+    if (/csrf_exempt/.test(decos + block.split("\n").slice(0, 3).join("\n"))) res.csrfExempt = true;
+    const pc = block.match(/^\s+permission_classes\s*=\s*[[(]([^\])]*)[\])]/m);
+    if (pc) perms = lastNames(pc[1]);
+    drf = DRF_VIEW.test(bases);
+    res.readOnly = DRF_READ_ONLY.test(bases) || /http_method_names\s*=\s*\[\s*["']get["']\s*(?:,\s*["'](?:head|options)["']\s*)*\]/.test(block);
+    if (/ViewSet\b/.test(bases)) res.methods = "VIEWSET";
+  } else {
+    const pc = decos.match(/@permission_classes\(\s*[[(]([^\])]*)[\])]/);
+    if (pc) perms = lastNames(pc[1]);
+    drf = /@api_view\b/.test(decos);
+    res.readOnly = res.methods === "GET";
+  }
+  if (perms || drf) {
+    const list = perms ?? drfDefault;
+    if (list.every((n) => n === "AllowAny")) res.allowAny = true;
+    res.guards.push(`${perms ? "permission_classes" : "DRF default permission"}: ${list.join(", ")}`);
+  }
+  return res;
+}
+
+const djangoCache = new WeakMap();
+// Every Django route of the project: urls.py `path`/`re_path`/`url` rows (with the prefixes of the
+// include() chain that reaches them) and DRF `router.register` rows, each resolved to its view.
+export function scanDjangoUrls(files) {
+  if (djangoCache.has(files)) return djangoCache.get(files);
+  const urlFiles = files.filter((f) => PY_RE.test(f.path) && !NON_RUNTIME.test(f.path) && /^urlpatterns\s*\+?=/m.test(f.text));
+  const modFile = (mod) => {
+    const rel = mod.replace(/\./g, "/") + ".py";
+    return files.find((f) => f.path === rel || f.path.endsWith("/" + rel))?.path ?? null;
+  };
+  const includes = [];
+  const raw = [];
+  for (const f of urlFiles) {
+    const lineAt = lineIndex(f.text);
+    const routerPrefix = new Map();
+    for (const m of f.text.matchAll(/(?<![\w.])(path|re_path|url)\(/g)) {
+      const { parts } = pyArgs(f.text, m.index + m[0].length - 1);
+      const route = pyStr(parts[0]);
+      if (route == null || parts.length < 2) continue;
+      const r = m[1] === "path" ? route : route.replace(/^\^/, "").replace(/\$$/, "");
+      const inc = parts[1].match(/^include\(\s*\(?\s*([\s\S]*)\)$/);
+      if (inc) {
+        const target = pyStr(inc[1]) && modFile(pyStr(inc[1]));
+        if (target) includes.push({ from: f.path, prefix: r, target });
+        const rv = inc[1].match(/^(\w+)\.urls\b/);
+        if (rv) routerPrefix.set(rv[1], r);
+        continue;
+      }
+      if (/^admin\.site\.urls$/.test(parts[1])) continue;
+      raw.push({ file: f.path, line: lineAt(m.index), route: r, view: parts[1] });
+    }
+    for (const m of f.text.matchAll(/(?<![\w.])(\w+)\.register\(/g)) {
+      const { parts } = pyArgs(f.text, m.index + m[0].length - 1);
+      const route = pyStr(parts[0]);
+      if (route == null || !parts[1]) continue;
+      raw.push({ file: f.path, line: lineAt(m.index), route: joinPath(routerPrefix.get(m[1]) ?? "", route), view: parts[1], viewset: true });
+    }
+  }
+  const prefixOf = (file, seen = new Set()) => {
+    if (seen.has(file)) return "";
+    seen.add(file);
+    const inc = includes.find((i) => i.target === file);
+    return inc ? joinPath(prefixOf(inc.from, seen), inc.prefix) : "";
+  };
+  const drfDefault = drfDefaultPermissions(files);
+  const out = raw.map((x) => {
+    const v = djangoView(files, x.file, x.view, drfDefault);
+    return {
+      kind: "django-route", name: x.viewset ? "VIEWSET" : v.methods, route: joinPath(prefixOf(x.file), x.route), file: x.file, line: x.line,
+      guard: v.guards.join("; "), pyHandler: v.handler,
+      ...(v.allowAny ? { allowAny: true } : {}), ...(v.readOnly ? { readOnly: true } : {}), ...(v.csrfExempt ? { csrfExempt: true } : {}),
+    };
+  });
+  djangoCache.set(files, out);
+  return out;
+}
+
+const PY_DECOR_RE = /^([ \t]*)@(\w+)\.(get|post|put|patch|delete|options|head|route|api_route|websocket)\(/gm;
+const FLASK_GUARD_RE = /^\s*@((?:\w+\.)*(?:\w*(?:login|auth|admin|role|roles|permission|permissions|staff|token|jwt|key)_required|requires_auth|roles_accepted))\b/gm;
+const FLASK_VIEW_CHECK = /current_user\.is_authenticated|current_user\.is_anonymous|\babort\(\s*40[13]\b|verify_jwt_in_request\(/;
+
+// `name = FastAPI(...) | APIRouter(...) | Flask(...) | Blueprint(...)` in one file.
+function pyReceivers(text) {
+  const out = new Map();
+  for (const m of text.matchAll(/^(\w+)\s*(?::\s*[\w.]+\s*)?=\s*(?:\w+\.)?(FastAPI|APIRouter|Flask|Blueprint)\s*\(/gm)) {
+    const { parts } = pyArgs(text, m.index + m[0].length - 1);
+    const fast = m[2] === "FastAPI" || m[2] === "APIRouter";
+    out.set(m[1], { kind: fast ? "fastapi" : "flask", app: m[2] === "FastAPI" || m[2] === "Flask", prefix: pyStr(pyKw(parts, fast ? "prefix" : "url_prefix")) ?? "", deps: authDeps(pyKw(parts, "dependencies")) });
+  }
+  return out;
+}
+
+const mountCache = new WeakMap();
+// `app.include_router(x.router, prefix=..., dependencies=...)` and `app.register_blueprint(bp, url_prefix=...)`:
+// "<file of the router>::<variable>" -> { prefix, deps } (deps include the app's own dependencies).
+function pyMounts(files) {
+  if (mountCache.has(files)) return mountCache.get(files);
+  const out = new Map();
+  const py = files.filter((f) => PY_RE.test(f.path) && !NON_RUNTIME.test(f.path));
+  const top = (p) => p.split("/")[0];
+  for (const f of py) {
+    if (!/\.(?:include_router|register_blueprint)\(/.test(f.text)) continue;
+    const appDeps = [...pyReceivers(f.text).values()].filter((r) => r.app).flatMap((r) => r.deps);
+    for (const m of f.text.matchAll(/\b\w+\.(include_router|register_blueprint)\(/g)) {
+      const { parts } = pyArgs(f.text, m.index + m[0].length - 1);
+      const t = parts[0]?.match(/^(?:(\w+)\.)?(\w+)$/);
+      if (!t) continue;
+      const v = t[2];
+      const mod = t[1] ?? f.text.match(new RegExp(`^from\\s+\\.*([\\w.]*)\\s+import\\s+[^\\n]*\\b${v}\\b`, "m"))?.[1]?.split(".").pop();
+      const def = new RegExp(`^${v}\\s*(?::[^=\\n]+)?=\\s*(?:\\w+\\.)?(?:APIRouter|Blueprint)\\s*\\(`, "m");
+      const cands = py.filter((x) => def.test(x.text));
+      const pick = cands.find((x) => basename(x.path) === `${mod}.py` && top(x.path) === top(f.path)) ?? cands.find((x) => basename(x.path) === `${mod}.py`) ?? (cands.length === 1 ? cands[0] : null);
+      if (!pick) continue;
+      out.set(`${pick.path}::${v}`, { prefix: pyStr(pyKw(parts, m[1] === "include_router" ? "prefix" : "url_prefix")), deps: [...new Set([...authDeps(pyKw(parts, "dependencies")), ...appDeps])] });
+    }
+  }
+  mountCache.set(files, out);
+  return out;
+}
+
+// Flask `@bp.before_request` hooks that check the session: receiver -> hook name.
+function flaskHooks(text) {
+  const out = new Map();
+  for (const m of text.matchAll(/^[ \t]*@(\w+)\.before_(?:app_)?request\b[^\n]*\n(?:[ \t]*@[^\n]*\n)*[ \t]*def\s+(\w+)/gm)) {
+    const body = pyBlock(text, text.slice(0, m.index + m[0].length).split("\n").length);
+    if (FLASK_VIEW_CHECK.test(body) || /\bsession\.get\(\s*["']\w*user|redirect\(\s*url_for\(\s*["'][\w.]*login/.test(body)) out.set(m[1], m[2]);
+  }
+  return out;
+}
+
+// FastAPI and Flask routes declared with decorators in one file.
+export function scanPyRoutes(f, files = [f]) {
+  const { text, path } = f;
+  const out = [];
+  if (!/^[ \t]*@\w+\.(?:get|post|put|patch|delete|options|head|route|api_route|websocket)\(/m.test(text)) return out;
+  const recv = pyReceivers(text);
+  const fileKind = /^\s*(?:from|import)\s+fastapi\b/m.test(text) ? "fastapi" : /^\s*(?:from|import)\s+flask\b/m.test(text) ? "flask" : null;
+  const mounts = pyMounts(files);
+  const hooks = flaskHooks(text);
+  const appHook = [...recv].filter(([, r]) => r.app).map(([n]) => hooks.get(n)).find(Boolean);
+  const lineAt = lineIndex(text);
+  for (const m of text.matchAll(PY_DECOR_RE)) {
+    const r = recv.get(m[2]);
+    const kind = r?.kind ?? fileKind;
+    if (!kind || (kind === "flask" && m[3] === "websocket")) continue;
+    const { close, parts } = pyArgs(text, m.index + m[0].length - 1);
+    const p = pyStr(parts[0]) ?? pyStr(pyKw(parts, "path")) ?? pyStr(pyKw(parts, "rule"));
+    if (p == null) continue;
+    const d = text.slice(close).match(/\n[ \t]*(?:async\s+)?def\s+(\w+)\s*\(/);
+    if (!d) continue;
+    const defIdx = close + d.index + 1;
+    const defLine = lineAt(defIdx);
+    const sigOpen = defIdx + text.slice(defIdx).indexOf("(");
+    const sig = text.slice(sigOpen, pyMatchClose(text, sigOpen));
+    const listed = quoted(pyKw(parts, "methods") ?? "").map((x) => x.toUpperCase());
+    const methods = m[3] === "websocket" ? "WEBSOCKET" : /^(?:route|api_route)$/.test(m[3]) ? listed.join(",") || "GET" : m[3].toUpperCase();
+    const mount = mounts.get(`${path}::${m[2]}`);
+    const guards = [];
+    let route;
+    const entry = {};
+    if (kind === "fastapi") {
+      route = joinPath(mount?.prefix ?? "", r?.prefix ?? "", p);
+      const own = authDeps(sig);
+      if (own.length) guards.push(`Depends(${own.join(", ")})`);
+      const dec = authDeps(pyKw(parts, "dependencies"));
+      if (dec.length) guards.push(`route dependencies: ${dec.join(", ")}`);
+      if (r?.deps.length) guards.push(`${r.app ? "app" : "router"} dependencies: ${r.deps.join(", ")}`);
+      if (mount?.deps.length) guards.push(`include_router dependencies: ${mount.deps.join(", ")}`);
+      const model = pyKw(parts, "response_model")?.match(/(\w+)\]*\s*$/)?.[1];
+      if (model && model !== "None") entry.responseModel = model;
+    } else {
+      route = joinPath(mount?.prefix ?? r?.prefix ?? "", p);
+      const dec = [...pyDecorators(text, defLine).matchAll(FLASK_GUARD_RE)].map((x) => x[1]);
+      if (dec.length) guards.push(dec.join(", "));
+      const hook = hooks.get(m[2]) ?? appHook;
+      if (hook) guards.push(`before_request: ${hook}`);
+      if (FLASK_VIEW_CHECK.test(pyBlock(text, defLine))) guards.push("check in the view");
+    }
+    out.push({ kind: `${kind}-route`, name: methods, route, file: path, line: lineAt(m.index), guard: guards.join("; "), pyHandler: { file: path, line: defLine, name: d[1] }, ...entry });
+  }
+  return out;
+}
+
+function pyEntryPoints(f, files) {
+  return [...scanDjangoUrls(files).filter((e) => e.file === f.path), ...scanPyRoutes(f, files)];
+}
+
+// Models that belong to a user: Django models with a ForeignKey/OneToOneField to the user model, SQLAlchemy
+// models with an owner-like `*_id` column (not the account table itself). The Python half of the scope scan.
+const ownerCache = new WeakMap();
+export function pyOwnerModels(files) {
+  if (ownerCache.has(files)) return ownerCache.get(files);
+  const out = new Set();
+  for (const f of files) {
+    if (!PY_RE.test(f.path) || NON_RUNTIME.test(f.path)) continue;
+    const lineAt = lineIndex(f.text);
+    for (const m of f.text.matchAll(/^class\s+(\w+)\s*\(([^)]*)\)\s*:/gm)) {
+      const body = pyBlock(f.text, lineAt(m.index));
+      if (/\bModel\b/.test(m[2]) && /\b(?:ForeignKey|OneToOneField)\(\s*(?:settings\.AUTH_USER_MODEL|get_user_model\(\)|["'](?:auth\.)?User["']|User\b)/.test(body)) out.add(m[1]);
+      else if (/__tablename__/.test(body) && !/^(?:User|Account|Member|Staff|Person|Profile)s?$/.test(m[1]) && /^[ \t]+(?:user|owner|patient|customer|tenant|org|organization|account|team)_id\b\s*[:=]/m.test(body)) out.add(m[1]);
+    }
+  }
+  ownerCache.set(files, out);
+  return out;
+}
+
+// Field names of a pydantic (or any) class, its bases defined in the project included.
+function pyModelFields(files, name, depth = 0) {
+  if (depth > 3) return [];
+  const re = new RegExp(`^class\\s+${name}\\s*\\(([^)]*)\\)\\s*:`, "m");
+  for (const f of files) {
+    if (!PY_RE.test(f.path)) continue;
+    const m = f.text.match(re);
+    if (!m) continue;
+    const body = pyBlock(f.text, f.text.slice(0, m.index).split("\n").length);
+    const own = [...body.matchAll(/^[ \t]+(\w+)\s*:/gm)].map((x) => x[1]).filter((n) => n !== "model_config");
+    const inherited = m[1].split(",").map((b) => b.trim()).filter((b) => /^\w+$/.test(b) && b !== "BaseModel").flatMap((b) => pyModelFields(files, b, depth + 1));
+    return [...new Set([...inherited, ...own])];
+  }
+  return [];
+}
+
 // ---------------------------------------------------------------- Drizzle scope scan
 
 // Access-scope columns are checked on every verb. Authorship columns only on update/delete: editing
@@ -448,7 +818,7 @@ function phpCallees(files, body) {
 const OWNER_RE = /^(?:user|owner|org|organization|workspace|tenant|team|account)(?:_?id)?$/i;
 const AUTHOR_RE = /^(?:(?:author|creator)(?:_?id)?|(?:created|uploaded|owned)_?by)$/i;
 const TABLE_RE = /(?:export\s+)?const\s+(\w+)\s*=\s*(\w*[Tt]able)\s*\(\s*["'`]([\w.-]+)["'`]\s*,\s*(?:\(\s*\w*\s*\)\s*=>\s*\(\s*)?\{/g;
-const NON_RUNTIME = /(^|\/)(__tests__|tests?|e2e|migrations?|drizzle|seeds?|fixtures)\/|\.(test|spec)\.[cm]?[jt]sx?$|(^|\/)seed[^/]*$/;
+const NON_RUNTIME = /(^|\/)(__tests__|tests?|e2e|migrations?|drizzle|seeds?|fixtures)\/|\.(test|spec)\.[cm]?[jt]sx?$|(^|\/)seed[^/]*$|(^|\/)(?:test_[^/]*|[^/]*_test|conftest)\.py$/;
 
 // `schemaSource` lets a monorepo package audit read table definitions from the workspace root.
 export function scanScope(files, schemaSource = files) {
@@ -560,7 +930,7 @@ export const AREAS = {
   ai: /(chat|assistant|\bai\b|llm|agent|completion|prompt|\btools?\b|\bmcp\b)/i,
 };
 const AREA_WEIGHT = { auth: 3, admin: 3, webhooks: 3, payments: 2, files: 2, ai: 2, jobs: 1, api: 0 };
-const KIND_WEIGHT = { "server-action": [2, "callable directly as a POST"], webhook: [2, "public by design"], "ai-tool": [2, "arguments chosen by the model"], job: [1, "trusts its payload"], cron: [1, ""], "route-handler": [1, ""], "api-route": [1, ""], "http-route": [1, ""], "http-path": [1, ""], "http-prefix": [1, ""], trpc: [1, ""], "edge-function": [2, "public HTTPS endpoint"], "cloud-function": [2, "callable by any client of the project"], "laravel-route": [1, ""], "symfony-route": [1, ""], "drupal-route": [1, ""] };
+const KIND_WEIGHT = { "server-action": [2, "callable directly as a POST"], webhook: [2, "public by design"], "ai-tool": [2, "arguments chosen by the model"], job: [1, "trusts its payload"], cron: [1, ""], "route-handler": [1, ""], "api-route": [1, ""], "http-route": [1, ""], "http-path": [1, ""], "http-prefix": [1, ""], trpc: [1, ""], "edge-function": [2, "public HTTPS endpoint"], "cloud-function": [2, "callable by any client of the project"], "laravel-route": [1, ""], "symfony-route": [1, ""], "drupal-route": [1, ""], "django-route": [1, ""], "fastapi-route": [1, ""], "flask-route": [1, ""] };
 const SINKS = [
   [/\b(?:fetch|axios(?:\.\w+)?|got|ky)\(\s*(?!["'`](?:https?:\/\/[\w.-]+[\/"'`?:]|\/))[^)\s]/, 3, "outbound request to a non-constant URL (SSRF)"],
   [/\{[^}]*\b(?:userId|user_id|ownerId|owner_id|orgId|org_id|tenantId|tenant_id)\b[^}]*\}\s*=\s*(?:await\s+)?(?:req|request|c\.req)\.json\(\)/, 3, "tenant/user id taken from the request body"],
@@ -582,10 +952,56 @@ const SINKS = [
   [/['"]#markup['"]\s*=>\s*(?!\$this->t\(|t\(|new\s+TranslatableMarkup)[^,\]\n]*\$/, 2, "#markup built from a variable"],
   [/\bunserialize\(/, 3, "unserialize() of data"],
   [/\b(?:shell_exec|passthru|proc_open|popen)\s*\(/, 3, "shell/process execution"],
+  // Python (roadmap R06)
+  [/\.(?:raw|extra|execute|executemany)\(\s*f["']|\btext\(\s*f["']|\.(?:raw|execute)\(\s*["'][^"'\n]*["']\s*(?:%|\.format\(|\+)|\btext\(\s*["'][^"'\n]*["']\s*(?:%|\.format\(|\+)/, 3, "raw SQL built with an f-string, % or format (Django raw/extra, cursor.execute, SQLAlchemy text)"],
+  [/\brender_template_string\(\s*(?!["'][^"'\n]*["']\s*[,)])/, 3, "render_template_string on a built string (server-side template injection)"],
+  [/\bsend_file\(\s*(?!["'])[^)\n]*(?:request\.|os\.path\.join|\bname\b|\bpath\b)/, 3, "send_file with a path from the request"],
+  [/\bpickle\.loads?\(|\byaml\.load\((?![^)]*SafeLoader)|\byaml\.unsafe_load\(|\bmarshal\.loads?\(|\bjsonpickle\.decode\(/, 3, "unsafe deserialization (pickle, yaml.load without SafeLoader)"],
+  [/\bmark_safe\(\s*(?!["'][^"'\n]*["']\s*\))|\bMarkup\(\s*(?!["'][^"'\n]*["']\s*\))/, 2, "mark_safe/Markup on dynamic content"],
+  [/os\.path\.join\((?![^)\n]*(?:secure_filename|get_valid_filename|basename))[^)\n]*(?:\.(?:name|filename)\b|request\.(?:POST|GET|FILES|form|args|files|user)|\b(?:name|filename)\s*\))/, 2, "file path built from the request or the client's file name"],
+  [/\badd_task\(\s*\w+\s*,[^)\n]*\b\w*(?:url|callback|webhook)\w*/i, 3, "background task gets a URL from the request (SSRF)"],
+  [/\b(?:requests|httpx)\.(?:get|post|put|patch|delete|head|request|stream)\(\s*(?!["']https?:\/\/)(?:\w+\.)*\w*(?:url|uri|callback|webhook|target|endpoint)\w*/i, 3, "outbound request to a URL from the request (SSRF)"],
+  [/\*\*request\.(?:data|POST|GET|json|form|args)\b|\*\*request\.get_json\(\)/, 3, "request data unpacked into a model (mass assignment)"],
+  [/\bsubprocess\.\w+\([^)\n]*shell\s*=\s*True|\bos\.(?:system|popen)\(/, 3, "shell/process execution"],
 ];
 // A record loaded by id, and nothing in the handler that ties it to the caller.
 const PHP_ID_LOAD = /::(?:find|findOrFail)\(\s*\$|->(?:find|findOrFail)\(\s*\$|\bWHERE\s+id\s*=\s*:id\b/i;
 const PHP_OWNER = /authorize\(|Gate::|->user\(\)|currentUser\(\)|abort_unless|abort_if|denyAccessUnlessGranted|isGranted\(|->can\(|\b(?:uid|user_id|owner_id|customer_id)\s*(?:=|=>)|condition\(\s*['"](?:uid|user_id|owner_id)['"]|getUser\(\)|->(?:where|andWhere)\(\s*['"][\w.]*(?:user|owner|customer|tenant)/i;
+// Python routes (roadmap R06): a record loaded by id, or a query on a model that has an owner, with nothing
+// in the view that ties it to the caller.
+const PY_ID_LOAD = /get_object_or_404\((?:[^()]|\([^()]*\))*\b(?:pk|id)\s*=|\.objects(?:\.\w+\((?:[^()]|\([^()]*\))*\))*\.get\(\s*(?:pk|id)\s*=|\bget_or_404\(|\.query\.get\(|\b(?:db|session|self\.db|db\.session)\.get\(\s*[A-Z]\w*\s*,|\.where\(\s*[A-Z]\w*\.id\s*==|\.filter(?:_by)?\(\s*(?:[A-Z]\w*\.)?id\s*==?/;
+const PY_OWNER = /\brequest\.user\b|\bcurrent_user\b|\buser\.(?:id|pk|\w+_id)\b|\b(?:owner|patient|user|author|customer|account|tenant)(?:_id)?\s*=\s*(?:self\.)?(?:request\.user|user\b|current_user)|\.(?:user|owner|patient|customer|tenant|account|author)_id\s*==|\bhas_perm\(|has_object_permission|check_object_permissions/;
+const PY_MODEL_USE = /\b([A-Z]\w*)\.objects\b|get_object_or_404\(\s*([A-Z]\w*)\b|\bselect\(\s*([A-Z]\w*)\b|\.get(?:_or_404)?\(\s*([A-Z]\w*)\s*,|\.query\(\s*([A-Z]\w*)\b|\b([A-Z]\w*)\.query\./g;
+const SENSITIVE_FIELD = /password|passwd|secret|token|hash|totp|otp|api_?key|private|ssn/i;
+const PUBLIC_PAGE = /\b(?:log-?in|log-?out|sign-?in|sign-?up|register|password[-_]reset|forgot)\b/i;
+const PY_NO_AUTH = {
+  "django-route": "no login_required, auth mixin or permission class on the view",
+  "fastapi-route": "no auth dependency on the route, its router or its include_router",
+  "flask-route": "no login_required (or similar) decorator and no before_request check",
+};
+
+// [points, reason] pairs for one Python route; 0 points means a note without weight.
+function pyRouteSignals(e, body, files) {
+  const out = [];
+  const signed = SIGNATURE.test(body) || /\bhmac\.(?:new|compare_digest)\(/.test(body);
+  if (!e.guard || e.allowAny) {
+    if (e.allowAny && e.readOnly) out.push([0, "AllowAny on a read-only view (public by design?)"]);
+    else if (signed) out.push([0, "no auth check on the route; signature check seen in the handler"]);
+    else if (PUBLIC_PAGE.test(`${e.route} ${e.pyHandler?.name ?? ""}`)) out.push([0, "sign-in page: public by design"]);
+    else out.push([3, e.allowAny ? "AllowAny on a view that writes" : PY_NO_AUTH[e.kind]]);
+  }
+  if (e.csrfExempt && !signed) out.push([2, "csrf_exempt on a view without a signature check"]);
+  const owners = pyOwnerModels(files);
+  const used = [...new Set([...body.matchAll(PY_MODEL_USE)].map((m) => m.slice(1).find(Boolean)).filter((n) => owners.has(n)))];
+  if (signed) { /* a verified webhook acts for the sender, not for a signed-in user */ }
+  else if (PY_ID_LOAD.test(body) && !PY_OWNER.test(body)) out.push([3, "record loaded by id without an ownership check"]);
+  else if (used.length && !PY_OWNER.test(body)) out.push([3, `query on ${used.join(", ")} (owned by a user) without a filter on the current user`]);
+  if (e.responseModel) {
+    const leaked = pyModelFields(files, e.responseModel).filter((n) => SENSITIVE_FIELD.test(n));
+    if (leaked.length) out.push([3, `response_model ${e.responseModel} returns ${leaked.join(", ")}`]);
+  }
+  return out;
+}
 const STATE_CHANGE_PATH = /\/(?:delete|remove|close|cancel|approve|reject|publish|unpublish|toggle|reopen|enable|disable|block|unblock|confirm|archive)\b/;
 const DISPATCH = /\b(?:handle|toNextJsHandler|fetchRequestHandler|createRouteHandler|createNextRouteHandler)\(/;
 const SIGNATURE = /constructEvent|\.verify\(|svix|signature|timingSafeEqual|createHmac|verifyWebhook/i;
@@ -594,7 +1010,7 @@ const PUBLIC_BY_DESIGN = /PUBLISHABLE|POSTHOG|SENTRY|ANALYTICS|_GA_|GTM|MAPBOX|A
 const PRIVILEGED_CLIENT = /SERVICE_ROLE_KEY|service_role|from\s+["'`]firebase-admin|require\(\s*["'`]firebase-admin/;
 
 export function areasOf(e) {
-  const hay = `${e.route} ${e.name} ${e.file}${e.phpHandler ? ` ${e.phpHandler.cls} ${e.phpHandler.method}` : ""}`;
+  const hay = `${e.route} ${e.name} ${e.file}${e.phpHandler ? ` ${e.phpHandler.cls} ${e.phpHandler.method}` : ""}${e.pyHandler ? ` ${e.pyHandler.name}` : ""}`;
   const areas = Object.keys(AREAS).filter((a) => AREAS[a].test(hay));
   if (e.kind === "ai-tool") areas.push("ai");
   if (e.kind === "job" || e.kind === "cron") areas.push("jobs");
@@ -655,6 +1071,9 @@ export function rankHotspots(files, entries, scope = { sites: [] }) {
     // PHP routes: rank the controller method the route points at.
     const php = e.phpHandler ? phpMethodBody(files, e.phpHandler) : null;
     if (php) body = php.body + phpCallees(files, php.body);
+    // Python routes: rank the view function or class the route resolves to.
+    const py = e.pyHandler ? pyBlockAt(files, e.pyHandler) : null;
+    if (py) body = py.body;
     let score = 0;
     const reasons = [];
     const add = (n, why) => { if (n) { score += n; if (why) reasons.push(why); } };
@@ -690,6 +1109,8 @@ export function rankHotspots(files, entries, scope = { sites: [] }) {
         if (!/_csrf_token/.test(e.guard) && !/POST|PUT|PATCH|DELETE/.test(e.methods ?? "") && STATE_CHANGE_PATH.test(e.route)) add(2, "changes state on GET without _csrf_token");
       }
       if (PHP_ID_LOAD.test(body) && !PHP_OWNER.test(body)) add(3, "record loaded by id without an ownership or policy check");
+    } else if (PY_KINDS.has(e.kind)) {
+      for (const [n, why] of pyRouteSignals(e, body, files)) if (n) add(n, why); else reasons.push(why);
     } else if (["server-action", "route-handler", "api-route"].includes(e.kind) && !e.guard) {
       add(3, "no auth check in the handler");
     } else if (["http-route", "http-path", "http-prefix"].includes(e.kind) && !e.guard) {
@@ -706,6 +1127,7 @@ export function rankHotspots(files, entries, scope = { sites: [] }) {
 
     if (job) reasons.push(`handler: ${job.file}:${job.line}`);
     if (php) reasons.push(`handler: ${php.file}:${php.line}`);
+    if (py && py.file !== e.file) reasons.push(`handler: ${py.file}:${py.line}`);
     out.push({ score, kind: e.kind, name: e.name, route: e.route, file: e.file, line: e.line, areas: uniq, reasons });
   }
 
@@ -745,6 +1167,7 @@ export function rankHotspots(files, entries, scope = { sites: [] }) {
     if (score) out.push({ score, kind: authCfg || reasons.some((r) => r.startsWith("CORS")) ? "config" : "code", name: basename(f.path), route: "", file: f.path, line: 1, areas: authCfg ? ["auth", "config"] : ["config"], reasons });
   }
   for (const r of scanPhpFiles(files)) out.push(r);
+  for (const r of scanPyFiles(files)) out.push(r);
   for (const p of scanPolicies(files)) {
     out.push({ score: p.score, kind: "policy", name: p.name, route: "", file: p.file, line: p.line, areas: ["auth", "config"], reasons: p.reasons });
   }
@@ -798,6 +1221,69 @@ export function scanPhpFiles(files) {
 export function phpTaintStatus(files) {
   if (!files.some((f) => PHP_RE.test(f.path) && !/\.blade\.php$/.test(f.path))) return null;
   return "NOT RUN: Psalm loads the project's autoloader and plugins, so the pre-pass does not run it. To add it, in a sandbox: `composer require --dev vimeo/psalm`, `vendor/bin/psalm --init`, `vendor/bin/psalm --taint-analysis --output-format=json`; TaintedSql, TaintedHtml, TaintedShell, TaintedInclude and TaintedSSRF results are candidates for the injection auditor";
+}
+
+// ---------------------------------------------------------------- Python file signals (roadmap R06)
+
+// Lines that decide escaping, sessions and CSRF for everything behind them: `|safe` and autoescape off
+// in templates, DEBUG on by default, ALLOWED_HOSTS ['*'], a literal SECRET_KEY / Flask secret_key (or a
+// literal fallback), Flask debug, csrf_exempt without a signature check, CORS that allows any origin with
+// credentials (Starlette CORSMiddleware, django-cors-headers, Flask-CORS). ponytail: regex per line.
+export function scanPyFiles(files) {
+  const rows = [];
+  const row = (f, line, kind, score, why) => rows.push({ score, kind, name: basename(f.path), route: "", file: f.path, line, areas: ["config"], reasons: [why] });
+  for (const f of files) {
+    if (NON_RUNTIME.test(f.path)) continue;
+    const lines = f.text.split("\n");
+    if (PY_TEMPLATE_RE.test(f.path)) {
+      lines.forEach((l, i) => {
+        if (/\|\s*safe\b/.test(l)) row(f, i + 1, "template", 3, "unescaped template output (|safe)");
+        if (/\{%-?\s*autoescape\s+(?:off|false)\b/i.test(l)) row(f, i + 1, "template", 3, "autoescape turned off");
+      });
+      continue;
+    }
+    if (!PY_RE.test(f.path)) continue;
+    const t = f.text;
+    const lineAt = lineIndex(t);
+    lines.forEach((l, i) => {
+      if (/^\s*DEBUG\s*=\s*True\b/.test(l) || /^\s*DEBUG\s*=.*\bget(?:env)?\(\s*["']\w+["']\s*,\s*["']?(?:1|True|true|yes|on)["']?\s*\)/.test(l)) row(f, i + 1, "config", 3, "DEBUG on by default");
+      if (/^\s*ALLOWED_HOSTS\s*=\s*\[\s*["']\*["']/.test(l)) row(f, i + 1, "config", 2, "ALLOWED_HOSTS = ['*']");
+      if (/^\s*SECRET_KEY\s*=\s*["'][^"']+["']/.test(l)) row(f, i + 1, "config", 3, "SECRET_KEY is a literal in the source");
+      else if (/^\s*SECRET_KEY\s*=\s*os\.(?:environ\.get|getenv)\(\s*["']\w+["']\s*,\s*["'][^"']+["']/.test(l)) row(f, i + 1, "config", 3, "SECRET_KEY falls back to a literal when the variable is missing");
+      if (/\.secret_key\s*=\s*["']|\.config\[\s*["'](?:SECRET_KEY|JWT_SECRET_KEY)["']\s*\]\s*=\s*["']/.test(l)) row(f, i + 1, "config", 3, "Flask secret key is a literal: anyone who reads it can sign sessions");
+      else if (/\.secret_key\s*=\s*os\.(?:environ\.get|getenv)\([^,)]+,\s*["']|\.config\[\s*["']SECRET_KEY["']\s*\]\s*=\s*os\.(?:environ\.get|getenv)\([^,)]+,\s*["']/.test(l)) row(f, i + 1, "config", 3, "Flask secret key falls back to a literal");
+      if (/\.run\([^)]*\bdebug\s*=\s*True/.test(l) || /\.config\[\s*["']DEBUG["']\s*\]\s*=\s*True\b/.test(l)) row(f, i + 1, "config", 3, "Flask debug mode on (the debugger runs code)");
+      if (/^\s*@csrf_exempt\b/.test(l)) {
+        const j = lines.findIndex((x, k) => k > i && /^\s*(?:async\s+)?(?:def|class)\s/.test(x));
+        const body = j < 0 ? "" : pyBlock(t, j + 1);
+        if (!(SIGNATURE.test(body) || /\bhmac\./.test(body))) row(f, i + 1, "config", 3, "csrf_exempt on a view without a signature check");
+      }
+    });
+    for (const m of t.matchAll(/\badd_middleware\(\s*CORSMiddleware\b/g)) {
+      const { parts } = pyArgs(t, t.indexOf("(", m.index));
+      const any = /["']\*["']/.test(pyKw(parts, "allow_origins") ?? "") || /^r?["']\.\*["']$/.test(pyKw(parts, "allow_origin_regex") ?? "");
+      if (any && pyKw(parts, "allow_credentials") === "True") {
+        const at = t.indexOf("allow_origin", m.index);
+        row(f, lineAt(at), "config", 6, "CORS allows any origin with credentials (Starlette then echoes the caller's origin)");
+      }
+    }
+    const allowAll = t.match(/^\s*CORS_(?:ALLOW_ALL_ORIGINS|ORIGIN_ALLOW_ALL)\s*=\s*True\b/m);
+    if (allowAll && /^\s*CORS_ALLOW_CREDENTIALS\s*=\s*True\b/m.test(t)) row(f, lineAt(allowAll.index + allowAll[0].search(/\S/)), "config", 6, "CORS allows any origin with credentials (django-cors-headers)");
+    for (const m of t.matchAll(/\bCORS\(\s*\w+\b/g)) {
+      const { parts } = pyArgs(t, t.indexOf("(", m.index));
+      if (pyKw(parts, "supports_credentials") === "True" && !/["'][^*"']+["']/.test(pyKw(parts, "origins") ?? pyKw(parts, "resources") ?? "")) row(f, lineAt(m.index), "config", 6, "Flask-CORS with credentials and no origin list");
+    }
+  }
+  return rows;
+}
+
+// bandit is a candidate source the pre-pass has no runner for yet (roadmap R07 adds tool runners). It only
+// parses the code (it never imports or runs it), so the user can run it safely. NOT RUN with how to run it
+// for a Python project; null when there is no Python. Dependency advisories for requirements.txt,
+// poetry.lock, uv.lock and Pipfile.lock come from osv-scanner, with pip-audit as the fallback in prepass.mjs.
+export function pythonToolStatus(files) {
+  if (!files.some((f) => PY_RE.test(f.path) && !NON_RUNTIME.test(f.path))) return null;
+  return "NOT RUN: the pre-pass has no bandit runner yet (roadmap R07). bandit only parses the code, it never imports or runs it, so it is safe to run: `pipx run bandit -r . -f json -o .security-audit/tools/bandit.json -x ./.venv,./node_modules,./tests`; B608 (SQL built from strings), B201 (Flask debug), B301/B506 (pickle, yaml.load), B602/B605 (shell), B105/B106 (hardcoded secrets), B310 (urlopen) and B703/B308 (mark_safe) results are candidates for the auditors";
 }
 
 // ---------------------------------------------------------------- policy scan (Supabase, Firebase)

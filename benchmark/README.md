@@ -13,7 +13,7 @@ from here you cannot tell whether "faster" cost recall.
 
 ## Run
 
-    node benchmark/setup.mjs                  # prints the run directory (--app supabase-notes or --app php-tickets)
+    node benchmark/setup.mjs                  # prints the run directory (--app supabase-notes, php-tickets or py-clinic)
     cd <run>/app && claude                    # fresh session, then: /security-audit
     node benchmark/score.mjs <run> --label "what changed"
     node benchmark/usage.mjs <session id>       # tokens and API-price cost, subagents included
@@ -91,6 +91,38 @@ HMAC-verified webhook outside auth and CSRF, an admin group with `can:admin`, `{
 validated avatar upload, a parameterised QueryBuilder, a voter-checked PDF download, a public status route,
 a placeholder query, a reopen route with `_csrf_token`, `#markup` through `t()` placeholders and
 `APP_DEBUG=true` only in `.env.example`.
+
+## Fourth app: py-clinic
+
+`benchmark/py-clinic/` is the benchmark of the Python profile (roadmap R06): a Django patient portal
+(`clinic/` settings and urls, `appointments/` with views, templates and a DRF API, `records/`, a payment
+webhook in `payments/`) with a FastAPI lab service in `labs/` (routers, SQLAlchemy models, pydantic schemas,
+cookie auth) and a Flask back office in `backoffice/` (blueprint, Flask-Login, Jinja templates). Plain
+Python files laid out like the real frameworks: no virtualenv, nothing to install, nothing to run; the
+`requirements.txt` files are pinned. 18 seeded bugs and 18 decoys; the key is
+`benchmark/py-clinic/answer-key.json`.
+
+    node benchmark/setup.mjs --app py-clinic        # one commit, meta.json records bench_app
+    cd <run>/app && claude                          # fresh session, then: /security-audit
+    node benchmark/score.mjs <run> --label "what changed"
+
+The scorer parses `.py`, `.html`, `.txt`, `.cfg` and `.ini` locations. bandit is NOT RUN by the pre-pass
+until R07; osv-scanner reads the three `requirements.txt` files, and an advisory it reports for a pinned
+version is not in the key (it shows up as an unmatched finding, not as a decoy false positive).
+Seeded classes: Django `get_object_or_404(pk=)` without a patient filter, `.raw()` with an f-string, a DRF
+viewset whose queryset is every patient's prescriptions, a patient CSV export without `login_required`,
+`|safe` on message bodies, `csrf_exempt` on a session view that changes the account e-mail, a literal
+`SECRET_KEY` fallback, an upload path from a form field, `yaml.load` with `yaml.Loader`; FastAPI a PDF route
+without the auth dependency that loads any result by id, `text()` with an f-string, a `BackgroundTasks`
+callback to a caller-chosen URL whose reply is stored and returned, a `response_model` with password hashes
+and TOTP secrets, CORS `*` with credentials; Flask `render_template_string` on the letter body, `send_file`
+with a joined query parameter, a role change route without `login_required`, a literal `secret_key`.
+Decoys: owner-filtered lists and gets, a parameterised `.raw()`, a scoped `get_queryset`, `AllowAny` on the
+read-only doctors directory, `format_html`, a signed webhook with `csrf_exempt`, DEBUG and hosts from the
+environment (`DJANGO_DEBUG=1`/`FLASK_DEBUG=1` only in `.env.example`), an owner-checked download, a scoped
+result route, a bound `text()`, router-level `Depends(require_staff)` with a public schema on `/staff/me`, a
+health check, `render_template` with a variable, `send_from_directory` with `secure_filename`,
+`yaml.safe_load` and the public sign-in view.
 
 ## Rules
 

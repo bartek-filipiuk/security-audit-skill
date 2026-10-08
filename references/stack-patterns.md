@@ -303,3 +303,43 @@ Routes live in `routes/web.php` and `routes/api.php` (`/api` prefix); the pre-pa
 | Rendering | `Markup::create\(`, `'#children'`, `'#markup' => .*\$` without `\$this->t\(`/`#plain_text`, `\|raw` in Twig |
 | Permissions | `*.permissions.yml` without `restrict access` on sensitive permissions; `user_role_grant_permissions\(` in install hooks |
 | Tools | `composer audit --locked` or osv-scanner on `composer.lock`; Psalm `--taint-analysis` (TaintedSql, TaintedHtml) as candidates, run by the user in a sandbox |
+
+## Django
+
+Routes live in every `urls.py` reached through `include()` from `ROOT_URLCONF`, plus DRF routers; the pre-pass lists each with its view and guards, so rank by what the view does. Read the model's fields before judging a query: a model with a `ForeignKey` to the user model belongs to someone.
+
+| Area | Patterns to search |
+|------|-------------------|
+| Routes | `path\(`, `re_path\(`, `router\.register\(` whose view has no `@login_required`, `LoginRequiredMixin`, `permission_classes`; `login_not_required`; `REST_FRAMEWORK` without `DEFAULT_PERMISSION_CLASSES` |
+| DRF | `permission_classes = \[.*AllowAny`, `queryset = \w+\.objects\.all\(\)` without `def get_queryset`, `fields = "__all__"` |
+| Object access | `get_object_or_404\(\w+, pk=`, `\.objects\.get\(pk=`, `\.objects\.get\(id=` without `request\.user` / `owner=` / `user=` |
+| Raw SQL | `\.raw\(f"`, `\.extra\(`, `RawSQL\(`, `cursor\.execute\(f"`, `execute\(".*" %`, `\.format\(` inside SQL |
+| Templates | `\|safe`, `{% autoescape off %}`, `mark_safe\(` on variables, `format_html\(` with a pre-built string |
+| CSRF | `@csrf_exempt` on views that are not signed webhooks; `CsrfViewMiddleware` missing from `MIDDLEWARE` |
+| Settings | `DEBUG = True`, `DEBUG = .*get\(.*"1"\)`, `ALLOWED_HOSTS = \["\*"\]`, `SECRET_KEY = "`, `SECRET_KEY = os\.environ\.get\(".*", "` |
+| Files | `os\.path\.join\(.*request\.(POST\|FILES)`, `os\.path\.join\(.*\.name\)`, `open\(.*request` |
+| Deserialization | `pickle\.loads\(`, `yaml\.load\(` without `SafeLoader`, `yaml\.Loader`, `jsonpickle` |
+
+## FastAPI
+
+| Area | Patterns to search |
+|------|-------------------|
+| Routes | `@(app\|router)\.(get\|post\|put\|patch\|delete)\(` whose function has no `Depends\(get_current_user` / `Security\(`; `APIRouter\(` and `include_router\(` without `dependencies=` |
+| Object access | `db\.get\(\w+, \w+_id\)`, `select\(\w+\)\.where\(\w+\.id ==` without the owner column; `session\.query\(\w+\)\.get\(` |
+| Response models | `response_model=` pointing at schemas with `password`, `hash`, `token`, `secret`, `totp`; routes returning ORM rows without `response_model` |
+| SQL | `text\(f"`, `text\(".*" %`, `execute\(f"`, `\.format\(` in SQL |
+| SSRF | `add_task\(.*url`, `httpx\.(get\|post)\(.*url`, `requests\.(get\|post)\(.*url`, `HttpUrl` fields used as request targets |
+| CORS | `allow_origins=\["\*"\]` with `allow_credentials=True`; `allow_origin_regex=".\*"` |
+| Cookies | `set_cookie\(` without `httponly=True`, `secure=True`, `samesite=` |
+
+## Flask
+
+| Area | Patterns to search |
+|------|-------------------|
+| Routes | `@(app\|bp\|\w+)\.route\(`, `@\w+\.(get\|post)\(` without `@login_required` / `@\w+_required` below it and no `before_request` check on the blueprint |
+| Object access | `\.query\.get\(`, `get_or_404\(`, `filter_by\(id=` without `current_user` |
+| SSTI | `render_template_string\(` with an f-string, `+`, `%` or `.format\(`; `Template\(.*request`, `from_string\(` |
+| Files | `send_file\(.*request`, `send_file\(os\.path\.join\(`, `\.save\(os\.path\.join\(.*\.filename\)` without `secure_filename` |
+| Sessions | `secret_key = "`, `config\["SECRET_KEY"\] = "`, `SECRET_KEY.*getenv\(.*, "` |
+| Debug | `app\.run\(.*debug=True`, `config\["DEBUG"\] = True`, `FLASK_DEBUG=1` in production config |
+| Tools | `bandit -r . -f json` (B201 debug, B301 pickle, B506 yaml.load, B608 SQL strings, B105 secrets) and `pip-audit -r requirements.txt --no-deps --disable-pip` as candidates |

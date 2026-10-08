@@ -28,6 +28,11 @@ Rules that apply to every item:
   `benchmark/php-tickets` app (13 seeded bugs, 14 decoys) are in; it moves to Done with its first scored run.
 - **R06 Python profile: Django, FastAPI, Flask.** Unscoped ORM queries, `bandit`, `pip-audit`.
   Done when: its benchmark app scores.
+  Status (2026-10-08): checklist sections, stack patterns, Django (urls.py include chain, DRF routers and
+  permission defaults), FastAPI (Depends on route, router, app and mount) and Flask (blueprints,
+  `*_required`, `before_request`) entry points ranked by their view, a user-owned model scan, Python
+  template/settings/CORS signals, bandit reported NOT RUN, `pip-audit` as a read-only dependency fallback,
+  and the `benchmark/py-clinic` app (18 seeded bugs, 18 decoys) are in; it moves to Done with its first scored run.
 - **R07 Deterministic tools in the pre-pass.** semgrep rulesets per stack, `zizmor` for GitHub Actions,
   `hadolint` and `trivy` for Dockerfiles and images. Done when: each tool runs natively or via docker,
   reports NOT RUN honestly, and its hits appear as candidates in `prepass.md`.
