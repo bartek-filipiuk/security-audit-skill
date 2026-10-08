@@ -32,7 +32,15 @@ In your project, in Claude Code:
 /security-audit --verify-fixes      # recompute what is fixed, change nothing
 /security-audit --since last        # re-audit only what changed since the last audit
 /security-audit --since <commit>    # ... or since a commit; the rest of the report is carried over
+/security-audit --stack laravel     # force a profile instead of the detected one (js, php, python, go, ...)
 ```
+
+The pre-pass detects the stack from the manifests (package.json, composer.json, pyproject.toml or
+requirements.txt, go.mod, Cargo.toml, Gemfile, pom.xml, ...) and the report names the applied profile, what it
+covers and what it does not. Only JavaScript/TypeScript (Node) has a dedicated profile today; PHP, Python and
+the rest run on the general checklist, and the report says so. In a monorepo every detected stack gets its own
+profile line, with the directories it was found in. `--stack` applies one profile instead and warns when it
+does not match the code.
 
 `--since` audits the entry points whose code changed (directly or through an imported file) and copies the
 previous run's findings and verified-safe items that cite no changed file, each marked with the commit it was
@@ -121,6 +129,7 @@ references/
 scripts/
   prepass.mjs                     # Phase 0: deterministic pre-pass (node, no deps; docker for scanners)
   surface.mjs                     # Entry point enumeration + Drizzle scope scan
+  stack.mjs                       # Stack detection from manifests, profiles, --stack
   incremental.mjs                 # --since: changed files -> re-audit targets, carried findings
   audit-state.mjs                 # Validates findings, generates remediation.json
   report-html.mjs                 # Renders report.html: to fix / verified safe / not assessed

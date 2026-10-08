@@ -9,6 +9,7 @@ import { existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadAudit, section, titleOf } from "./audit-state.mjs";
+import { profileHeadline } from "./stack.mjs";
 
 const ORDER = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
 const FIELDS = ["Evidence", "TRACE", "Impact", "Regression Test", "Chained With", "Recommendation", "Test Coverage"];
@@ -26,6 +27,15 @@ export function renderReportMd(dir) {
   const inc = existsSync(join(dir, "tools", "incremental.json")) ? JSON.parse(read("tools/incremental.json")) : null;
   const carriedNote = (fm) => (fm.carried_from ? ` · **Carried over** from the audit of commit ${String(fm.carried_from).slice(0, 12)} (run ${fm.carried_run})` : "");
   const L = [summary, ""];
+  const stack = existsSync(join(dir, "tools", "summary.json")) ? JSON.parse(read("tools/summary.json")).stack : null;
+  if (stack?.profiles?.length) {
+    L.push("## Stack and Profile", "", `Detected: ${stack.detected.length ? stack.detected.join("; ") : "no known manifest"}.${stack.forced ? ` Profile forced with --stack.` : ""}`);
+    if (stack.warning) L.push("", `**Warning:** ${stack.warning}`);
+    for (const p of stack.profiles) {
+      L.push("", `**Profile: ${profileHeadline(p)}.**`, "", `- Covers: ${p.covers.join("; ")}.`, `- Does not cover: ${p.gaps.join("; ")}.`);
+    }
+    L.push("");
+  }
   if (inc?.mode === "incremental") {
     const cf = findings.filter((f) => f.data?.carried_from).length;
     const cn = nonIssues.filter((n) => n.data?.carried_from).length;

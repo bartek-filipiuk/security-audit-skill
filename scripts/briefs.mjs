@@ -9,6 +9,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { PROFILES } from "./stack.mjs";
 
 const REF = join(dirname(fileURLToPath(import.meta.url)), "..", "references");
 export const DEFAULT_BRIEFS = {
@@ -64,7 +65,17 @@ export function patternsFor(langs) {
   return out.join("\n\n");
 }
 
-export function writeBriefs(dir, briefs = DEFAULT_BRIEFS, langs = detectLanguages(resolve(dir, ".."))) {
+// A profile forced with --stack adds its language's patterns even when no tracked file has that extension.
+export function forcedLanguage(dir) {
+  try {
+    const s = JSON.parse(readFileSync(join(dir, "tools", "summary.json"), "utf8")).stack;
+    return s?.forced ? (PROFILES[s.forced]?.lang ?? null) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeBriefs(dir, briefs = DEFAULT_BRIEFS, langs = [...new Set([...detectLanguages(resolve(dir, "..")), forcedLanguage(dir)].filter(Boolean))]) {
   mkdirSync(join(dir, "briefs"), { recursive: true });
   const patterns = patternsFor(langs);
   const written = {};
