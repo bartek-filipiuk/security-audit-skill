@@ -54,6 +54,10 @@ audit and says why.
 From the second audit on, the report has a "Since last audit" section: findings that are new, fixed, regressed or
 unchanged against the previous run (kept in `.security-audit/history/`), computed by a script, no tokens.
 
+After Not Assessed the report has a "Production checklist": deployment checks a code audit cannot settle (headers,
+TLS, limits, env vars, secrets, backups, logging, updates), each with how to verify it on your own host. Items that
+match a Not Assessed row are marked "from this audit"; the rest are a baseline.
+
 Install the project's dependencies first, so the regression tests the audit writes can run. The report is
 `.security-audit/report.html`; the directory is gitignored because it names unfixed weaknesses.
 
@@ -162,6 +166,7 @@ scripts/
   coverage.mjs                    # Validates the coverage ledger, renders the Coverage and Not Assessed sections
   export.mjs                      # remediation.json → SARIF 2.1.0, Linear CSV, Jira CSV
   diff.mjs                        # "Since last audit": new / fixed / regressed findings against history/
+  prod-checklist.mjs              # "Production checklist": deployment checks from the Not Assessed rows
   selftest.test.mjs               # node --test scripts/
 benchmark/
   app/                            # Ledgerly: seeded-bug app in the target stack
