@@ -51,6 +51,9 @@ previous run's findings and verified-safe items that cite no changed file, each 
 read at. Without a usable previous full audit, or when a file that gates every route changed, it runs a full
 audit and says why.
 
+From the second audit on, the report has a "Since last audit" section: findings that are new, fixed, regressed or
+unchanged against the previous run (kept in `.security-audit/history/`), computed by a script, no tokens.
+
 Install the project's dependencies first, so the regression tests the audit writes can run. The report is
 `.security-audit/report.html`; the directory is gitignored because it names unfixed weaknesses.
 
@@ -158,6 +161,7 @@ scripts/
   workspace-check.mjs             # What changed in the project while the audit ran
   coverage.mjs                    # Validates the coverage ledger, renders the Coverage and Not Assessed sections
   export.mjs                      # remediation.json → SARIF 2.1.0, Linear CSV, Jira CSV
+  diff.mjs                        # "Since last audit": new / fixed / regressed findings against history/
   selftest.test.mjs               # node --test scripts/
 benchmark/
   app/                            # Ledgerly: seeded-bug app in the target stack

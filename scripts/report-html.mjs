@@ -13,6 +13,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadAudit, section, titleOf } from "./audit-state.mjs";
 import { notAssessedRows } from "./coverage.mjs";
+import { diffAudit, diffIntro } from "./diff.mjs";
 import { profileHeadline } from "./stack.mjs";
 
 const SEVERITY = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
@@ -98,6 +99,7 @@ function load(dir) {
     date: (existsSync(reportPath) ? statSync(reportPath).mtime : new Date()).toISOString().slice(0, 10),
     scope: summary?.scope ?? null,
     incremental: json("tools/incremental.json"),
+    diff: diffAudit(dir),
     items, safe, notAssessed, hotspots, summary,
   };
 }
@@ -161,7 +163,9 @@ function render(d) {
   const safeByCat = Object.entries(d.safe.reduce((m, n) => ((m[n.category] ??= []).push(n), m), {}))
     .sort((a, b) => b[1].length - a[1].length);
   const nav = [
-    ["fix", "To fix", toFix.length], ["safe", "Verified safe", d.safe.length], ["gaps", "Not assessed", d.notAssessed ? gaps.length : "–"],
+    ["fix", "To fix", toFix.length],
+    ...(d.diff ? [["since", "Since last audit", d.diff.new.length + d.diff.regressed.length]] : []),
+    ["safe", "Verified safe", d.safe.length], ["gaps", "Not assessed", d.notAssessed ? gaps.length : "–"],
     ...(d.hotspots.length ? [["hotspots", "Hotspots", Math.min(20, d.hotspots.filter((h) => h.inScope !== false).length)]] : []),
     ...(d.summary ? [["deps", "Dependencies", d.summary.deps.rows.length], ["secrets", "Secrets", d.summary.secrets.rows.length]] : []),
     ["filtered", "Filtered out", rejected.length],
@@ -260,6 +264,9 @@ h3 { font: 600 0.8rem/1 var(--text); letter-spacing: 0.08em; text-transform: upp
 .body h4 { font: 600 0.78rem/1 var(--text); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); margin: 20px 0 6px; }
 .body p, .body li { margin: 0.3em 0; }
 .body .meta { color: var(--ink-2); font-size: 0.85rem; margin-top: 18px; }
+.diff { list-style: none; padding: 0; margin: 0; }
+.diff li { padding: 10px 0; border-top: 1px solid var(--rule); }
+.diff .why { color: var(--ink-2); font-size: 0.9rem; display: block; }
 .good, .gap { list-style: none; padding: 0; margin: 0; }
 .good li, .gap li { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 0 12px; padding: 12px 0; border-top: 1px solid var(--rule); }
 .good svg { color: var(--safe); margin-top: 3px; } .gap svg { color: var(--gap); margin-top: 3px; }
@@ -311,6 +318,7 @@ ${bySev.map(([s, list]) => `<h3>${esc(s.toLowerCase())} · ${list.length}</h3>${
 ${fixed.length ? `<h3>Fixed · ${fixed.length}</h3><ul class="good">${fixed.map((f) => `<li>${ICON.check}<div><strong>${inline(f.title)}</strong><span class="why">${esc(f.severity.toLowerCase())} · fix in ${esc(f.fixEvidence.join(", ") || "code (no evidence recorded)")}</span></div></li>`).join("")}</ul>` : ""}
 ${accepted.length ? `<h3>Accepted risk · ${accepted.length}</h3><ul class="gap">${accepted.map((f) => `<li>${ICON.dash}<div><strong>${inline(f.title)}</strong><span class="why">${esc(f.severity.toLowerCase())}</span></div></li>`).join("")}</ul>` : ""}
 
+${d.diff ? renderDiff(d.diff) : ""}
 <h2 id="safe">Verified safe</h2>
 <p class="lede">Areas the audit examined and found protected, each with the control that protects it.</p>
 <div class="band-safe">${safeByCat.length ? safeByCat.map(([cat, list], i) => `<details class="cat"${i < 2 ? " open" : ""}><summary>${esc(CATEGORY[cat] ?? cat)} <span>${list.length}</span></summary><ul class="good">${list.map((n) => `<li>${ICON.check}<div>${inline(n.area)}<span class="why">${inline(n.why.split("\n")[0].slice(0, 320))}${n.loc ? ` · <code>${esc(n.loc)}</code>` : ""}</span></div></li>`).join("")}</ul></details>`).join("") : `<p class="empty">No verified-safe areas recorded.</p>`}</div>
@@ -341,6 +349,20 @@ ${rejected.length ? `<div class="tablewrap"><table><thead><tr><th>Finding</th><t
 </body>
 </html>
 `;
+}
+
+// "Since last audit" (R12): computed by diff.mjs from history/, no model work.
+function renderDiff(diff) {
+  const item = (f, note) => `<li><span class="sev-${esc(f.severity.toLowerCase())}"><span class="sev">${esc(f.severity.toLowerCase())}</span></span> <strong>${inline(f.title)}</strong><span class="why">${esc(f.id)}${f.where ? ` · <code>${esc(f.where)}</code>` : ""}${note ? ` · ${esc(note)}` : ""}</span></li>`;
+  const group = (label, list, note) => (list.length ? `<h3>${esc(label)} · ${list.length}</h3><ul class="diff">${list.map((f) => item(f, note(f))).join("")}</ul>` : "");
+  return `<h2 id="since">Since last audit</h2>
+<p class="lede">${esc(diffIntro(diff))}</p>
+${group("New", diff.new, (f) => (f.fixed ? "already fixed" : ""))}
+${group("Regressed", diff.regressed, (f) => `was ${f.was.id}, ${f.how}`)}
+${group("Fixed", diff.fixed, (f) => `${f.how}${f.now ? ` as ${f.now.id}` : ""}`)}
+${group("Severity changed", diff.severity_changed, (f) => `${f.from.toLowerCase()} → ${f.to.toLowerCase()}`)}
+${group("Not re-checked", diff.not_rechecked, () => "outside this audit's scope")}
+${diff.unchanged.length ? `<p class="empty">Unchanged: ${esc(diff.unchanged.map((f) => f.id).join(", "))}.</p>` : ""}`;
 }
 
 const ICON = {
