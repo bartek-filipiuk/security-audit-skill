@@ -1,4 +1,4 @@
-// Run: node --test scripts/
+// Run: node --test scripts/*.test.mjs
 // Exact benchmark scoring (roadmap R03): findings match the answer key by file and line only.
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
@@ -176,6 +176,40 @@ test("B23 range covers the request Body type through the generateText options", 
   assert.deepEqual(entriesOf(r, "rate-limit-004"), [], "three lines below is outside the window");
   const decoys = key.decoys.flatMap((d) => d.locations).filter((l) => l.file === "src/app/api/assistant/billing/route.ts");
   assert.deepEqual(decoys, [], "no decoy shares the widened B23 file");
+});
+
+test("R23 seed and decoy: anonymous paid SMS, org-capped SMS reminder", () => {
+  const r = run(
+    finding("rate-limit-001", { file: "src/app/api/phone/send-code/route.ts:10" }),
+    finding("rate-limit-002", { file: "src/app/api/phone/send-code/route.ts:21" }),
+    finding("rate-limit-003", { file: "src/app/api/phone/send-code/route.ts:16" }),
+    finding("rate-limit-004", { file: "src/app/(app)/invoices/[id]/sms-actions.ts:39" }),
+    finding("rate-limit-005", { file: "src/lib/sms.ts:7" }),
+  );
+  assert.deepEqual(entriesOf(r, "rate-limit-001"), ["B24"], "the unauthenticated handler");
+  assert.deepEqual(entriesOf(r, "rate-limit-002"), ["B24"], "the billed send");
+  assert.deepEqual(entriesOf(r, "rate-limit-003"), [], "the code insert in between is outside both windows");
+  assert.deepEqual(entriesOf(r, "rate-limit-004"), ["D14"], "the capped reminder stays a decoy");
+  assert.deepEqual(entriesOf(r, "rate-limit-005"), [], "the shared SMS client is not the bug");
+  assert.equal(r.decoy_fp, 1);
+});
+
+test("R23 key ranges point at the seeded statements", () => {
+  const at = (file, line) => readFileSync(join(app, file), "utf8").split("\n")[line - 1];
+  const loc = (id, i = 0) => [...key.seeded, ...key.decoys].find((e) => e.id === id).locations[i];
+  assert.match(at(loc("B24").file, loc("B24").lines[0]), /export async function POST\(request: Request\)/);
+  assert.match(at(loc("B24", 1).file, loc("B24", 1).lines[0]), /await sendSms\(\{ to: phone/);
+  const route = readFileSync(join(app, loc("B24").file), "utf8");
+  assert.doesNotMatch(route, /getSession|requireUser|requireOrg|rateLimit|captcha/i, "the seed stays unauthenticated and unthrottled");
+  assert.match(at(loc("D14").file, loc("D14").lines[0]), /export async function sendSmsReminder/);
+  assert.match(at(loc("D14").file, 13), /await requireOrg\(\)/);
+  assert.match(at(loc("D14").file, 18), /eq\(invoices\.orgId, orgId\)/);
+  assert.match(at(loc("D14").file, 24), /pg_advisory_xact_lock/);
+  assert.match(at(loc("D14").file, 29), /ORG_DAILY_SMS_LIMIT/);
+  assert.match(at(loc("D14").file, 33), /onConflictDoNothing/);
+  assert.match(at(loc("D14").file, loc("D14").lines[1]), /^}$/);
+  const gateway = readFileSync(join(app, ".env.example"), "utf8").match(/SMS_GATEWAY_URL=(\S+)/)[1];
+  assert.equal(new URL(gateway).hostname, "sms.example.com", "the SMS gateway is a reserved example host");
 });
 
 test("file_level: a finding citing the file with no line matches only entries that declare it", () => {

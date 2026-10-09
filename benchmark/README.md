@@ -2,8 +2,8 @@
 
 A small multi-tenant SaaS in the stack this skill is used on (Next.js 16 App Router, Better-Auth with
 organizations, Drizzle on Postgres, tRPC, a Hono public API, pg-boss, Stripe, Resend, R2 presigned
-uploads, AI SDK tools). It contains 23 seeded vulnerabilities and 13 decoys (secure code that looks
-suspicious); until R08 (2026-10-06) it had 16 and 8, R08 made it 20 and 11, and R21 23 and 13, so compare
+uploads, AI SDK tools). It contains 24 seeded vulnerabilities and 14 decoys (secure code that looks
+suspicious); until R08 (2026-10-06) it had 16 and 8, R08 made it 20 and 11, R21 23 and 13, and R23 24 and 14, so compare
 recall only between runs on the same key. It was written for this skill and was private until the project went open source on
 2026-10-03, so treat later results with care: it may reach model training data. The skill was also
 developed against it, so a high score shows these bug classes are covered, not how much the skill finds in
@@ -167,4 +167,9 @@ that voids any invoice by a model-chosen id with no tenant scope, role check or 
 that takes the model, output tokens and step count from the request body. Decoys added with them: a reminder
 email whose model-written text is HTML-escaped and whose recipient comes from the org-scoped database row, and
 an org-scoped tool that requires approval (`needsApproval`). The seeded LLM code calls no model unless the app
-runs with a key. Details: `answer-key.json`.
+runs with a key.
+Since R23: a sign-up route that sends a billed SMS code to any phone number with no session, rate limit,
+captcha or per-number cap (denial of wallet). Decoy added with it: an SMS reminder server action behind the
+org session, sent to the customer's phone from the org-scoped row, at most once per invoice per day and 50 per
+organization per day. The SMS client posts to the gateway in `SMS_GATEWAY_URL` (`sms.example.com` in
+`.env.example`), so nothing is sent unless someone configures a real one. Details: `answer-key.json`.

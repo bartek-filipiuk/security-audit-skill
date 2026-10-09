@@ -1,4 +1,4 @@
-// Run: node --test scripts/
+// Run: node --test scripts/*.test.mjs
 // Export (roadmap R11): remediation.json + finding files -> SARIF 2.1.0, Linear CSV, Jira CSV.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
