@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 import { loadAudit, section, titleOf } from "./audit-state.mjs";
 import { notAssessedRows } from "./coverage.mjs";
 import { diffAudit, diffIntro } from "./diff.mjs";
+import { INTRO as PROD_INTRO, NO_COVERAGE, productionChecklist, rowLabel, SHOW_ROWS } from "./prod-checklist.mjs";
 import { profileHeadline } from "./stack.mjs";
 
 const SEVERITY = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
@@ -71,7 +72,8 @@ function load(dir) {
   const hotspots = json("tools/hotspots.json") ?? [];
   // null = never recorded (audits older than the not-assessed rule), [] = recorded and empty.
   // Derived from the coverage ledger plus not-assessed.md and the pre-pass tool status (coverage.mjs).
-  const notAssessed = notAssessedRows(dir)?.map((g) => [g.class, [g.check, g.target].filter(Boolean).join(" · "), g.why]) ?? null;
+  const gapRows = notAssessedRows(dir);
+  const notAssessed = gapRows?.map((g) => [g.class, [g.check, g.target].filter(Boolean).join(" · "), g.why]) ?? null;
 
   const items = findings.filter((f) => f.data).map((f) => {
     const fm = f.data;
@@ -100,6 +102,7 @@ function load(dir) {
     scope: summary?.scope ?? null,
     incremental: json("tools/incremental.json"),
     diff: diffAudit(dir),
+    prod: productionChecklist(gapRows),
     items, safe, notAssessed, hotspots, summary,
   };
 }
@@ -166,6 +169,7 @@ function render(d) {
     ["fix", "To fix", toFix.length],
     ...(d.diff ? [["since", "Since last audit", d.diff.new.length + d.diff.regressed.length]] : []),
     ["safe", "Verified safe", d.safe.length], ["gaps", "Not assessed", d.notAssessed ? gaps.length : "–"],
+    ["prod", "Production checklist", d.prod.flagged],
     ...(d.hotspots.length ? [["hotspots", "Hotspots", Math.min(20, d.hotspots.filter((h) => h.inScope !== false).length)]] : []),
     ...(d.summary ? [["deps", "Dependencies", d.summary.deps.rows.length], ["secrets", "Secrets", d.summary.secrets.rows.length]] : []),
     ["filtered", "Filtered out", rejected.length],
@@ -272,6 +276,8 @@ h3 { font: 600 0.8rem/1 var(--text); letter-spacing: 0.08em; text-transform: upp
 .good svg { color: var(--safe); margin-top: 3px; } .gap svg { color: var(--gap); margin-top: 3px; }
 .good .why, .gap .why { color: var(--ink-2); font-size: 0.94rem; display: block; max-width: 72ch; }
 .good code { font-size: 0.8rem; }
+.prod .how { display: block; margin-top: 4px; font-size: 0.94rem; max-width: 72ch; }
+.prod .chip { vertical-align: 1px; }
 details.cat > summary { cursor: pointer; padding: 10px 0; font-weight: 600; list-style: none; display: flex; justify-content: space-between; border-top: 1px solid var(--rule); }
 details.cat > summary::-webkit-details-marker { display: none; }
 details.cat > summary span { color: var(--safe); font-weight: 500; }
@@ -327,6 +333,8 @@ ${d.diff ? renderDiff(d.diff) : ""}
 <p class="lede">Nobody checked these. They are unknown, not safe.</p>
 <div class="band-gap">${gaps.length ? `<ul class="gap">${gaps.map(([cat, check, why]) => `<li>${ICON.dash}<div><strong>${esc(check || cat)}</strong><span class="why">${esc(why ?? "")}${cat && check ? ` · ${esc(cat)}` : ""}</span></div></li>`).join("")}</ul>` : `<p class="empty">${d.notAssessed ? "No coverage gaps recorded." : "This audit predates coverage-gap tracking: unknown, not empty."}</p>`}</div>
 
+${renderProd(d.prod)}
+
 ${d.hotspots.length ? `<h2 id="hotspots">Hotspots</h2>
 <p class="lede">Where the audit started: entry points and configuration ranked by risk signals. A ranking, not a verdict.</p>
 <div class="tablewrap"><table><thead><tr><th>#</th><th>Score</th><th>Where</th><th>Why</th></tr></thead><tbody>${d.hotspots.filter((h) => h.inScope !== false).slice(0, 20).map((h, i) => `<tr><td>${i + 1}</td><td><span class="score" style="width:${Math.min(60, h.score * 4)}px"></span>${h.score}</td><td class="mono where">${esc(`${h.file}:${h.line}`)}<br>${esc(h.kind)} ${esc(h.name)}</td><td>${esc(h.reasons.join("; "))}</td></tr>`).join("")}</tbody></table></div>` : ""}
@@ -365,8 +373,19 @@ ${group("Not re-checked", diff.not_rechecked, () => "outside this audit's scope"
 ${diff.unchanged.length ? `<p class="empty">Unchanged: ${esc(diff.unchanged.map((f) => f.id).join(", "))}.</p>` : ""}`;
 }
 
+// "Production checklist" (R14): deployment checks built from the Not Assessed rows by prod-checklist.mjs.
+function renderProd(c) {
+  const item = (it) => `<li>${ICON.box}<div><strong>${esc(it.title)}</strong> <span class="chip ${it.flagged ? "chip-warn" : "chip-muted"}">${it.flagged ? "From this audit" : "Baseline"}</span>${it.rows.slice(0, SHOW_ROWS).map((r) => `<span class="why">Not assessed: ${esc(rowLabel(r))}</span>`).join("")}${it.rows.length > SHOW_ROWS ? `<span class="why">and ${it.rows.length - SHOW_ROWS} more under Not assessed</span>` : ""}<span class="how">How to check: ${inline(it.how)}</span></div></li>`;
+  return `<h2 id="prod">Production checklist</h2>
+<p class="lede">${esc(PROD_INTRO)}</p>
+${c.recorded ? "" : `<p class="empty">${esc(NO_COVERAGE)}</p>`}
+<ul class="gap prod">${c.items.map(item).join("")}</ul>
+${c.unmatched ? `<p class="empty">${c.unmatched} other not-assessed row(s) are code checks rather than deployment checks; they stay under Not assessed.</p>` : ""}`;
+}
+
 const ICON = {
   check: `<svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="9" r="7.2"/><path d="M5.8 9.2l2.2 2.2 4.2-4.6"/></svg>`,
+  box: `<svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="2.5" y="2.5" width="13" height="13" rx="3"/></svg>`,
   dash: `<svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true" stroke-dasharray="2.2 2.4"><circle cx="9" cy="9" r="7.2"/></svg>`,
 };
 
