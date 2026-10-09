@@ -9,8 +9,9 @@ import { existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadAudit, section, titleOf } from "./audit-state.mjs";
-import { renderCoverageMd } from "./coverage.mjs";
+import { notAssessedRows, renderCoverageMd } from "./coverage.mjs";
 import { diffAudit, renderDiffMd } from "./diff.mjs";
+import { renderProdChecklistMd } from "./prod-checklist.mjs";
 import { profileHeadline } from "./stack.mjs";
 
 const ORDER = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
@@ -65,6 +66,7 @@ export function renderReportMd(dir) {
   });
 
   L.push("", renderCoverageMd(dir));
+  L.push(renderProdChecklistMd(notAssessedRows(dir)));
 
   const docs = findings.filter((f) => f.data?.category === "docs-vs-reality");
   L.push("## Documentation vs Reality", "");

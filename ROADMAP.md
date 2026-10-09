@@ -49,8 +49,6 @@ Rules that apply to every item:
   Done when: their benchmark apps score.
 - **R13 Cheaper auditors.** Measure on the benchmark whether auditors can run on a lighter model without
   losing recall. Done when: the number is published, whatever it says.
-- **R14 Production checklist.** Generated from the not-assessed rows: headers, limits, env vars, backups,
-  each with how to check it. Done when: it is a section of the report.
 - **R23 Resource exhaustion and spend.** Unbounded queries, uploads, queues and workers; paid APIs
   (SMS, e-mail, AI) that anonymous callers can drive. Done when: checklist items and a seeded bug, scored.
 - **R24 Data lifecycle.** Tenant isolation in caches, search and exports; erasure that misses backups,
@@ -75,6 +73,12 @@ Rules that apply to every item:
   than the web stack this skill is built for; each needs its own benchmark app before it ships.
 
 ## Done
+
+- **R14 Production checklist** (2026-10-09): `report.md` and `report.html` have a "Production checklist" section
+  after Not Assessed. `scripts/prod-checklist.mjs` holds a small catalogue (headers, TLS, limits, env vars and debug
+  flags, secrets, backups, logging, dependency updates, exposed ports, cookies), each with a read-only "how to
+  check"; an item is marked "from this audit" when a Not Assessed row matches it (the row is named), the rest are
+  baseline. No model work. Tests in `scripts/prod-checklist.test.mjs`; it does not change the audit, so no benchmark run.
 
 - **R12 Audit diff** (2026-10-09): `report.md` and `report.html` have a "Since last audit" section from the second
   run on. `scripts/diff.mjs` compares the verified findings with the newest finished run in `history/` (archived

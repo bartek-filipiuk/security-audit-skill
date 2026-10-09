@@ -418,6 +418,7 @@ This methodology is stack-agnostic. Phase 1 discovers the stack; Phase 2 adapts.
 | `scripts/workspace-check.mjs` | Phase 5 | Lists files changed outside `.security-audit/` since prepass `--new-run` |
 | `scripts/coverage.mjs` | After Phase 2, Phase 5 | Validates the coverage ledger (`references/coverage-ledger.schema.json`); report-md and report-html derive Coverage and Not Assessed from it |
 | `scripts/diff.mjs` | Phase 5 (via report-md/report-html) | Compares the run with the newest finished run in `history/`: new, fixed, regressed, unchanged, severity changes |
+| `scripts/prod-checklist.mjs` | Phase 5 (via report-md/report-html) | "Production checklist" section: deployment checks (headers, limits, env vars, backups...) from the Not Assessed rows, each with how to check it |
 | `scripts/export.mjs` | On request, after Phase 5.5 | `remediation.json` + findings → SARIF 2.1.0, Linear CSV, Jira CSV in `.security-audit/export/` |
 | `agents/recon-scanner.md` | Phase 1 dispatch | Recon agent prompt |
 | `agents/category-auditor.md` | Phase 2 dispatch | Category auditor agent prompt |
