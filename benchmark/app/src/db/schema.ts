@@ -208,6 +208,23 @@ export const integrations = pgTable("integrations", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+export const smsMessages = pgTable(
+  "sms_messages",
+  {
+    id: text("id").primaryKey(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    invoiceId: text("invoice_id")
+      .notNull()
+      .references(() => invoices.id, { onDelete: "cascade" }),
+    to: text("to").notNull(),
+    sentOn: text("sent_on").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("sms_messages_invoice_day_idx").on(t.invoiceId, t.sentOn)],
+);
+
 export const projectsRelations = relations(projects, ({ many }) => ({
   documents: many(documents),
   invoices: many(invoices),
