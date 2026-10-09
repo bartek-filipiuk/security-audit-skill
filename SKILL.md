@@ -131,7 +131,7 @@ All agents read from and write to `.security-audit/` in the project root. This i
 ├── summary.md               # Phase 5: the coordinator's own text (summary, top risks, actions)
 ├── report.md                # Final report, assembled by scripts/report-md.mjs
 ├── report.html              # Visual report (scripts/report-html.mjs)
-├── history/<date>/          # Previous runs, archived by prepass --new-run; agents never read it
+├── history/<date>/          # Previous runs, archived by prepass --new-run; agents never read it (only scripts/diff.mjs does)
 └── remediation.json         # GENERATED from finding frontmatter by scripts/audit-state.mjs (never hand-edited)
 ```
 
@@ -298,6 +298,8 @@ node "$SKILL_DIR/scripts/report-md.mjs"          # summary.md + findings + non-i
 node "$SKILL_DIR/scripts/report-html.mjs"        # → report.html
 ```
 
+`report-md.mjs` and `report-html.mjs` add a "Since last audit" section by themselves when `history/` holds a finished previous run: new, fixed, regressed and unchanged findings and severity changes, computed by `scripts/diff.mjs` (no model work, nothing to write in `summary.md`; on a first run there is no section). Mention its counts in one line when you present the summary.
+
 If `workspace-check` reports changes, tell the user which files changed, the likely cause (usually the project's own test run), and whether any tracked file changed.
 
 `.security-audit/report.html` is one self-contained file: verdict bar, "To fix" (red, by severity, with proof labels and the fix first), "Verified safe" (green, each item with the control's file:line), "Not assessed" (grey), hotspots, dependencies, secrets, and what the verifier filtered out. It names unfixed weaknesses with file and line: it stays in the gitignored directory and is never published (a public page must redact unfixed findings, see `public_safe`).
@@ -415,6 +417,7 @@ This methodology is stack-agnostic. Phase 1 discovers the stack; Phase 2 adapts.
 | `scripts/report-md.mjs` | Phase 5 | Assembles `report.md` from the coordinator's `summary.md` and the audit files |
 | `scripts/workspace-check.mjs` | Phase 5 | Lists files changed outside `.security-audit/` since prepass `--new-run` |
 | `scripts/coverage.mjs` | After Phase 2, Phase 5 | Validates the coverage ledger (`references/coverage-ledger.schema.json`); report-md and report-html derive Coverage and Not Assessed from it |
+| `scripts/diff.mjs` | Phase 5 (via report-md/report-html) | Compares the run with the newest finished run in `history/`: new, fixed, regressed, unchanged, severity changes |
 | `scripts/export.mjs` | On request, after Phase 5.5 | `remediation.json` + findings → SARIF 2.1.0, Linear CSV, Jira CSV in `.security-audit/export/` |
 | `agents/recon-scanner.md` | Phase 1 dispatch | Recon agent prompt |
 | `agents/category-auditor.md` | Phase 2 dispatch | Category auditor agent prompt |

@@ -47,8 +47,6 @@ Rules that apply to every item:
 
 - **R09 Go profile** (`gosec`, error handling) and **R10 Rust profile** (`cargo-audit`, unsafe).
   Done when: their benchmark apps score.
-- **R12 Audit diff.** New, fixed and regressed findings between two runs, building on `--verify-fixes`.
-  Done when: the report has a "since last audit" section.
 - **R13 Cheaper auditors.** Measure on the benchmark whether auditors can run on a lighter model without
   losing recall. Done when: the number is published, whatever it says.
 - **R14 Production checklist.** Generated from the not-assessed rows: headers, limits, env vars, backups,
@@ -77,6 +75,14 @@ Rules that apply to every item:
   than the web stack this skill is built for; each needs its own benchmark app before it ships.
 
 ## Done
+
+- **R12 Audit diff** (2026-10-09): `report.md` and `report.html` have a "Since last audit" section from the second
+  run on. `scripts/diff.mjs` compares the verified findings with the newest finished run in `history/` (archived
+  whole by `prepass --new-run`, remediation blocks included, so `--verify-fixes` state counts): new, fixed (gone
+  from a full audit, or marked fixed), regressed (marked fixed before, or gone from the previous full run and back),
+  unchanged, severity changes, and "not re-checked" for a partial run. Findings match by category + file + line
+  ranges within 3 lines, then category + file + normalized title, then category + title (moved file). No model
+  work. Tests in `scripts/diff.test.mjs`; it does not change what the audit finds, so no benchmark run.
 
 - **R11 Export** (2026-10-08): `node scripts/export.mjs --format sarif|linear|jira` turns `remediation.json` and
   the finding files into SARIF 2.1.0 for GitHub code scanning (one rule per finding with the fix as help, level

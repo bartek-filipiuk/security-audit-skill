@@ -1,6 +1,6 @@
 # Security Audit Report Template
 
-The coordinator writes only the top of this template to `.security-audit/summary.md`: the title, Project Summary, Executive Summary and Recommended Actions. `scripts/report-md.mjs` appends everything from "## Findings" down (findings, non-issues, coverage, not assessed, documentation vs reality, test quality, side effects, filtered out) from the audit files, so the report always matches them.
+The coordinator writes only the top of this template to `.security-audit/summary.md`: the title, Project Summary, Executive Summary and Recommended Actions. `scripts/report-md.mjs` appends a "Since Last Audit" section when `history/` holds a finished previous run (new, fixed, regressed and unchanged findings, from `scripts/diff.mjs`) and everything from "## Findings" down (findings, non-issues, coverage, not assessed, documentation vs reality, test quality, side effects, filtered out) from the audit files, so the report always matches them.
 
 ```markdown
 # Security Audit Report

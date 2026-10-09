@@ -10,6 +10,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadAudit, section, titleOf } from "./audit-state.mjs";
 import { renderCoverageMd } from "./coverage.mjs";
+import { diffAudit, renderDiffMd } from "./diff.mjs";
 import { profileHeadline } from "./stack.mjs";
 
 const ORDER = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
@@ -44,6 +45,8 @@ export function renderReportMd(dir) {
   } else if (inc) {
     L.push("## Incremental Audit", "", `An incremental audit was requested, but this is a full audit: ${inc.reason}.`, "");
   }
+  const diff = renderDiffMd(diffAudit(dir));
+  if (diff) L.push(diff);
   L.push("## Findings", "");
   verified.forEach((f, i) => {
     const fm = f.data;
