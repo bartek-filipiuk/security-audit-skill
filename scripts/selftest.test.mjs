@@ -1,4 +1,4 @@
-// Run: node --test scripts/
+// Run: node --test scripts/*.test.mjs
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

@@ -1,4 +1,4 @@
-// Run: node --test scripts/
+// Run: node --test scripts/*.test.mjs
 // Python profile (roadmap R06): Django, FastAPI and Flask entry points, Python hotspot signals, bandit in the
 // R07 tool runner and the pip-audit fallback, profile briefs and the py-clinic benchmark app with its answer key.
 import assert from "node:assert/strict";

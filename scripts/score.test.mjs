@@ -1,4 +1,4 @@
-// Run: node --test scripts/
+// Run: node --test scripts/*.test.mjs
 // Exact benchmark scoring (roadmap R03): findings match the answer key by file and line only.
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
