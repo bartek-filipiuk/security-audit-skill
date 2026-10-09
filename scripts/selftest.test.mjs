@@ -211,6 +211,23 @@ test("briefs carry only the auditor's checklist sections and the project's langu
   assert.ok(patternsFor(["php"]).includes("PHP-Specific") && !patternsFor(["php"]).includes("| JS/TS |"));
 });
 
+test("resource exhaustion and spend: the auth brief carries the checklist items, every stack the patterns", async () => {
+  const { patternsFor, writeBriefs } = await import("./briefs.mjs");
+  const dir = auditDir({});
+  writeBriefs(dir, { auth: ["2.1", "2.3"] }, ["js"]);
+  const brief = (await import("node:fs")).readFileSync(join(dir, "briefs", "auth.md"), "utf8");
+  assert.match(brief, /### Resource exhaustion and spend \(category `rate-limit`\)/);
+  for (const item of [/denial of wallet/, /Unbounded list queries/, /Upload size and count/, /Queues and background jobs/, /Expensive operations per request/]) {
+    assert.match(brief, item);
+  }
+  for (const langs of [["js"], ["python"], ["php"]]) {
+    const p = patternsFor(langs);
+    assert.match(p, /## Resource Exhaustion and Spend/);
+    assert.match(p, /\| Paid outbound calls \(JS\/TS\) \|/);
+    assert.match(p, /\| Limiters present \|/);
+  }
+});
+
 test("report.md is assembled from summary.md and the finding files", async () => {
   const { renderReportMd } = await import("./report-md.mjs");
   const dir = auditDir(
