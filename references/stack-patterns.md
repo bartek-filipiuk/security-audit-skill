@@ -276,6 +276,21 @@ Find the billed or heavy call first, then walk back to the entry point and look 
 | Regex on input | `new RegExp\(` with request data; patterns with nested quantifiers such as `\(\w+\+\)\+`, `\(a\|a\)\*`, `\(\.\*\)\*` applied to `body`, `query`, `params`; no length check before `\.test\(`/`\.match\(`; `re2` or a length cap as the control |
 | Body size | `express\.json\(\)` without `limit`, `bodyParser` without `limit`, Hono without `bodyLimit`, `request\.text\(\)`/`request\.arrayBuffer\(\)` with no `content-length` check |
 
+## Data Lifecycle
+
+Find every copy of tenant or personal data first (cache, index, export file, stored object, log table, third party), then check the tenant key on the way in and the delete on the way out. A cascading foreign key removes rows only, never objects in storage, index documents or cache entries.
+
+| Check | Patterns to search |
+|-------|-------------------|
+| Cache keys (JS/TS) | `unstable_cache\(` with a constant key array and a closure over `orgId`/`userId`, `"use cache"` in a function that reads the session, `cacheTag\(`/`revalidateTag\(` without the tenant id, `redis\.(get\|set)\(` and `new LRUCache` keys without the tenant, `Cache-Control.*public`/`s-maxage` on session-dependent responses, `export const revalidate` on pages that call `getSession` |
+| Cache keys (other stacks) | Django `cache\.(get\|set)\(`/`@cache_page` on authenticated views, Laravel `Cache::remember\(` keys, Rails `Rails\.cache\.fetch\(`, Spring `@Cacheable` without the tenant in `key` |
+| Search | `to_tsvector\|websearch_to_tsquery\|ilike\(` without the tenant column, `meilisearch`, `typesense`, `algoliasearch`, `generateSecuredApiKey`, `@elastic/elasticsearch`, `@opensearch-project`, pgvector `<=>`, `@pinecone-database`; `filter`/`filters:` built from the request; index writes without a tenant field and no index delete on record delete |
+| Exports | `json2csv`, `papaparse`, `exceljs`, `archiver`, `pdfkit`, `@react-pdf`; `PutObjectCommand` with `ACL: "public-read"`, `writeFile\(` under `public/`, export keys built from ids or dates only, `getSignedUrl` with a long `expiresIn`; the tenant filter in the export query |
+| Erasure (JS/TS) | `db\.delete\((user\|organization\|member\|customers)`, `auth\.api\.deleteUser`, `deleteUser\|removeMember\|deleteOrganization`; then look for `DeleteObjectCommand`/`DeleteObjectsCommand`, `storage\.from\(.*\)\.remove\(`, index deletes, analytics person deletes, `resend\.contacts\.remove`, `stripe\.customers\.del` in the same path or a job it enqueues; `onDelete: "cascade"` on tables that store object keys (`s3Key`, `storagePath`, `fileKey`) |
+| Erasure (other stacks) | Django `\.delete\(\)` on user models and `post_delete` signals, `FileField` files not removed on delete; Laravel `->delete\(\)` without `Storage::delete`, `forceDelete`; Rails `dependent: :destroy`, ActiveStorage `purge`/`purge_later` |
+| Restores and imports | `restore\|import\|sync\|upsert\|onConflictDoUpdate` on users, members or customers; `withTrashed\(\)->restore`, `pg_restore`, seed or fixture scripts run in production; a suppression or erasure table checked before insert |
+| Soft-delete | `deletedAt\|deleted_at\|isDeleted\|is_deleted\|archivedAt`; queries on those tables without `isNull\(.*deletedAt\)`/`deleted_at IS NULL`; Eloquent `withTrashed\(`, Django `all_objects`/`_base_manager`, Prisma `\$extends` soft-delete filters; raw SQL and aggregate queries that bypass the default scope |
+
 ## CSRF
 
 | Framework | Patterns to search |
