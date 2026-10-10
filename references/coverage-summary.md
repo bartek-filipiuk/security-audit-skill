@@ -49,7 +49,7 @@ Stack: detected from manifests and framework files; dedicated profile for JS/TS 
   and Python (Django, FastAPI, Flask), general checklist for Go, Rust, Ruby, JVM, .NET (the report says which);
   --stack <name> forces a profile
 Report: report.md + report.html (to fix / verified safe / not assessed)
-Private benchmark: benchmark/ (Ledgerly, own stack, 24 seeded bugs + 14 decoys; supabase-notes, 10 + 12; php-tickets, 13 + 14; py-clinic, 18 + 18), see benchmark/README.md
+Private benchmark: benchmark/ (Ledgerly, own stack, 25 seeded bugs + 15 decoys; supabase-notes, 10 + 12; php-tickets, 13 + 14; py-clinic, 18 + 18), see benchmark/README.md
 Models: sonnet for the mechanical phases (1, 2, 4); Phase 3 verifier inherits the session model
 Proof labels: HIGH/CRITICAL are marked test (a regression test fails today) or static (code reading)
 Coverage ledger: every auditor records per entry point and class checked / not applicable / not assessed
