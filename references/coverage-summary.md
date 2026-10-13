@@ -1,13 +1,14 @@
 ```
 Security Audit Skill — Coverage Summary
 
-12 security categories + 8 stack profiles, 209 checklist items, 41 pattern sections
+12 security categories + 8 stack profiles, 216 checklist items, 42 pattern sections
 OWASP Top 10 2021: 10/10 | OWASP API Security Top 10 2023: 10/10
 Stack patterns: JS/TS (Next.js App Router, tRPC, Hono, Drizzle, Better-Auth, AI SDK tools), Python, PHP, Go, Ruby, Java;
   GitHub Actions, Dockerfile and compose, Terraform/Kubernetes/CloudFormation, package manifests and lockfiles;
   LLM and agent features (AI SDK, openai, @anthropic-ai/sdk, LangChain/LangGraph, MCP);
   resource exhaustion and spend (SMS, e-mail and AI providers, limiters, pagination, upload limits, queues, regex);
   data lifecycle (cache keys, search filters, exports, erasure of rows, objects and derived data, restores, soft-delete);
+  client-side code (DOM sinks, postMessage origin checks, prototype pollution keys, frame protection, client-side redirects, browser storage);
   Supabase (RLS, storage, SECURITY DEFINER, Edge Functions, service-role keys), Firebase (rules, Cloud Functions, Admin SDK),
   Laravel (routes and middleware, Eloquent scope, mass assignment, *Raw SQL, Blade, CSRF exceptions, uploads),
   Symfony (#[Route], IsGranted/access_control, voters, Doctrine DQL, Twig |raw), Drupal (routing.yml access, database API, Markup, CSRF tokens),
@@ -25,6 +26,7 @@ Categories:
     LLM tool and agent authorization (tenant scope inside tools, approval for destructive tools)
  2. Input Validation & Injection — SQLi, XSS, SSTI, NoSQL, LDAP, prototype pollution, open redirect, host header, second-order, GraphQL,
     LLM output to HTML/SQL/shell/URL sinks, secrets in model context
+    client-side code (DOM sinks, postMessage trust, prototype pollution keys, UI redress, client-side redirects, browser storage)
  3. Rate Limiting & Abuse Prevention — including LLM cost and token limits, resource exhaustion and spend
     (paid SMS/e-mail/AI calls anonymous callers can drive, unbounded queries, uploads, queues, expensive work, regex)
  4. Data Exposure — stack traces, over-exposed API fields, secrets in logs, data lifecycle

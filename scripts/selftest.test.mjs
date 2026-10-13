@@ -249,6 +249,29 @@ test("data lifecycle: the injection brief carries the checklist items under 2.4,
   }
 });
 
+test("client-side code: the injection brief carries the checklist items under 2.2, every stack the patterns", async () => {
+  const { DEFAULT_BRIEFS, patternsFor, writeBriefs } = await import("./briefs.mjs");
+  assert.ok(DEFAULT_BRIEFS.injection.includes("2.2"), "2.2 stays with the injection auditor");
+  const dir = auditDir({});
+  writeBriefs(dir, { injection: ["2.2", "2.4"], infra: ["2.5", "2.7", "2.8", "2.12"] }, ["js"]);
+  const { readFileSync } = await import("node:fs");
+  const brief = readFileSync(join(dir, "briefs", "injection.md"), "utf8");
+  assert.match(brief, /### Client-side code \(category `injection`; missing frame protection `config`, secrets in browser storage `exposure`\)/);
+  for (const item of [/DOM sinks: untrusted data/, /`postMessage` receivers check the sender/, /`postMessage` senders name the target/, /Prototype pollution: deep merge/, /UI redress: pages that change state/, /Client-side redirects:/, /Browser storage:/]) {
+    assert.match(brief, item);
+  }
+  assert.doesNotMatch(readFileSync(join(dir, "briefs", "infra.md"), "utf8"), /### Client-side code/, "one owner per checklist subsection");
+  const section = brief.slice(brief.indexOf("### Client-side code"), brief.indexOf("## 2.4"));
+  assert.doesNotMatch(section, /<script|alert\(|onerror=|javascript:alert/i, "defensive wording: no payloads");
+  for (const langs of [["js"], ["python"], ["php"]]) {
+    const p = patternsFor(langs);
+    assert.match(p, /## Client-Side Code/);
+    assert.match(p, /\| postMessage receivers \|/);
+    assert.match(p, /\| Frame protection \|/);
+    assert.match(p, /\| Browser storage \|/);
+  }
+});
+
 test("report.md is assembled from summary.md and the finding files", async () => {
   const { renderReportMd } = await import("./report-md.mjs");
   const dir = auditDir(
