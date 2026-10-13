@@ -35,6 +35,15 @@ Rules that apply to every item:
   Ledgerly B25 (organization deletion that cascades the rows but leaves the uploaded objects in the bucket) with
   decoy D15 (a complete, org-scoped customer erasure): 25 seeded bugs and 15 decoys. Stacked on R23 (#19). It
   moves to Done after a scored Ledgerly run (twice) shows no recall loss and no decoy false positive.
+- **R25 Client-side checks** (PR open, waiting for a benchmark run). DOM injection, `postMessage` trust,
+  prototype pollution, UI redress. Done when: checklist items and a seeded bug in a benchmark app, scored.
+  Status (2026-10-13): a checklist subsection under 2.2 (DOM sinks fed by untrusted data, `postMessage`
+  receivers that check origin and source and senders that name the target, prototype pollution through
+  user-controlled keys, frame protection for sensitive pages, client-side redirects, secrets in browser storage),
+  stack patterns, a verifier regression-test rule, and Ledgerly B26 (a payment widget wrapper whose message
+  listener checks no origin and navigates to a URL from the message) with decoy D16 (an e-signature frame with
+  strict origin and source checks and schema validation): 26 seeded bugs and 16 decoys. Stacked on R24 (#20).
+  It moves to Done after a scored Ledgerly run (twice) shows no recall loss and no decoy false positive.
 
 ## Next
 
@@ -66,8 +75,6 @@ Rules that apply to every item:
   Done when: their benchmark apps score.
 - **R13 Cheaper auditors.** Measure on the benchmark whether auditors can run on a lighter model without
   losing recall. Done when: the number is published, whatever it says.
-- **R25 Client-side checks.** DOM injection, `postMessage` trust, prototype pollution, UI redress.
-  Done when: checklist items and a seeded bug in a benchmark app, scored.
 - **R26 Any coding agent.** Install and run outside Claude Code (skills CLI), with the same report.
   Done when: the benchmark runs end to end in at least one other agent and the result is published.
 
