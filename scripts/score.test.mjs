@@ -246,6 +246,45 @@ test("R24 key ranges point at the seeded statements", () => {
   assert.match(at(loc("D15").file, loc("D15").lines[1]), /^}$/);
 });
 
+test("R25 seed and decoy: postMessage listener without an origin check, strict signing listener", () => {
+  const r = run(
+    finding("injection-001", { file: "src/components/payment-method-frame.tsx:14" }),
+    finding("injection-002", { file: "src/components/payment-method-frame.tsx:18" }),
+    finding("injection-003", { file: "src/components/payment-method-frame.tsx:30" }),
+    finding("injection-004", { file: "src/components/signature-frame.tsx:22" }),
+    finding("config-005", { file: "next.config.ts:3" }),
+  );
+  assert.deepEqual(entriesOf(r, "injection-001"), ["B26"], "the listener without an origin check");
+  assert.deepEqual(entriesOf(r, "injection-002"), ["B26"], "the navigation sink");
+  assert.deepEqual(entriesOf(r, "injection-003"), [], "the iframe markup is outside both windows");
+  assert.deepEqual(entriesOf(r, "injection-004"), ["D16"], "the strict listener stays a decoy");
+  assert.deepEqual(entriesOf(r, "config-005"), [], "missing frame-ancestors alone is not the seeded bug");
+  assert.equal(r.decoy_fp, 1);
+});
+
+test("R25 key ranges point at the seeded statements", () => {
+  const at = (file, line) => readFileSync(join(app, file), "utf8").split("\n")[line - 1];
+  const loc = (id, i = 0) => [...key.seeded, ...key.decoys].find((e) => e.id === id).locations[i];
+  assert.match(at(loc("B26").file, loc("B26").lines[0]), /function onMessage\(event: MessageEvent/);
+  assert.match(at(loc("B26", 1).file, loc("B26", 1).lines[0]), /window\.location\.assign\(msg\.url\)/);
+  const seed = readFileSync(join(app, loc("B26").file), "utf8");
+  assert.doesNotMatch(seed, /event\.origin|event\.source|safeParse/, "the seed never checks the sender");
+  assert.match(seed, /addEventListener\("message", onMessage\)/);
+  assert.match(readFileSync(join(app, "src/app/(app)/settings/billing/page.tsx"), "utf8"), /<PaymentMethodFrame /, "the seed is rendered on the billing page");
+  assert.match(at(loc("D16").file, loc("D16").lines[0]), /function onMessage\(event: MessageEvent\)/);
+  assert.match(at(loc("D16").file, 22), /event\.origin !== SIGN_ORIGIN \|\| event\.source !== frame\.current\?\.contentWindow/);
+  assert.match(at(loc("D16").file, 23), /signMessage\.safeParse\(event\.data\)/);
+  assert.match(at(loc("D16").file, 27), /router\.refresh\(\)/);
+  assert.match(at(loc("D16").file, loc("D16").lines[1]), /window\.removeEventListener/);
+  const decoy = readFileSync(join(app, loc("D16").file), "utf8");
+  assert.doesNotMatch(decoy, /location\.|innerHTML|postMessage\([^)]*"\*"/, "the decoy never navigates, renders HTML or posts to any origin");
+  for (const f of [loc("B26").file, loc("D16").file]) {
+    for (const u of readFileSync(join(app, f), "utf8").match(/https:\/\/[^"`/]+/g)) {
+      assert.match(new URL(u).hostname, /\.example\.com$/, "widget hosts are reserved example hosts");
+    }
+  }
+});
+
 test("file_level: a finding citing the file with no line matches only entries that declare it", () => {
   const r = run(finding("exposure-001", { file: ".env", extra: "" }));
   assert.equal(r.matches.find((m) => m.finding === "exposure-001").distance, 0);
