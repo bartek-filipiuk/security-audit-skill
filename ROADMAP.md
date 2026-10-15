@@ -18,7 +18,7 @@ Rules that apply to every item:
   in; it moves to Done with its first scored run.
   Merged to main 2026-10-08 (#9 via #12). Its benchmark app is not scored yet; it moves to Done with its first
   scored run.
-- **R23 Resource exhaustion and spend** (PR open, waiting for a benchmark run). Unbounded queries, uploads,
+- **R23 Resource exhaustion and spend** (merged 2026-10-15 without a benchmark run yet, waiting for it). Unbounded queries, uploads,
   queues and workers; paid APIs (SMS, e-mail, AI) that anonymous callers can drive. Done when: checklist items
   and a seeded bug, scored.
   Status (2026-10-09): a checklist subsection under 2.3 (paid outbound calls, unbounded list queries, upload size
@@ -26,23 +26,23 @@ Rules that apply to every item:
   and Ledgerly B24 (anonymous sign-up route that sends a billed SMS to any number, no limit) with decoy D14 (an
   org-scoped, capped SMS reminder): 24 seeded bugs and 14 decoys. It moves to Done after a scored Ledgerly run
   (twice) shows no recall loss and no decoy false positive.
-- **R24 Data lifecycle** (PR open, waiting for a benchmark run). Tenant isolation in caches, search and exports;
+- **R24 Data lifecycle** (merged 2026-10-15 without a benchmark run yet, waiting for it). Tenant isolation in caches, search and exports;
   erasure that misses backups, files or derived data; restores that bring deleted people back. Done when:
   checklist items and a seeded bug, scored.
   Status (2026-10-10): a checklist subsection under 2.4 (cache keys, search and exports scoped to the tenant,
   complete erasure across related tables, stored objects, derived data and third parties, restores and imports
   that skip erased people, soft-delete on every read path), stack patterns, a verifier regression-test rule, and
   Ledgerly B25 (organization deletion that cascades the rows but leaves the uploaded objects in the bucket) with
-  decoy D15 (a complete, org-scoped customer erasure): 25 seeded bugs and 15 decoys. Stacked on R23 (#19). It
+  decoy D15 (a complete, org-scoped customer erasure): 25 seeded bugs and 15 decoys. Merged with R23 (#20). It
   moves to Done after a scored Ledgerly run (twice) shows no recall loss and no decoy false positive.
-- **R25 Client-side checks** (PR open, waiting for a benchmark run). DOM injection, `postMessage` trust,
+- **R25 Client-side checks** (merged 2026-10-15 without a benchmark run yet, waiting for it). DOM injection, `postMessage` trust,
   prototype pollution, UI redress. Done when: checklist items and a seeded bug in a benchmark app, scored.
   Status (2026-10-13): a checklist subsection under 2.2 (DOM sinks fed by untrusted data, `postMessage`
   receivers that check origin and source and senders that name the target, prototype pollution through
   user-controlled keys, frame protection for sensitive pages, client-side redirects, secrets in browser storage),
   stack patterns, a verifier regression-test rule, and Ledgerly B26 (a payment widget wrapper whose message
   listener checks no origin and navigates to a URL from the message) with decoy D16 (an e-signature frame with
-  strict origin and source checks and schema validation): 26 seeded bugs and 16 decoys. Stacked on R24 (#20).
+  strict origin and source checks and schema validation): 26 seeded bugs and 16 decoys. Merged with R24 (#21).
   It moves to Done after a scored Ledgerly run (twice) shows no recall loss and no decoy false positive.
 
 ## Next
