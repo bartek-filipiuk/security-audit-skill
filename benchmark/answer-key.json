@@ -275,6 +275,17 @@
       ],
       "detect": "llm",
       "why": "deleteOrganization deletes the organization row and relies on onDelete: cascade, which removes the documents rows but never the S3/R2 objects their s3Key points to. Every contract and attachment the organization uploaded stays in the bucket with no row left to find, list or delete it, although the settings page promises permanent deletion of all data including documents (and erasure requests from its customers can no longer be honoured for those files). A fix lists the organization's documents.s3Key values and deletes the objects (or a per-org prefix) before or with the row delete."
+    },
+    {
+      "id": "B26",
+      "class": "postMessage listener without an origin check navigates the page to a URL from the message (DOM XSS / open redirect)",
+      "severity": "HIGH",
+      "locations": [
+        { "file": "src/components/payment-method-frame.tsx", "lines": [14, 15] },
+        { "file": "src/components/payment-method-frame.tsx", "lines": [18, 18] }
+      ],
+      "detect": "llm",
+      "why": "The billing page's payment widget wrapper registers a window message listener that never checks event.origin or event.source and passes msg.url from any message straight to window.location.assign. Any page that holds a reference to the billing tab (one that opened it, or frames it, since the app sends no frame-ancestors or X-Frame-Options) can send a message that moves the signed-in owner to a look-alike card form, or to a javascript: URL that runs script in Ledgerly's origin with their session. A fix accepts messages only when event.origin is the widget origin and event.source is the iframe's contentWindow, validates the message shape, and allows only https URLs on the provider's host."
     }
   ],
   "decoys": [
@@ -383,6 +394,13 @@
         { "file": "src/app/(app)/customers/actions.ts", "lines": [11, 44] }
       ],
       "why": "Customer erasure is a server action behind requireOrg and an owner/admin membership check; in one transaction it anonymizes the customer row scoped by id AND orgId and clears the copies of their contact details (the phone number in sms_messages, the free-text invoice notes), all filtered by the session org. Invoices stay for bookkeeping by design; nothing re-imports the erased person."
+    },
+    {
+      "id": "D16",
+      "locations": [
+        { "file": "src/components/signature-frame.tsx", "lines": [21, 30] }
+      ],
+      "why": "The e-signature frame's message listener returns unless event.origin is the fixed signing origin and event.source is its own iframe, parses the data with a zod discriminated union (bounded height, reference length), and only resizes the frame or calls router.refresh() for the current invoice: no navigation, no HTML, no state change. Its own postMessage names the exact target origin, never \"*\"."
     }
   ],
   "known_extras": [

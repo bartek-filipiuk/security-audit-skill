@@ -291,6 +291,20 @@ Find every copy of tenant or personal data first (cache, index, export file, sto
 | Restores and imports | `restore\|import\|sync\|upsert\|onConflictDoUpdate` on users, members or customers; `withTrashed\(\)->restore`, `pg_restore`, seed or fixture scripts run in production; a suppression or erasure table checked before insert |
 | Soft-delete | `deletedAt\|deleted_at\|isDeleted\|is_deleted\|archivedAt`; queries on those tables without `isNull\(.*deletedAt\)`/`deleted_at IS NULL`; Eloquent `withTrashed\(`, Django `all_objects`/`_base_manager`, Prisma `\$extends` soft-delete filters; raw SQL and aggregate queries that bypass the default scope |
 
+## Client-Side Code
+
+Find the code that runs in the browser first (`"use client"` files, inline and public scripts, widget wrappers), then follow URL parameters, message data and stored content to sinks. A listener that never reads `event.origin` trusts every window that holds a reference to the page: an opener, a frame, a popup.
+
+| Check | Patterns to search |
+|-------|-------------------|
+| DOM sinks | `dangerouslySetInnerHTML`, `\.innerHTML\s*=`, `outerHTML`, `insertAdjacentHTML`, `document\.write`, `v-html`, `\[innerHTML\]`, `eval\(`, `new Function\(`, `setTimeout\(` with a string, `href=\{` and `src=\{` fed by query, message or stored data; `DOMPurify\.sanitize`, `rehype-sanitize`, `sanitize-html` as the control |
+| postMessage receivers | `addEventListener\(["']message`, `onmessage\s*=`, `window\.onmessage`; handlers without `event\.origin`/`e\.origin`, or with `\.includes\(`/`indexOf\(`/`endsWith\(` on the origin; no `event\.source` check for iframes; message data reaching `location`, `innerHTML`, `fetch`, `router\.push` or storage |
+| postMessage senders | `postMessage\([^)]*["']\*["']`, `window\.opener\.postMessage`, `parent\.postMessage`, `top\.postMessage` carrying `token`, `session`, `email` or ids |
+| Prototype pollution (keys) | `_\.(merge\|set\|setWith\|defaultsDeep\|zipObjectDeep)\(`, `deepmerge`, `merge-deep`, `dset`, `set-value`, `qs\.parse\(.*allowPrototypes`, recursive `for \(const key in` merges without a `__proto__`/`constructor`/`prototype` filter; `Object\.create\(null\)`, `new Map` as the control |
+| Frame protection | `frame-ancestors`, `X-Frame-Options`, `headers\(\)` in `next\.config`, `helmet\(`/`frameguard`, Django `X_FRAME_OPTIONS`/`xframe_options_exempt`, Laravel and Symfony response headers, nginx `add_header X-Frame-Options`; pages with forms or payment widgets and none of these |
+| Client-side redirects | `router\.(push\|replace)\(`, `window\.location(\.href)?\s*=`, `location\.(assign\|replace)\(`, `window\.open\(` fed by `searchParams\.get\(["'](next\|returnTo\|redirect\|url)`, `useSearchParams`, `location\.hash` or message data, with no same-origin check |
+| Browser storage | `localStorage\.setItem\(`, `sessionStorage\.setItem\(`, `indexedDB`, `localforage`; keys or values named `token`, `jwt`, `refresh`, `apiKey`, `session`; no `removeItem`/`clear` on logout |
+
 ## CSRF
 
 | Framework | Patterns to search |

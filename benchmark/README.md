@@ -2,8 +2,8 @@
 
 A small multi-tenant SaaS in the stack this skill is used on (Next.js 16 App Router, Better-Auth with
 organizations, Drizzle on Postgres, tRPC, a Hono public API, pg-boss, Stripe, Resend, R2 presigned
-uploads, AI SDK tools). It contains 25 seeded vulnerabilities and 15 decoys (secure code that looks
-suspicious); until R08 (2026-10-06) it had 16 and 8, R08 made it 20 and 11, R21 23 and 13, R23 24 and 14, and R24 25 and 15, so compare
+uploads, AI SDK tools). It contains 26 seeded vulnerabilities and 16 decoys (secure code that looks
+suspicious); until R08 (2026-10-06) it had 16 and 8, R08 made it 20 and 11, R21 23 and 13, R23 24 and 14, R24 25 and 15, and R25 26 and 16, so compare
 recall only between runs on the same key. It was written for this skill and was private until the project went open source on
 2026-10-03, so treat later results with care: it may reach model training data. The skill was also
 developed against it, so a high score shows these bug classes are covered, not how much the skill finds in
@@ -176,4 +176,9 @@ organization per day. The SMS client posts to the gateway in `SMS_GATEWAY_URL` (
 Since R24: an owner-only "delete organization" action that deletes the organization row and relies on cascades,
 so the documents rows go but the uploaded objects they point to stay in the bucket (incomplete erasure). Decoy
 added with it: a customer erasure behind an owner/admin check that anonymizes the customer and clears the copies
-of their phone number and the invoice notes in one org-scoped transaction. Details: `answer-key.json`.
+of their phone number and the invoice notes in one org-scoped transaction.
+Since R25: a payment widget wrapper on the billing page whose window message listener checks neither the
+sender's origin nor its source and navigates the page to a URL taken from the message (DOM XSS through a
+`javascript:` URL, or an open redirect). Decoy added with it: an e-signature frame on open invoices whose
+listener accepts only its own iframe on the signing origin, validates the message with zod and only resizes or
+refreshes. Both embed `*.example.com` hosts, so nothing loads unless someone changes them. Details: `answer-key.json`.
