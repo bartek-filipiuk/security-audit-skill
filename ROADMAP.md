@@ -85,7 +85,6 @@ Rules that apply to every item:
   finds the published issue. Defensive only: public advisories, no exploit code.
 - **R15 Audit on every pull request**, headless, in CI.
 - **R16 Ruby on Rails profile** (`brakeman`).
-- **R17 audit-live:** phase timing, per-auditor view, token counter.
 - **R18 Second private benchmark app**, never published, for measuring changes without training-data risk.
 - **R27 Native code and memory safety** (C, C++, unsafe Rust), **R28 mobile and local IPC** (deep links,
   webviews, exported components), **R29 protocols and RPC** (gRPC, queues, brokers, streaming). Wider scope
@@ -93,6 +92,15 @@ Rules that apply to every item:
 
 ## Done
 
+- **R17 audit-live: phase timing, per-auditor view, session cost** (2026-10-15): the optional mod's pane shows
+  how long each phase took and how long the current one has run, derived from the mtimes of the files each phase
+  writes (`prepass.md`, `recon.md`, the newest writer ledger in `coverage/`, the newest verified or rejected
+  finding, `test-quality.md`, `report.html`) and the run start in `tools/workspace-mark.json`; a phase whose end
+  cannot be told shows "—". An Auditors section lists each `auditor-<name>` with its open findings by severity
+  (from `source_agent`), its ledger rows (checked, not applicable, not assessed) and done or running. A dim
+  line shows Claude Code's own session cost and context use from `$.session.usage`, left out when Claude Code
+  does not answer it; it is not the subagent sum of `benchmark/usage.mjs`. The frontmatter parser now keeps
+  digits and hyphens in values. Mod-only: no change to the skill, its prompts or scripts, so no benchmark run.
 - **R14 Production checklist** (2026-10-09): `report.md` and `report.html` have a "Production checklist" section
   after Not Assessed. `scripts/prod-checklist.mjs` holds a small catalogue (headers, TLS, limits, env vars and debug
   flags, secrets, backups, logging, dependency updates, exposed ports, cookies), each with a read-only "how to
