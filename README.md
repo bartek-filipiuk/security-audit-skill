@@ -21,8 +21,9 @@ scanners, used when the project has something for them: `semgrep` (code), `zizmo
 zizmor bandit`, `brew install hadolint trivy`) or run docker, and the pre-pass uses the official images of the
 first four, pinned by digest. Each one that applies but cannot run is listed as not assessed. Tested on Linux.
 
-Optional live progress panel (a Claude Code mod, 2.1.287+): `cp -r ~/.claude/skills/security-audit/audit-live
-~/.claude/skills/`. It only reads `.security-audit/`; see `audit-live/README.md`.
+Optional live progress panel (a Claude Code mod, 2.1.287+): phase, time per phase, findings by severity and
+by auditor, session cost. `cp -r ~/.claude/skills/security-audit/audit-live ~/.claude/skills/`. It only reads
+`.security-audit/` and Claude Code's own session cost figure; see `audit-live/README.md`.
 
 ## Use
 
