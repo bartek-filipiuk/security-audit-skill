@@ -26,6 +26,15 @@ Rules that apply to every item:
   and Ledgerly B24 (anonymous sign-up route that sends a billed SMS to any number, no limit) with decoy D14 (an
   org-scoped, capped SMS reminder): 24 seeded bugs and 14 decoys. It moves to Done after a scored Ledgerly run
   (twice) shows no recall loss and no decoy false positive.
+- **R24 Data lifecycle** (PR open, waiting for a benchmark run). Tenant isolation in caches, search and exports;
+  erasure that misses backups, files or derived data; restores that bring deleted people back. Done when:
+  checklist items and a seeded bug, scored.
+  Status (2026-10-10): a checklist subsection under 2.4 (cache keys, search and exports scoped to the tenant,
+  complete erasure across related tables, stored objects, derived data and third parties, restores and imports
+  that skip erased people, soft-delete on every read path), stack patterns, a verifier regression-test rule, and
+  Ledgerly B25 (organization deletion that cascades the rows but leaves the uploaded objects in the bucket) with
+  decoy D15 (a complete, org-scoped customer erasure): 25 seeded bugs and 15 decoys. Stacked on R23 (#19). It
+  moves to Done after a scored Ledgerly run (twice) shows no recall loss and no decoy false positive.
 
 ## Next
 
@@ -57,9 +66,6 @@ Rules that apply to every item:
   Done when: their benchmark apps score.
 - **R13 Cheaper auditors.** Measure on the benchmark whether auditors can run on a lighter model without
   losing recall. Done when: the number is published, whatever it says.
-- **R24 Data lifecycle.** Tenant isolation in caches, search and exports; erasure that misses backups,
-  files or derived data; restores that bring deleted people back. Done when: checklist items and a seeded
-  bug, scored.
 - **R25 Client-side checks.** DOM injection, `postMessage` trust, prototype pollution, UI redress.
   Done when: checklist items and a seeded bug in a benchmark app, scored.
 - **R26 Any coding agent.** Install and run outside Claude Code (skills CLI), with the same report.

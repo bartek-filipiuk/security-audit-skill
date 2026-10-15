@@ -212,6 +212,40 @@ test("R23 key ranges point at the seeded statements", () => {
   assert.equal(new URL(gateway).hostname, "sms.example.com", "the SMS gateway is a reserved example host");
 });
 
+test("R24 seed and decoy: org deletion that leaves stored documents, complete customer erasure", () => {
+  const r = run(
+    finding("exposure-001", { file: "src/app/(app)/settings/organization/actions.ts:10" }),
+    finding("exposure-002", { file: "src/app/(app)/settings/organization/actions.ts:21" }),
+    finding("exposure-003", { file: "src/app/(app)/settings/organization/actions.ts:15" }),
+    finding("exposure-004", { file: "src/app/(app)/customers/actions.ts:33" }),
+    finding("exposure-005", { file: "src/db/schema.ts:158" }),
+  );
+  assert.deepEqual(entriesOf(r, "exposure-001"), ["B25"], "the delete action");
+  assert.deepEqual(entriesOf(r, "exposure-002"), ["B25"], "the cascading row delete");
+  assert.deepEqual(entriesOf(r, "exposure-003"), [], "the owner check in between is outside both windows");
+  assert.deepEqual(entriesOf(r, "exposure-004"), ["D15"], "the complete erasure stays a decoy");
+  assert.deepEqual(entriesOf(r, "exposure-005"), [], "the cascade in the schema is not the bug");
+  assert.equal(r.decoy_fp, 1);
+});
+
+test("R24 key ranges point at the seeded statements", () => {
+  const at = (file, line) => readFileSync(join(app, file), "utf8").split("\n")[line - 1];
+  const loc = (id, i = 0) => [...key.seeded, ...key.decoys].find((e) => e.id === id).locations[i];
+  assert.match(at(loc("B25").file, loc("B25").lines[0]), /export async function deleteOrganization/);
+  assert.match(at(loc("B25", 1).file, loc("B25", 1).lines[1]), /await db\.delete\(organization\)/);
+  const action = readFileSync(join(app, loc("B25").file), "utf8");
+  assert.match(action, /eq\(member\.role, "owner"\)/, "the seed is authorized: the bug is what it leaves behind");
+  assert.doesNotMatch(action, /DeleteObject|s3Key|@\/lib\/s3/, "the seed never touches the stored objects");
+  assert.match(readFileSync(join(app, "src/db/schema.ts"), "utf8"), /s3Key: text\("s3_key"\)/, "documents rows point at stored objects");
+  assert.match(at(loc("D15").file, loc("D15").lines[0]), /export async function eraseCustomer/);
+  assert.match(at(loc("D15").file, 12), /await requireOrg\(\)/);
+  assert.match(at(loc("D15").file, 16), /inArray\(member\.role, \["owner", "admin"\]\)/);
+  assert.match(at(loc("D15").file, 20), /db\.transaction/);
+  assert.match(at(loc("D15").file, 24), /eq\(customers\.orgId, orgId\)/);
+  assert.match(at(loc("D15").file, 33), /set\(\{ to: "erased" \}\)/);
+  assert.match(at(loc("D15").file, loc("D15").lines[1]), /^}$/);
+});
+
 test("file_level: a finding citing the file with no line matches only entries that declare it", () => {
   const r = run(finding("exposure-001", { file: ".env", extra: "" }));
   assert.equal(r.matches.find((m) => m.finding === "exposure-001").distance, 0);

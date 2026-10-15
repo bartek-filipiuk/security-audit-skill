@@ -264,6 +264,17 @@
       ],
       "detect": "llm",
       "why": "POST /api/phone/send-code needs no session and has no rate limit by IP or phone number, no captcha and no country allowlist, and each call sends a billed SMS to any number the caller types (Better-Auth's rateLimit covers only /api/auth/*). Anyone can loop it across premium-rate or international numbers and run up the organization's SMS bill (SMS pumping), or flood one person's phone."
+    },
+    {
+      "id": "B25",
+      "class": "Incomplete erasure: deleting an organization removes its rows but leaves its uploaded documents in object storage",
+      "severity": "MEDIUM",
+      "locations": [
+        { "file": "src/app/(app)/settings/organization/actions.ts", "lines": [10, 11] },
+        { "file": "src/app/(app)/settings/organization/actions.ts", "lines": [20, 21] }
+      ],
+      "detect": "llm",
+      "why": "deleteOrganization deletes the organization row and relies on onDelete: cascade, which removes the documents rows but never the S3/R2 objects their s3Key points to. Every contract and attachment the organization uploaded stays in the bucket with no row left to find, list or delete it, although the settings page promises permanent deletion of all data including documents (and erasure requests from its customers can no longer be honoured for those files). A fix lists the organization's documents.s3Key values and deletes the objects (or a per-org prefix) before or with the row delete."
     }
   ],
   "decoys": [
@@ -365,6 +376,13 @@
         { "file": "src/app/(app)/invoices/[id]/sms-actions.ts", "lines": [12, 44] }
       ],
       "why": "The SMS reminder is a server action (Next.js origin check) behind requireOrg; the invoice and recipient phone come from the org-scoped database row, never from the caller; one reminder per invoice per day (unique index plus onConflictDoNothing) and at most 50 per organization per day, counted under a per-org advisory lock in a transaction."
+    },
+    {
+      "id": "D15",
+      "locations": [
+        { "file": "src/app/(app)/customers/actions.ts", "lines": [11, 44] }
+      ],
+      "why": "Customer erasure is a server action behind requireOrg and an owner/admin membership check; in one transaction it anonymizes the customer row scoped by id AND orgId and clears the copies of their contact details (the phone number in sms_messages, the free-text invoice notes), all filtered by the session org. Invoices stay for bookkeeping by design; nothing re-imports the erased person."
     }
   ],
   "known_extras": [

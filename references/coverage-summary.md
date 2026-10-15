@@ -1,12 +1,13 @@
 ```
 Security Audit Skill — Coverage Summary
 
-12 security categories + 8 stack profiles, 203 checklist items, 40 pattern sections
+12 security categories + 8 stack profiles, 209 checklist items, 41 pattern sections
 OWASP Top 10 2021: 10/10 | OWASP API Security Top 10 2023: 10/10
 Stack patterns: JS/TS (Next.js App Router, tRPC, Hono, Drizzle, Better-Auth, AI SDK tools), Python, PHP, Go, Ruby, Java;
   GitHub Actions, Dockerfile and compose, Terraform/Kubernetes/CloudFormation, package manifests and lockfiles;
   LLM and agent features (AI SDK, openai, @anthropic-ai/sdk, LangChain/LangGraph, MCP);
   resource exhaustion and spend (SMS, e-mail and AI providers, limiters, pagination, upload limits, queues, regex);
+  data lifecycle (cache keys, search filters, exports, erasure of rows, objects and derived data, restores, soft-delete);
   Supabase (RLS, storage, SECURITY DEFINER, Edge Functions, service-role keys), Firebase (rules, Cloud Functions, Admin SDK),
   Laravel (routes and middleware, Eloquent scope, mass assignment, *Raw SQL, Blade, CSRF exceptions, uploads),
   Symfony (#[Route], IsGranted/access_control, voters, Doctrine DQL, Twig |raw), Drupal (routing.yml access, database API, Markup, CSRF tokens),
@@ -26,7 +27,8 @@ Categories:
     LLM output to HTML/SQL/shell/URL sinks, secrets in model context
  3. Rate Limiting & Abuse Prevention — including LLM cost and token limits, resource exhaustion and spend
     (paid SMS/e-mail/AI calls anonymous callers can drive, unbounded queries, uploads, queues, expensive work, regex)
- 4. Data Exposure — stack traces, over-exposed API fields, secrets in logs
+ 4. Data Exposure — stack traces, over-exposed API fields, secrets in logs, data lifecycle
+    (tenant scope of caches, search and exports; erasure that misses files or derived data; restores; soft-delete)
  5. Security Headers & Transport — CORS, CSP (trusted domain abuse), HSTS
  6. File Upload — MIME, null byte, magic bytes, size config
  7. Dependency, Supply Chain & Build Pipeline — CVEs, install scripts, lockfile integrity, CI/CD workflows
@@ -47,7 +49,7 @@ Stack: detected from manifests and framework files; dedicated profile for JS/TS 
   and Python (Django, FastAPI, Flask), general checklist for Go, Rust, Ruby, JVM, .NET (the report says which);
   --stack <name> forces a profile
 Report: report.md + report.html (to fix / verified safe / not assessed)
-Private benchmark: benchmark/ (Ledgerly, own stack, 24 seeded bugs + 14 decoys; supabase-notes, 10 + 12; php-tickets, 13 + 14; py-clinic, 18 + 18), see benchmark/README.md
+Private benchmark: benchmark/ (Ledgerly, own stack, 25 seeded bugs + 15 decoys; supabase-notes, 10 + 12; php-tickets, 13 + 14; py-clinic, 18 + 18), see benchmark/README.md
 Models: sonnet for the mechanical phases (1, 2, 4); Phase 3 verifier inherits the session model
 Proof labels: HIGH/CRITICAL are marked test (a regression test fails today) or static (code reading)
 Coverage ledger: every auditor records per entry point and class checked / not applicable / not assessed

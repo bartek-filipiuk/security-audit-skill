@@ -228,6 +228,27 @@ test("resource exhaustion and spend: the auth brief carries the checklist items,
   }
 });
 
+test("data lifecycle: the injection brief carries the checklist items under 2.4, every stack the patterns", async () => {
+  const { DEFAULT_BRIEFS, patternsFor, writeBriefs } = await import("./briefs.mjs");
+  assert.ok(DEFAULT_BRIEFS.injection.includes("2.4"), "2.4 stays with the injection auditor");
+  const dir = auditDir({});
+  writeBriefs(dir, { auth: ["2.1", "2.3"], injection: ["2.2", "2.4"] }, ["js"]);
+  const { readFileSync } = await import("node:fs");
+  const brief = readFileSync(join(dir, "briefs", "injection.md"), "utf8");
+  assert.match(brief, /### Data lifecycle \(category `exposure`; a missing tenant filter `auth`\)/);
+  for (const item of [/Cache keys carry the tenant/, /Search is filtered by tenant/, /Exports and generated reports are scoped and private/, /Erasure is complete/, /Restores and imports respect deletion/, /Soft-delete is respected/]) {
+    assert.match(brief, item);
+  }
+  assert.doesNotMatch(readFileSync(join(dir, "briefs", "auth.md"), "utf8"), /### Data lifecycle/, "one owner per checklist subsection");
+  for (const langs of [["js"], ["python"], ["php"]]) {
+    const p = patternsFor(langs);
+    assert.match(p, /## Data Lifecycle/);
+    assert.match(p, /\| Cache keys \(JS\/TS\) \|/);
+    assert.match(p, /\| Erasure \(other stacks\) \|/);
+    assert.match(p, /\| Soft-delete \|/);
+  }
+});
+
 test("report.md is assembled from summary.md and the finding files", async () => {
   const { renderReportMd } = await import("./report-md.mjs");
   const dir = auditDir(
