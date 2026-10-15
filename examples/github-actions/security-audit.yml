@@ -11,8 +11,12 @@
 # secrets, so a pull request could read ANTHROPIC_API_KEY. Under pull_request a fork gets no secrets, so the job
 # below only runs for branches of this repository (their authors already have write access) and skips
 # Dependabot (no access to Actions secrets either).
-# Hardening left to you: run the audit in a job with `contents: read` only and the comment and SARIF upload in a
-# second job; the author of a same-repo branch can still change this workflow in their branch.
+# The key is readable by the pull request's code. The audit runs project code (tests, npm scripts) as children
+# of the claude process, which holds ANTHROPIC_API_KEY and the job token, so code on any same-repo branch can
+# read both. Before you use this: put the job behind an `environment:` with required reviewers (the secret is
+# released only after a maintainer approves the run), use a dedicated API key with a spend cap, and keep
+# `npm ci --ignore-scripts`. Recommended: run the audit in a job with `contents: read` only and the comment and
+# SARIF upload in a second job. The author of a same-repo branch can still change this workflow in their branch.
 #
 # Cost: a full run on the benchmark app (45 entry points) was about 12 USD at API prices. A scoped run is
 # cheaper, in proportion to what it covers; the hard cap is SECURITY_AUDIT_BUDGET_USD (repository variable,
@@ -75,7 +79,7 @@ jobs:
       # The regression tests the audit writes need the project's dependencies. Adapt to your package manager.
       - name: Install project dependencies
         run: |
-          if [ -f package-lock.json ]; then npm ci; fi
+          if [ -f package-lock.json ]; then npm ci --ignore-scripts; fi
 
       # Installed outside the repository: the pre-pass walks the whole checkout (it skips .security-audit/,
       # not .claude/), so a copy under .claude/skills would be audited as project code, with the seeded bugs
@@ -110,7 +114,7 @@ jobs:
             --max-budget-usd ${{ vars.SECURITY_AUDIT_BUDGET_USD || '15' }}
             --allowedTools "Bash,Read,Write,Edit,Glob,Grep,Agent"
             --permission-mode acceptEdits
-            --setting-sources user,project
+            --setting-sources user
           settings: '{"env":{"CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS":"0"}}'
 
       # SARIF names unfixed weaknesses with file and line: uploaded only on private repositories.
@@ -154,8 +158,9 @@ jobs:
           BODY_FILE: ${{ steps.summary.outputs.body }}
         run: |
           marker='<!-- security-audit-ci -->'
-          id=$(gh api --paginate "repos/$REPO/issues/$PR_NUMBER/comments" \
-            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$marker\"))) | .id" | head -n 1)
+          ids=$(gh api --paginate "repos/$REPO/issues/$PR_NUMBER/comments" \
+            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$marker\"))) | .id")
+          id=${ids%%$'\n'*}
           if [ -n "$id" ]; then
             gh api -X PATCH "repos/$REPO/issues/comments/$id" -F "body=@$BODY_FILE" > /dev/null
           else

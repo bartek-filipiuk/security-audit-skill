@@ -86,6 +86,9 @@ tags yet, so it is pinned by commit).
   has no previous audit, and it cannot be combined with `--scope`.
 - `scripts/ci-summary.mjs` writes one sticky PR comment with the unresolved findings by severity (titles only
   with `--titles`) and exits 1 at or above `--fail-on` (default HIGH), 2 when the audit did not finish.
+- **The API key is readable by the pull request's code** (the audit runs project code under the same process).
+  Put the job behind an `environment:` with required reviewers, use a dedicated key with a spend cap, and keep
+  `npm ci --ignore-scripts`; project `.claude/` settings are not loaded (`--setting-sources user`).
 - The skill is installed in `~/.claude/skills`, not in the checkout, so its benchmark app is not audited as your
   code. SARIF goes to code scanning on private repositories only.
 - It uses `pull_request`, never `pull_request_target`: the audit runs the project's code, which must not see the

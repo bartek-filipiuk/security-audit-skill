@@ -262,7 +262,9 @@ test("workflow: no expression inside run: scripts, the scope reaches them throug
   assert.match(yml, /SECURITY_AUDIT_SCOPE: \$\{\{ steps\.scope\.outputs\.scope \}\}/);
   assert.match(yml, /BASE_REF: \$\{\{ github\.base_ref \}\}/);
   assert.match(yml, /prompt: "\/security-audit --scope \$\{\{ steps\.scope\.outputs\.scope \}\}"/);
-  assert.match(yml, /--setting-sources user,project/);
+  assert.match(yml, /--setting-sources user\b/);
+  assert.doesNotMatch(yml, /--setting-sources user,project/, "project settings would let PR code set hooks and env");
+  assert.match(yml, /npm ci --ignore-scripts/);
   assert.match(yml, /CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS/);
   assert.doesNotMatch(active.join("\n"), /--max-turns/);
   assert.doesNotMatch(active.join("\n"), /\.claude\/skills.*\$GITHUB_WORKSPACE|github\.workspace.*\.claude\/skills/, "the skill is installed outside the checkout");
