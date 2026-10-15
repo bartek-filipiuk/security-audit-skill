@@ -1,0 +1,184 @@
+# Example: run security-audit on every pull request (roadmap R15).
+# Status: an example, not yet run end to end. Copy it to .github/workflows/ in your own repository and
+# replace every `<pin-sha>` before use.
+#
+# What it does: audits only the directories the pull request changed (`--scope`, from scripts/ci-scope.mjs),
+# posts one PR comment with the counts by severity (updated on every push), uploads SARIF to code scanning on
+# private repositories, and fails the check when an unresolved finding is at or above SECURITY_AUDIT_FAIL_ON.
+#
+# Why `pull_request` and never `pull_request_target`: the audit runs the project's code (its tests and the
+# regression tests it writes). Under pull_request_target that code would run with the base repository's
+# secrets, so a pull request could read ANTHROPIC_API_KEY. Under pull_request a fork gets no secrets, so the job
+# below only runs for branches of this repository (their authors already have write access) and skips
+# Dependabot (no access to Actions secrets either).
+# Hardening left to you: run the audit in a job with `contents: read` only and the comment and SARIF upload in a
+# second job; the author of a same-repo branch can still change this workflow in their branch.
+#
+# Cost: a full run on the benchmark app (45 entry points) was about 12 USD at API prices. A scoped run is
+# cheaper, in proportion to what it covers; the hard cap is SECURITY_AUDIT_BUDGET_USD (repository variable,
+# default 15).
+#
+# Incremental runs: `--since last` needs a previous full audit in .security-audit/, which a fresh checkout does
+# not have (it falls back to a full audit), and it cannot be combined with --scope. To try it, cache
+# .security-audit/ between runs with actions/cache (keyed on the base branch) and change the prompt to
+# `/security-audit --since last`. Untested; the cache then holds unfixed weaknesses, keep the repository private.
+#
+# Assumed, not verified yet (this is why it is an example):
+# - claude-code-action runs skills from ~/.claude/skills and honours CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS
+#   from `settings` (it lifts the wait for background subagents in a headless run);
+# - `--permission-mode acceptEdits` with the allowed tools below runs the subagents unattended;
+# - no --max-turns on purpose: a turn cap would starve the pipeline, the budget is the only cap.
+
+name: security-audit
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: security-audit-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  audit:
+    # Same-repository branches only (forks get no secrets), not Dependabot, not drafts.
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.actor != 'dependabot[bot]' &&
+      github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read         # checkout
+      pull-requests: write   # the sticky PR comment
+      security-events: write # SARIF upload to code scanning
+      actions: read          # upload-sarif on private repositories
+    env:
+      # The skill at a fixed commit of github.com/bartek-filipiuk/security-audit-skill (there are no release
+      # tags yet; switch to a tag once one exists). Replace <pin-sha> with a full 40-character commit SHA.
+      SKILL_REF: "<pin-sha>"
+      SECURITY_AUDIT_FAIL_ON: ${{ vars.SECURITY_AUDIT_FAIL_ON || 'HIGH' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0             # ci-scope.mjs diffs against the base branch
+          persist-credentials: false # the audit runs project code; keep the token out of .git/config
+
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+
+      # The regression tests the audit writes need the project's dependencies. Adapt to your package manager.
+      - name: Install project dependencies
+        run: |
+          if [ -f package-lock.json ]; then npm ci; fi
+
+      # Installed outside the repository: the pre-pass walks the whole checkout (it skips .security-audit/,
+      # not .claude/), so a copy under .claude/skills would be audited as project code, with the seeded bugs
+      # of its benchmark app.
+      - name: Install the skill
+        run: |
+          case "$SKILL_REF" in
+            *[!0-9a-f]* | "") echo "SKILL_REF must be a 40-character commit SHA, got: $SKILL_REF"; exit 1 ;;
+          esac
+          if [ "${#SKILL_REF}" -ne 40 ]; then echo "SKILL_REF must be a 40-character commit SHA"; exit 1; fi
+          dest="$HOME/.claude/skills/security-audit"
+          git init -q "$dest"
+          git -C "$dest" fetch -q --depth 1 https://github.com/bartek-filipiuk/security-audit-skill.git "$SKILL_REF"
+          git -C "$dest" checkout -q --detach FETCH_HEAD
+          test "$(git -C "$dest" rev-parse HEAD)" = "$SKILL_REF"
+
+      - name: Scope from the changed directories
+        id: scope
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          node "$HOME/.claude/skills/security-audit/scripts/ci-scope.mjs" --base "origin/$BASE_REF"
+
+      - name: Audit
+        uses: anthropics/claude-code-action@a26b07d8c778b0c43f64618e5fd29fd0f8af72e8 # v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ github.token }}
+          # The scope is built from directory names cut to [A-Za-z0-9_./-] by ci-scope.mjs.
+          prompt: "/security-audit --scope ${{ steps.scope.outputs.scope }}"
+          claude_args: >-
+            --max-budget-usd ${{ vars.SECURITY_AUDIT_BUDGET_USD || '15' }}
+            --allowedTools "Bash,Read,Write,Edit,Glob,Grep,Agent"
+            --permission-mode acceptEdits
+            --setting-sources user,project
+          settings: '{"env":{"CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS":"0"}}'
+
+      # SARIF names unfixed weaknesses with file and line: uploaded only on private repositories.
+      - name: Export SARIF
+        id: sarif
+        if: always() && github.event.repository.private
+        run: |
+          if [ -f .security-audit/remediation.json ]; then
+            node "$HOME/.claude/skills/security-audit/scripts/export.mjs" --format sarif --dir .security-audit --out "$RUNNER_TEMP/security-audit.sarif"
+            echo "file=$RUNNER_TEMP/security-audit.sarif" >> "$GITHUB_OUTPUT"
+          else
+            echo "No remediation.json: the audit did not finish, nothing to upload."
+          fi
+
+      - name: Upload SARIF
+        if: always() && steps.sarif.outputs.file != ''
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4
+        with:
+          sarif_file: ${{ steps.sarif.outputs.file }}
+          category: security-audit
+
+      - name: Summary
+        id: summary
+        if: always() && steps.scope.outcome == 'success'
+        env:
+          SECURITY_AUDIT_SCOPE: ${{ steps.scope.outputs.scope }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set +e
+          node "$HOME/.claude/skills/security-audit/scripts/ci-summary.mjs" --dir .security-audit --fail-on "$SECURITY_AUDIT_FAIL_ON" --out "$RUNNER_TEMP/security-audit-comment.md"
+          echo "code=$?" >> "$GITHUB_OUTPUT"
+
+      # One comment per pull request, found by the marker on its first line and edited on every run. gh is
+      # preinstalled on GitHub-hosted runners, so no third-party action is needed here.
+      - name: PR comment
+        if: always() && steps.summary.outputs.body != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BODY_FILE: ${{ steps.summary.outputs.body }}
+        run: |
+          marker='<!-- security-audit-ci -->'
+          id=$(gh api --paginate "repos/$REPO/issues/$PR_NUMBER/comments" \
+            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$marker\"))) | .id" | head -n 1)
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$REPO/issues/comments/$id" -F "body=@$BODY_FILE" > /dev/null
+          else
+            gh api "repos/$REPO/issues/$PR_NUMBER/comments" -F "body=@$BODY_FILE" > /dev/null
+          fi
+
+      # Optional: keep report.html as a run artifact. Artifacts are readable by everyone with read access to the
+      # repository (on a public repository, everyone): enable only on a private one.
+      # - name: Upload report
+      #   if: always() && github.event.repository.private
+      #   uses: actions/upload-artifact@<pin-sha> # v4, replace <pin-sha> with the release's commit SHA
+      #   with:
+      #     name: security-audit-report
+      #     path: .security-audit/report.html
+      #     retention-days: 7
+
+      - name: Verdict
+        if: always() && steps.summary.outcome == 'success'
+        env:
+          CODE: ${{ steps.summary.outputs.code }}
+        run: |
+          case "$CODE" in
+            0) echo "No unresolved finding at or above $SECURITY_AUDIT_FAIL_ON." ;;
+            1) echo "Unresolved findings at or above $SECURITY_AUDIT_FAIL_ON: see the PR comment."; exit 1 ;;
+            *) echo "The audit did not finish (no remediation.json): no verdict, check the Audit step."; exit 1 ;;
+          esac
