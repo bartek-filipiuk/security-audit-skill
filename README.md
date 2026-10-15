@@ -11,10 +11,13 @@ Project page: https://security-audit.dev · Build log (daily stand-ups): https:/
 git clone https://github.com/bartek-filipiuk/security-audit-skill ~/.claude/skills/security-audit
 ```
 
-Update with `git -C ~/.claude/skills/security-audit pull`. Check the scripts (seconds, no tokens):
+Update with `git -C ~/.claude/skills/security-audit pull`. Or with the skills CLI, which also links the skill into
+other agents: `npx skills add bartek-filipiuk/security-audit-skill -g`. Either way the install directory must be
+named `security-audit` (the skill's name). Check the scripts (seconds, no tokens):
 `cd ~/.claude/skills/security-audit && node --test scripts/*.test.mjs`.
 
-Requirements: Claude Code, Node 20+. For dependency and secret scanning, either `osv-scanner` and `gitleaks` on
+Requirements: Claude Code (or another agent, see Other agents), Node 20+.
+For dependency and secret scanning, either `osv-scanner` and `gitleaks` on
 `PATH` or a running docker daemon; without them the report lists those two checks as not run. Optional rule
 scanners, used when the project has something for them: `semgrep` (code), `zizmor` (GitHub Actions), `hadolint`
 (Dockerfiles), `trivy` (Dockerfiles and IaC), `bandit` (Python, native only). Install them (`pipx install semgrep
@@ -74,10 +77,26 @@ Each finding in `remediation.json` that is not fixed or accepted (`--all` for ev
 or a task with its file and line, severity, impact and fix. Upload the SARIF with
 `github/codeql-action/upload-sarif`, only to a private repository: it names unfixed weaknesses.
 
-Cost: a full run on the benchmark app (45 entry points) took 32 minutes and 23.8M tokens, about 11.70 USD at
-API prices (Opus 5.5, effort xhigh); a 160-entry-point project took 2 h 11 min. Start big projects with
-`--scope top20`. Re-auditing a one-line change with `--since` cost 4.7M tokens and 15 minutes on the same app
+Cost (Claude Code): a full run on the benchmark app (45 entry points) took 32 minutes and 23.8M tokens, about
+11.70 USD at API prices (Opus 5.5, effort xhigh); a 160-entry-point project took 2 h 11 min. Start big projects
+with `--scope top20`. Re-auditing a one-line change with `--since` cost 4.7M tokens and 15 minutes on the same app
 (a headless full run there: 11.6M and 26 minutes).
+
+## Other agents
+
+Status: installs; end-to-end benchmark in another agent not run yet. The scripts are tested without Claude Code
+(`scripts/portability.test.mjs`); every number in this README is from Claude Code.
+
+- **OpenCode** reads skills from `~/.claude/skills` and `.agents/skills`, so either install works. It has a Task
+  tool, so parallel mode is expected to run as in Claude Code.
+- **Codex CLI:** start it with `$security-audit` and the flags. It has subagents, so parallel mode is expected to
+  run.
+- **Gemini CLI, Cursor and other agents without subagents:** the phases run one after another in the same
+  context (the Portability section of `SKILL.md`). Same prompts, scripts and report; slower and with a fuller
+  context on big projects, so start with `--scope top20`.
+
+The pre-pass and report scripts need only Node and git, never a Claude Code path. The optional live progress
+panel is Claude Code only.
 
 ## How it compares
 

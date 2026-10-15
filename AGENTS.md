@@ -24,7 +24,9 @@ a test app with 26 seeded bugs and 16 decoys, plus the scorer and the usage coun
    trusting a difference of one or two bugs. A change that lowers recall or adds a decoy false positive does
    not merge, whatever else it improves.
 4. **Scripts have tests.** `node --test scripts/*.test.mjs` must pass; the mod: `cd audit-live && claude plugin
-   validate . && claude plugin test`. Add a test for every new script behaviour.
+   validate . && claude plugin test`. Add a test for every new script behaviour. `scripts/portability.test.mjs` runs the
+   script pipeline from a skill directory outside `~/.claude` with an empty HOME: scripts must not depend on
+   Claude Code paths, so the skill keeps working in other agents (R26).
 5. **No real projects.** No names, paths, findings or numbers from anyone's real project in the repo.
    Ledgerly and the other benchmark apps under `benchmark/` are the only projects that may be named. Never commit `.security-audit/` output or `.env` files.
 
