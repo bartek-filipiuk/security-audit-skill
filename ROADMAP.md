@@ -18,6 +18,14 @@ Rules that apply to every item:
   in; it moves to Done with its first scored run.
   Merged to main 2026-10-08 (#9 via #12). Its benchmark app is not scored yet; it moves to Done with its first
   scored run.
+- **R23 Resource exhaustion and spend** (PR open, waiting for a benchmark run). Unbounded queries, uploads,
+  queues and workers; paid APIs (SMS, e-mail, AI) that anonymous callers can drive. Done when: checklist items
+  and a seeded bug, scored.
+  Status (2026-10-09): a checklist subsection under 2.3 (paid outbound calls, unbounded list queries, upload size
+  and count, queues and jobs, expensive work and regex on input), stack patterns, a verifier regression-test rule,
+  and Ledgerly B24 (anonymous sign-up route that sends a billed SMS to any number, no limit) with decoy D14 (an
+  org-scoped, capped SMS reminder): 24 seeded bugs and 14 decoys. It moves to Done after a scored Ledgerly run
+  (twice) shows no recall loss and no decoy false positive.
 
 ## Next
 
@@ -49,8 +57,6 @@ Rules that apply to every item:
   Done when: their benchmark apps score.
 - **R13 Cheaper auditors.** Measure on the benchmark whether auditors can run on a lighter model without
   losing recall. Done when: the number is published, whatever it says.
-- **R23 Resource exhaustion and spend.** Unbounded queries, uploads, queues and workers; paid APIs
-  (SMS, e-mail, AI) that anonymous callers can drive. Done when: checklist items and a seeded bug, scored.
 - **R24 Data lifecycle.** Tenant isolation in caches, search and exports; erasure that misses backups,
   files or derived data; restores that bring deleted people back. Done when: checklist items and a seeded
   bug, scored.

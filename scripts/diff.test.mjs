@@ -1,4 +1,4 @@
-// Run: node --test scripts/
+// Run: node --test scripts/*.test.mjs
 // Audit diff (roadmap R12): new, fixed, regressed and unchanged findings against the previous run in history/.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";

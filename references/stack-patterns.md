@@ -260,6 +260,22 @@ Model call sites first: `generateText\(|streamText\(|generateObject\(|streamObje
 | Cost and tokens | `model:` / `maxOutputTokens:` / `max_tokens:` / `maxSteps` / `stopWhen:` taken from `body`, `input` or `req.body`; LLM routes without a rate limiter (`@upstash/ratelimit`, `rateLimit`, a quota table); `stopWhen` or `max_iterations` missing in agent loops |
 | Keys in the browser | `dangerouslyAllowBrowser:\s*true`, `anthropic-dangerous-direct-browser-access`, `NEXT_PUBLIC_\w*(OPENAI\|ANTHROPIC\|AI)\w*KEY`, `VITE_\w*KEY` |
 
+## Resource Exhaustion and Spend
+
+Find the billed or heavy call first, then walk back to the entry point and look for a session check and a limiter on the way. A limiter in another route, in the proxy `matcher` only, or in the auth library's own routes does not count.
+
+| Check | Patterns to search |
+|-------|-------------------|
+| Paid outbound calls (JS/TS) | `twilio`, `messages\.create\(`, `@vonage`, `messagebird`, `sendSms\|sendSMS`, `resend\.emails\.send`, `@aws-sdk/client-(ses\|sns)`, `SendEmailCommand`, `PublishCommand`, `@sendgrid/mail`, `postmark`, `nodemailer`, model calls (see LLM and Agent Features); then the route or action that reaches them without `getSession`/`requireUser`/`protectedProcedure` |
+| Paid outbound calls (other stacks) | Python `twilio.rest`, `boto3.client\(["']s(es\|ns)`, `send_mail\(`; PHP `Twilio\\Rest`, `Mail::to\(`, `Notification::send`; Ruby `ActionMailer`, `deliver_later`; the same walk back to an unauthenticated view |
+| Limiters present | `@upstash/ratelimit`, `Ratelimit\.`, `rate-limiter-flexible`, `express-rate-limit`, `hono-rate-limiter`, Better-Auth `rateLimit` (covers `/api/auth/*` only), `django-ratelimit`, DRF `throttle_classes`, Laravel `throttle:` middleware, `RateLimiter::for`, Flask-Limiter `@limiter.limit`, a quota/usage table checked before the call; captcha (`turnstile`, `hcaptcha`, `recaptcha`) on anonymous senders |
+| Unbounded lists | Drizzle `\.select\(\)\.from\(` or `db\.query\.\w+\.findMany\(` without `\.limit\(`/`limit:`; Prisma `findMany\(` without `take:`; `limit: input\.\w+`, `take: input\.\w+`, `pageSize`, `per_page`, `first:` from the request without `\.max\(` or `Math\.min\(`; Django `\.all\(\)` in a view without pagination (`pagination_class`, `Paginator`); Laravel `->get\(\)` or `::all\(\)` instead of `->paginate\(`; `inArray\(` with a request array |
+| Upload limits | `multer\(` without `limits`, `busboy\(` without `limits`, `formidable\(` without `maxFileSize`, `request\.formData\(\)` with no size check before it, `serverActions: \{ bodySizeLimit`, `PutObjectCommand` or `createPresignedPost` without `ContentLength` / `content-length-range`; Django `DATA_UPLOAD_MAX_MEMORY_SIZE`, `FILE_UPLOAD_MAX_MEMORY_SIZE`; PHP `upload_max_filesize`, Laravel `max:` rule; `unzipper`, `adm-zip`, `zlib\.inflate`, `sharp\(` without `limitInputPixels` |
+| Queues and jobs | `boss\.send\(`, `boss\.schedule\(`, `queue\.add\(`, `new Queue\(`, `\.delay\(`, `enqueue`, Celery `\.delay\(`/`\.apply_async\(`, Laravel `dispatch\(`; reachable from an unauthenticated route, or a loop that enqueues per row; missing `retryLimit`, `attempts`, `expireInSeconds`, `singletonKey`, `jobId` |
+| Expensive work per request | `puppeteer`, `playwright`, `@react-pdf`, `pdfkit`, `pdf-lib`, `exceljs`, `archiver`, `json2csv`, `sharp\(`, `ffmpeg`; `bcrypt\.hash\(`/`argon2\.hash\(` on unbounded input; `ILIKE\|ilike\(` with `%${`; `WITH RECURSIVE` |
+| Regex on input | `new RegExp\(` with request data; patterns with nested quantifiers such as `\(\w+\+\)\+`, `\(a\|a\)\*`, `\(\.\*\)\*` applied to `body`, `query`, `params`; no length check before `\.test\(`/`\.match\(`; `re2` or a length cap as the control |
+| Body size | `express\.json\(\)` without `limit`, `bodyParser` without `limit`, Hono without `bodyLimit`, `request\.text\(\)`/`request\.arrayBuffer\(\)` with no `content-length` check |
+
 ## CSRF
 
 | Framework | Patterns to search |

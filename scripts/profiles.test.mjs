@@ -1,4 +1,4 @@
-// Run: node --test scripts/
+// Run: node --test scripts/*.test.mjs
 // Supabase and Firebase profile (roadmap R02): the second benchmark app, its answer key, the scorer and
 // setup for more than one app, the policy scan, edge/cloud function entry points and profile briefs.
 import assert from "node:assert/strict";

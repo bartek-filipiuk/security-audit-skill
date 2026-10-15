@@ -6,7 +6,7 @@ For anyone who changes this repository, person or agent. Read it before the firs
 
 `SKILL.md` (the pipeline), `agents/` (prompts of the sub-agents), `references/` (checklist, formats, stack
 patterns), `scripts/` (deterministic pre-pass, state validation, report rendering), `benchmark/` (Ledgerly,
-a test app with 23 seeded bugs and 13 decoys, plus the scorer and the usage counter), `audit-live/`
+a test app with 24 seeded bugs and 14 decoys, plus the scorer and the usage counter), `audit-live/`
 (optional Claude Code mod), `ROADMAP.md` (the plan, ids R01…).
 
 ## Rules
@@ -23,7 +23,7 @@ a test app with 23 seeded bugs and 13 decoys, plus the scorer and the usage coun
    `node benchmark/usage.mjs <session id>`. Paste both outputs into the pull request. Run twice before
    trusting a difference of one or two bugs. A change that lowers recall or adds a decoy false positive does
    not merge, whatever else it improves.
-4. **Scripts have tests.** `node --test scripts/` must pass; the mod: `cd audit-live && claude plugin
+4. **Scripts have tests.** `node --test scripts/*.test.mjs` must pass; the mod: `cd audit-live && claude plugin
    validate . && claude plugin test`. Add a test for every new script behaviour.
 5. **No real projects.** No names, paths, findings or numbers from anyone's real project in the repo.
    Ledgerly and the other benchmark apps under `benchmark/` are the only projects that may be named. Never commit `.security-audit/` output or `.env` files.

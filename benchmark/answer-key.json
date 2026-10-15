@@ -253,6 +253,17 @@
       ],
       "detect": "llm",
       "why": "POST /api/assistant/billing passes body.model, body.maxTokens and body.maxSteps straight to generateText with no allowlist, cap, or per-user rate or spend limit, so any signed-in user can run the most expensive model at full output length and many tool steps, in a loop, on the organization's API key. The range runs from the Body type that declares the caller-controlled fields (line 6) through the generateText options (16-18): a fix changes both, and auditors cite either end."
+    },
+    {
+      "id": "B24",
+      "class": "Denial of wallet: anonymous endpoint sends a paid SMS per request with no rate limit, captcha or per-number cap",
+      "severity": "MEDIUM",
+      "locations": [
+        { "file": "src/app/api/phone/send-code/route.ts", "lines": [10, 11] },
+        { "file": "src/app/api/phone/send-code/route.ts", "lines": [21, 21] }
+      ],
+      "detect": "llm",
+      "why": "POST /api/phone/send-code needs no session and has no rate limit by IP or phone number, no captcha and no country allowlist, and each call sends a billed SMS to any number the caller types (Better-Auth's rateLimit covers only /api/auth/*). Anyone can loop it across premium-rate or international numbers and run up the organization's SMS bill (SMS pumping), or flood one person's phone."
     }
   ],
   "decoys": [
@@ -347,6 +358,13 @@
         { "file": "src/server/ai/billing-tools.ts", "lines": [24, 30] }
       ],
       "why": "markInvoicePaid is scoped by ctx.orgId from the session and declared with needsApproval, so the user confirms each call before it runs."
+    },
+    {
+      "id": "D14",
+      "locations": [
+        { "file": "src/app/(app)/invoices/[id]/sms-actions.ts", "lines": [12, 44] }
+      ],
+      "why": "The SMS reminder is a server action (Next.js origin check) behind requireOrg; the invoice and recipient phone come from the org-scoped database row, never from the caller; one reminder per invoice per day (unique index plus onConflictDoNothing) and at most 50 per organization per day, counted under a per-org advisory lock in a transaction."
     }
   ],
   "known_extras": [

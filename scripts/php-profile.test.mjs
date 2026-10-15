@@ -1,4 +1,4 @@
-// Run: node --test scripts/
+// Run: node --test scripts/*.test.mjs
 // PHP profile (roadmap R05): Laravel, Symfony and Drupal entry points, PHP hotspot signals, the Psalm
 // NOT RUN status, profile briefs and the php-tickets benchmark app with its answer key.
 import assert from "node:assert/strict";
