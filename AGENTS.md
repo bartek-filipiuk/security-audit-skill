@@ -7,7 +7,8 @@ For anyone who changes this repository, person or agent. Read it before the firs
 `SKILL.md` (the pipeline), `agents/` (prompts of the sub-agents), `references/` (checklist, formats, stack
 patterns), `scripts/` (deterministic pre-pass, state validation, report rendering), `benchmark/` (Ledgerly,
 a test app with 26 seeded bugs and 16 decoys, plus the scorer and the usage counter), `audit-live/`
-(optional Claude Code mod), `ROADMAP.md` (the plan, ids R01…).
+(optional Claude Code mod), `examples/` (CI workflow examples, never under `.github/workflows`), `ROADMAP.md`
+(the plan, ids R01…).
 
 ## Rules
 
