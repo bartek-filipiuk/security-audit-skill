@@ -44,6 +44,10 @@ Rules that apply to every item:
   listener checks no origin and navigates to a URL from the message) with decoy D16 (an e-signature frame with
   strict origin and source checks and schema validation): 26 seeded bugs and 16 decoys. Merged with R24 (#21).
   It moves to Done after a scored Ledgerly run (twice) shows no recall loss and no decoy false positive.
+- **R15 Audit on every pull request**, headless, in CI. Done when: one recorded end-to-end run of the example
+  workflow on a pull request.
+  Status (2026-10-15): example workflow and scripts merged (`examples/github-actions/security-audit.yml`,
+  `scripts/ci-scope.mjs`, `scripts/ci-summary.mjs`); moves to Done after one recorded end-to-end run.
 
 ## Next
 
@@ -83,7 +87,6 @@ Rules that apply to every item:
 - **R30 Mini benchmarks on real advisories.** Small audits of real modules pinned to a version before a public
   security fix (for example a Drupal contrib module with a published advisory), scored on whether the skill
   finds the published issue. Defensive only: public advisories, no exploit code.
-- **R15 Audit on every pull request**, headless, in CI.
 - **R16 Ruby on Rails profile** (`brakeman`).
 - **R18 Second private benchmark app**, never published, for measuring changes without training-data risk.
 - **R27 Native code and memory safety** (C, C++, unsafe Rust), **R28 mobile and local IPC** (deep links,

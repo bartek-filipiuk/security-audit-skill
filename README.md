@@ -77,6 +77,27 @@ Each finding in `remediation.json` that is not fixed or accepted (`--all` for ev
 or a task with its file and line, severity, impact and fix. Upload the SARIF with
 `github/codeql-action/upload-sarif`, only to a private repository: it names unfixed weaknesses.
 
+### CI (example)
+
+[`examples/github-actions/security-audit.yml`](examples/github-actions/security-audit.yml) audits every pull
+request from a branch of the same repository (roadmap R15). It is an example, not yet run end to end: copy it to
+`.github/workflows/`, set the `ANTHROPIC_API_KEY` secret and replace each `<pin-sha>` (the skill has no release
+tags yet, so it is pinned by commit).
+
+- `scripts/ci-scope.mjs --base origin/<base branch>` turns the changed directories into a `--scope` value
+  (`top20` when more than 20 directories, or only root files, changed). `--since` is not used: a fresh checkout
+  has no previous audit, and it cannot be combined with `--scope`.
+- `scripts/ci-summary.mjs` writes one sticky PR comment with the unresolved findings by severity (titles only
+  with `--titles`) and exits 1 at or above `--fail-on` (default HIGH), 2 when the audit did not finish.
+- **The API key is readable by the pull request's code** (the audit runs project code under the same process).
+  Put the job behind an `environment:` with required reviewers, use a dedicated key with a spend cap, and keep
+  `npm ci --ignore-scripts`; project `.claude/` settings are not loaded (`--setting-sources user`).
+- The skill is installed in `~/.claude/skills`, not in the checkout, so its benchmark app is not audited as your
+  code. SARIF goes to code scanning on private repositories only.
+- It uses `pull_request`, never `pull_request_target`: the audit runs the project's code, which must not see the
+  API key of the base repository. Forks and Dependabot are skipped. The budget cap is the repository variable
+  `SECURITY_AUDIT_BUDGET_USD` (default 15).
+
 Cost (Claude Code): a full run on the benchmark app (45 entry points) took 32 minutes and 23.8M tokens, about
 11.70 USD at API prices (Opus 5.5, effort xhigh); a 160-entry-point project took 2 h 11 min. Start big projects
 with `--scope top20`. Re-auditing a one-line change with `--since` cost 4.7M tokens and 15 minutes on the same app
@@ -185,6 +206,7 @@ scripts/
   workspace-check.mjs             # What changed in the project while the audit ran
   coverage.mjs                    # Validates the coverage ledger, renders the Coverage and Not Assessed sections
   export.mjs                      # remediation.json → SARIF 2.1.0, Linear CSV, Jira CSV
+  ci-scope.mjs, ci-summary.mjs    # CI example: --scope from a PR's changed directories, sticky PR comment and verdict
   diff.mjs                        # "Since last audit": new / fixed / regressed findings against history/
   prod-checklist.mjs              # "Production checklist": deployment checks from the Not Assessed rows
   selftest.test.mjs               # node --test scripts/*.test.mjs
@@ -194,6 +216,8 @@ benchmark/
   setup.mjs, score.mjs            # Create a run, score it (also Claude Security output); results.jsonl keeps history
   usage.mjs                       # Tokens and API-price cost of a session, subagents included
   COMPARISON.md                   # Head-to-head with the Claude Security plugin
+examples/
+  github-actions/security-audit.yml  # PR-audit workflow (example, not yet run end to end)
 ```
 
 Requirements: Node 20+. For dependency and secret scanning, either `osv-scanner` and `gitleaks` on PATH or a running docker daemon (official images are pulled on first use). The rule scanners `semgrep`, `zizmor`, `hadolint` and `trivy` are optional the same way: native binary first, then the official image pinned by digest; `bandit` (Python) runs natively only. Without them the pre-pass says NOT RUN with how to enable it and the report lists the gap. Their hits are candidates for the auditors, never findings.
