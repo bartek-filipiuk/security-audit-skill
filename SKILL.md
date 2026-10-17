@@ -8,6 +8,9 @@ description: >-
   (login/SSO/auth, payments, webhooks, a path, or the top N riskiest
   places via --scope), re-audit only what changed since a commit or the
   last audit (--since), force a stack profile (--stack), or security-audit --info.
+compatibility: >-
+  Node 20+ and git. Parallel mode needs an agent that runs subagents (Claude Code,
+  Codex CLI, OpenCode); other agents run the same phases sequentially.
 ---
 
 # Security Audit
@@ -106,6 +109,17 @@ Entry points found in Phase 1?
 **Triage Mode:** One agent, but after Recon, group endpoints by risk domain (HIGH: auth/payments/admin/upload, MEDIUM: CRUD/search, LOW: health/static). Audit HIGH domains first. If context runs low, report what you have and mark uncovered areas.
 
 **Parallel Mode:** Full multi-agent pipeline. Continue reading.
+
+---
+
+## Portability (agents other than Claude Code)
+
+The skill is written for Claude Code. In another agent, apply these fallbacks only when their condition holds; where it does not, the rest of this file applies unchanged.
+
+- **`$SKILL_DIR`:** if no base directory was announced when the skill loaded, it is the absolute path of the directory that contains this `SKILL.md`. Resolve it once and use it everywhere below.
+- **Arguments:** if the literal text `$ARGUMENTS` appears above unexpanded, take the flags (`--scope`, `--since`, `--stack`, `--info`, `--verify-fixes`, `--mutation`) from the user's message instead.
+- **No subagents:** only when the agent has no tool that runs a prompt as a separate agent (Claude Code Task/Agent, Codex subagents and OpenCode Task all count as one), Parallel Mode runs Phases 1–4 sequentially in this context: the same `agents/*.md` prompts in phase order, the same number ranges, the same scripts and the same files. Record coverage in `.security-audit/coverage/coordinator.json`, as in Standard Mode.
+- **Models:** where a model cannot be chosen per agent, ignore the model table in Agent Model Selection.
 
 ---
 
