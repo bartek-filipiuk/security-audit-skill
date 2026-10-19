@@ -11,6 +11,13 @@ Rules that apply to every item:
 
 ## Now
 
+- **R05 PHP profile: Laravel, Symfony, Drupal.** Priority (2026-10-19): first in line for a scored run.
+  Route-based entry points, unscoped Eloquent/Doctrine queries, `composer audit`, Psalm taint. Done when: its benchmark app scores.
+  Status (2026-10-07): checklist sections, stack patterns, Laravel/Symfony entry points (Drupal's existed)
+  ranked by their controller method, PHP template/model/CSRF signals, Psalm reported NOT RUN, and the
+  `benchmark/php-tickets` app (13 seeded bugs, 14 decoys) are in; it moves to Done with its first scored run.
+  Merged to main 2026-10-08 (#10 via #12). Its benchmark app is not scored yet; it moves to Done with its first
+  scored run.
 - **R02 Supabase and Firebase profile.** RLS policies, storage policies, service-role keys in the client,
   Firestore rules. Done when: a benchmark app for this stack exists and the profile scores on it.
   Status (2026-10-07): checklist sections, stack patterns, a pre-pass policy scan, Edge/Cloud Function entry
@@ -51,13 +58,6 @@ Rules that apply to every item:
 
 ## Next
 
-- **R05 PHP profile: Laravel, Symfony, Drupal.** Route-based entry points, unscoped Eloquent/Doctrine
-  queries, `composer audit`, Psalm taint. Done when: its benchmark app scores.
-  Status (2026-10-07): checklist sections, stack patterns, Laravel/Symfony entry points (Drupal's existed)
-  ranked by their controller method, PHP template/model/CSRF signals, Psalm reported NOT RUN, and the
-  `benchmark/php-tickets` app (13 seeded bugs, 14 decoys) are in; it moves to Done with its first scored run.
-  Merged to main 2026-10-08 (#10 via #12). Its benchmark app is not scored yet; it moves to Done with its first
-  scored run.
 - **R06 Python profile: Django, FastAPI, Flask.** Unscoped ORM queries, `bandit`, `pip-audit`.
   Done when: its benchmark app scores.
   Status (2026-10-08): checklist sections, stack patterns, Django (urls.py include chain, DRF routers and
