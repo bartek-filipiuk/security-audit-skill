@@ -1,0 +1,96 @@
+{
+  "version": 2,
+  "app": "real/miniorange_saml-3.2.0",
+  "module": "miniorange_saml",
+  "module_version": "3.2.0",
+  "note": "Negative control for answer-key-3.1.3.json: miniorange_saml 3.2.0 is the release that fixes every advisory scored there. `seeded` is empty; `decoys` are the fixed code at 3.2.0 lines (verified against the extracted tree with `node benchmark/real/fetch.mjs miniorange_saml 3.2.0 --check --dest <run>`), so `decoy false positives` counts verified findings that still report a fixed advisory. A verified finding that matches nothing is listed for review: a real issue left in 3.2.0, a key gap, or a false positive. Same format and matching rules as benchmark/answer-key.json. The embedded-credential (148) and stored-password (149) fixes delete code, so they have no decoy.",
+  "window": 2,
+  "seeded": [],
+  "decoys": [
+    {
+      "id": "SA-2026-031-fixed",
+      "locations": [
+        { "file": "src/Utilities.php", "lines": [546, 549] },
+        { "file": "src/Utilities.php", "lines": [605, 618] },
+        { "file": "src/Utilities.php", "lines": [637, 643] },
+        { "file": "src/Utilities.php", "lines": [688, 696] },
+        { "file": "src/Utilities.php", "lines": [719, 727] },
+        { "file": "src/MiniOrangeSamlAcs.php", "lines": [106, 127] }
+      ],
+      "why": "Every failed signature, algorithm, key or Destination check now exits, verify() must return 1, and the ACS stops on an invalid response or assertion signature."
+    },
+    {
+      "id": "SA-2026-145-fixed",
+      "locations": [
+        { "file": "src/Utilities.php", "lines": [619, 635] },
+        { "file": "src/Utilities.php", "lines": [663, 686] },
+        { "file": "src/Utilities.php", "lines": [760, 780] }
+      ],
+      "why": "The signature algorithm is limited to RSA-SHA1/256/384/512 in validateSignature(), castKey() and checkSign(); anything else exits."
+    },
+    {
+      "id": "SA-2026-141-fixed",
+      "locations": [
+        { "file": "miniorange_saml.routing.yml", "lines": [130, 135] }
+      ],
+      "why": "add_new_idp requires `administer site configuration`; the anonymous payment_page_visited route and its controller are gone."
+    },
+    {
+      "id": "SA-2026-143-fixed",
+      "locations": [
+        { "file": "src/Controller/MiniorangeSamlController.php", "lines": [54, 60] },
+        { "file": "src/Controller/MiniorangeSamlController.php", "lines": [129, 133] },
+        { "file": "src/MiniOrangeSamlAcs.php", "lines": [44, 48] },
+        { "file": "src/MiniOrangeSamlAcs.php", "lines": [205, 213] },
+        { "file": "src/Utilities.php", "lines": [1119, 1128] }
+      ],
+      "why": "RelayState is used as a redirect only when Utilities::isRelayStateLocal() (UrlHelper::isExternal / externalIsLocal) accepts it."
+    },
+    {
+      "id": "SA-2026-142-fixed",
+      "locations": [
+        { "file": "src/Api/MoAuthApi.php", "lines": [25, 32] }
+      ],
+      "why": "postHttpCall() uses Drupal's HTTP client with default TLS verification."
+    },
+    {
+      "id": "SA-2026-147-fixed",
+      "locations": [
+        { "file": "src/MiniOrangeSamlAcs.php", "lines": [316, 321] },
+        { "file": "src/MiniOrangeSamlAcs.php", "lines": [364, 375] }
+      ],
+      "why": "showTestResults() escapes the username, attribute names and values with Html::escape."
+    },
+    {
+      "id": "SA-2026-150-fixed",
+      "locations": [
+        { "file": "src/MiniOrangeSamlAcs.php", "lines": [157, 179] }
+      ],
+      "why": "Response and assertion IDs are checked against and stored in an expirable key-value store before login."
+    },
+    {
+      "id": "SA-2026-151-fixed",
+      "locations": [
+        { "file": "src/Form/MiniorangeSpInfo.php", "lines": [541, 553] },
+        { "file": "src/Form/MiniorangeSpInfo.php", "lines": [678, 722] }
+      ],
+      "why": "The metadata URL goes through fetchMetadataFromUrl(): http/https only, resolved addresses in private or reserved ranges rejected, redirects limited."
+    },
+    {
+      "id": "SA-2026-144-fixed",
+      "locations": [
+        { "file": "src/XMLSecurityKey.php", "lines": [739, 741] },
+        { "file": "src/XMLSecurityKey.php", "lines": [1010, 1011] }
+      ],
+      "why": "HMAC comparison with hash_equals(), request IDs from random_bytes()."
+    },
+    {
+      "id": "XML-hardened",
+      "locations": [
+        { "file": "src/MiniOrangeSamlAcs.php", "lines": [50, 68] }
+      ],
+      "why": "The SAML response parser disables the external entity loader, rejects a DOCTYPE and parses with LIBXML_NONET."
+    }
+  ],
+  "known_extras": []
+}

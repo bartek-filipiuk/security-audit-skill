@@ -1,0 +1,40 @@
+{
+  "project": "miniorange_saml",
+  "name": "SAML SSO - Service Provider (Drupal contrib)",
+  "homepage": "https://www.drupal.org/project/miniorange_saml",
+  "license": "GPL-2.0-or-later",
+  "note": "Public releases fetched by benchmark/real/fetch.mjs, never vendored. 3.1.3 is the vulnerable target, 3.2.0 the fixed control. Fix diffs: https://git.drupalcode.org/api/v4/projects/project%2Fminiorange_saml/repository/compare?from=3.1.3&to=3.1.4 and ?from=3.1.4&to=3.2.0.",
+  "secret_constants": [
+    { "file": "src/MiniorangeSamlConstant.php", "name": "DEFAULT_API_KEY", "why": "the vendor key shipped in the module (SA-CONTRIB-2026-148); fetch.mjs --check fails if its value ever lands in benchmark/real/" }
+  ],
+  "versions": {
+    "3.1.3": {
+      "url": "https://ftp.drupal.org/files/projects/miniorange_saml-3.1.3.tar.gz",
+      "sha256": "21c02d408c86aa5fe3984a402fd788edce55c6a05cad5417c2913eb4b34e9f3c",
+      "tag": "3.1.3",
+      "released": "2026-02-25",
+      "key": "answer-key-3.1.3.json"
+    },
+    "3.2.0": {
+      "url": "https://ftp.drupal.org/files/projects/miniorange_saml-3.2.0.tar.gz",
+      "sha256": "f51d6794861feba50a07c91fbfbdbf9ba8da4d74862085a7731c2b56a6b37035",
+      "tag": "3.2.0",
+      "released": "2026-09-09",
+      "key": "answer-key-3.2.0.json"
+    }
+  },
+  "advisories": [
+    { "sa": "SA-CONTRIB-2026-031", "cve": "CVE-2026-5343", "risk": "Critical 19/25", "type": "Authentication bypass", "fixed_in": "3.1.4", "url": "https://www.drupal.org/sa-contrib-2026-031" },
+    { "sa": "SA-CONTRIB-2026-141", "cve": "CVE-2026-87943", "risk": "Critical 18/25", "type": "Improper access control", "fixed_in": "3.2.0", "url": "https://www.drupal.org/sa-contrib-2026-141" },
+    { "sa": "SA-CONTRIB-2026-142", "cve": "CVE-2026-87944", "risk": "Critical 15/25", "type": "Improper certificate validation", "fixed_in": "3.2.0", "url": "https://www.drupal.org/sa-contrib-2026-142" },
+    { "sa": "SA-CONTRIB-2026-143", "cve": "CVE-2026-87945", "risk": "Critical 16/25", "type": "Open redirect", "fixed_in": "3.2.0", "url": "https://www.drupal.org/sa-contrib-2026-143" },
+    { "sa": "SA-CONTRIB-2026-144", "cve": "CVE-2026-87946", "risk": "Critical 15/25", "type": "Weak cryptographic practices", "fixed_in": "3.2.0", "url": "https://www.drupal.org/sa-contrib-2026-144" },
+    { "sa": "SA-CONTRIB-2026-145", "cve": "CVE-2026-87947", "risk": "Moderately critical 14/25", "type": "Authentication bypass (signature algorithm not restricted)", "fixed_in": "3.2.0", "url": "https://www.drupal.org/sa-contrib-2026-145" },
+    { "sa": "SA-CONTRIB-2026-146", "cve": "CVE-2026-87948", "risk": "Moderately critical 13/25", "type": "Cross-site scripting", "fixed_in": "3.2.0", "url": "https://www.drupal.org/sa-contrib-2026-146" },
+    { "sa": "SA-CONTRIB-2026-147", "cve": "CVE-2026-87949", "risk": "Moderately critical 12/25", "type": "Cross-site scripting (SAML attributes)", "fixed_in": "3.2.0", "url": "https://www.drupal.org/sa-contrib-2026-147" },
+    { "sa": "SA-CONTRIB-2026-148", "cve": "CVE-2026-87950", "risk": "Moderately critical 13/25", "type": "Embedded credentials", "fixed_in": "3.2.0", "url": "https://www.drupal.org/sa-contrib-2026-148" },
+    { "sa": "SA-CONTRIB-2026-149", "cve": "CVE-2026-87951", "risk": "Moderately critical 12/25", "type": "Information disclosure", "fixed_in": "3.2.0", "url": "https://www.drupal.org/sa-contrib-2026-149" },
+    { "sa": "SA-CONTRIB-2026-150", "cve": "CVE-2026-87952", "risk": "Moderately critical 10/25", "type": "Insufficient replay protection", "fixed_in": "3.2.0", "url": "https://www.drupal.org/sa-contrib-2026-150" },
+    { "sa": "SA-CONTRIB-2026-151", "cve": "CVE-2026-87953", "risk": "Moderately critical 11/25", "type": "Server-side request forgery", "fixed_in": "3.2.0", "url": "https://www.drupal.org/sa-contrib-2026-151" }
+  ]
+}

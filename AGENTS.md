@@ -30,6 +30,7 @@ a test app with 26 seeded bugs and 16 decoys, plus the scorer and the usage coun
    Claude Code paths, so the skill keeps working in other agents (R26).
 5. **No real projects.** No names, paths, findings or numbers from anyone's real project in the repo.
    Ledgerly and the other benchmark apps under `benchmark/` are the only projects that may be named. Never commit `.security-audit/` output or `.env` files.
+   Exception: public open-source modules under `benchmark/real/`, referenced by a published advisory and fetched by script (never vendored), may be named with their answer keys.
 
 ## Stack profiles
 
