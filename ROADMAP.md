@@ -80,7 +80,7 @@ Rules that apply to every item:
 - **R13 Cheaper auditors.** Measure on the benchmark whether auditors can run on a lighter model without
   losing recall. Done when: the number is published, whatever it says.
 - **R26 Any coding agent.** Install and run outside Claude Code (skills CLI), with the same report.
-  (portability layer in an open PR; end-to-end benchmark in OpenCode pending.) Done when: the benchmark runs end to end in at least one other agent and the result is published.
+  (portability layer merged 2026-10-17, #24; end-to-end benchmark in OpenCode pending.) Done when: the benchmark runs end to end in at least one other agent and the result is published.
 
 ## Ideas
 
