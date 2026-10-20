@@ -160,6 +160,9 @@ Rules that apply to every item:
   primary evidence (window of 2 lines, nearest entry wins), with no keyword fallback. Re-scoring the four R01
   runs kept recall 16/16 and 0 decoy false positives in each, and removed 21 to 29 loose finding-to-bug
   pairs per run (findings that had matched only through a cited context file and a keyword).
+  Since 2026-10-20 a finding whose primary location matches nothing may match one entry through its
+  secondary locations (the rest of its `**File**:` line, or the Evidence of a systematic finding); decoys
+  count only through the primary (`benchmark/README.md`, Rules).
 
 - **R01 Incremental audit, `--since <commit>|last`** (2026-10-04): re-audits the entry points whose code changed
   (directly or through imports) and carries the rest of the previous report, each item marked with its commit.
