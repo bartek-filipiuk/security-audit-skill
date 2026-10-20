@@ -71,6 +71,16 @@ The run directory holds `meta.json` (with the key's path) and the downloaded tar
 
 | Date | Release | Run | Skill sha | Model | Recall | Decoy FP | Unmatched | Tokens / cost / time |
 |---|---|---|---|---|---|---|---|---|
-| | 3.1.3 | A | | | not run yet | | | |
-| | 3.2.0 | control | | | not run yet | | | |
+| 2026-10-19 | 3.1.3 | A | 7f956ef | Opus 5.5 | 3/11 by the scorer, 4/11 by hand (SA-2026-031 CRITICAL found as the top finding; 143, 142; 147 as a secondary location of a found XSS); 141 and 148 found and dropped by the verifier | 0 | 2 | 3.25M / 2.37 USD / 6 min |
+| 2026-10-19 | 3.2.0 | control | 7f956ef | Opus 5.5 | 0/0 (control) | 1 (the SA-151 fix flagged for a redirect / DNS-rebinding bypass, admin-only; read as a residual issue rather than a false positive) | 7, under review | 4.28M / 3.15 USD / 8 min |
 | | 3.1.3 | B (repeat) | | | not run yet | | | |
+
+Notes:
+- The prompt was `/security-audit` and nothing else; the skill was not told about the advisories.
+- Run A: no CRITICAL or HIGH false positive. The scorer matches the primary location of a finding only, so a
+  finding that lists an advisory's lines as its second location counts as unmatched; the by-hand number corrects that.
+- Run A missed SA-2026-145 (signature algorithm taken from the response), 150 (replay), 151 (SSRF), 144
+  (non-constant-time compare, predictable IDs) and 149 (password in configuration).
+- Run B: the fixed signature, redirect, access, TLS and replay code was assessed as fixed. Its unmatched
+  findings are being reviewed by hand and are not described here until that review, and any report it leads to,
+  is done.

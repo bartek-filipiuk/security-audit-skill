@@ -87,7 +87,8 @@ Rules that apply to every item:
 - **R30 Mini benchmarks on real advisories.** Small audits of real modules pinned to a version before a public
   security fix (for example a Drupal contrib module with a published advisory), scored on whether the skill
   finds the published issue. Defensive only: public advisories, no exploit code.
-  Status (2026-10-19): tooling and keys in; first runs pending. `benchmark/real/fetch.mjs` (pinned sha256,
+  Status (2026-10-19): tooling and keys in; first runs done (3.1.3: the CRITICAL SA-2026-031 found, 4 of 11
+  advisories by hand; 3.2.0 control: no fixed advisory reported again). Results in `benchmark/real/README.md`. `benchmark/real/fetch.mjs` (pinned sha256,
   `--check`), `score.mjs --key`, and keys for the Drupal module `miniorange_saml` 3.1.3 (11 drupal.org advisories)
   with 3.2.0 as the fixed control.
 - **R16 Ruby on Rails profile** (`brakeman`).
