@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // Scores one benchmark run against answer-key.json and appends a line to results.jsonl.
-//   node benchmark/score.mjs <run-dir> [--label "what changed"] [--tool security-audit|claude-security] [--app <name>] [--no-save]
-// <run-dir> is what setup.mjs printed: it holds meta.json and app/.security-audit/. The answer key is the
-// one of the app named by --app, else by meta.json `bench_app`, else Ledgerly's (see apps.mjs).
+//   node benchmark/score.mjs <run-dir> [--label "what changed"] [--tool security-audit|claude-security] [--app <name>] [--key <path>] [--no-save]
+// <run-dir> is what setup.mjs (or benchmark/real/fetch.mjs) printed: it holds meta.json and app/.security-audit/.
+// The answer key is the file given by --key, else the one of the app named by --app, else meta.json `key`
+// (written by benchmark/real/fetch.mjs), else the one of meta.json `bench_app`, else Ledgerly's (see apps.mjs).
 //
 // Matching is exact: by file and line, never by keywords (roadmap R03).
 // - A finding has one primary location: the first `**File**:` line of its Evidence section (else the
@@ -24,7 +25,7 @@
 // - A finding without a line, or outside every window, matches nothing and is listed for review.
 
 import { appendFileSync, existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadAudit, titleOf } from "../scripts/audit-state.mjs";
 import { benchApp } from "./apps.mjs";
@@ -152,7 +153,7 @@ export function score(findings, key) {
   const where = (l) => (l ? `${l.file}${l.start != null ? `:${l.start}${l.end !== l.start ? `-${l.end}` : ""}` : " (no line)"}` : "(no location)");
 
   return {
-    recall: +(found / seeded.length).toFixed(3),
+    recall: seeded.length ? +(found / seeded.length).toFixed(3) : null,
     found,
     carried: seeded.filter((s) => s.carried).length,
     dropped_by_verifier: seeded.filter((s) => s.result === "dropped_by_verifier").length,
@@ -203,10 +204,23 @@ export function claudeSecurityLocation(o) {
   return { file: fromPath?.file ?? file, start, end: start == null ? null : Math.max(end, start) };
 }
 
+// The answer key for a run: --key, else --app's key, else meta.key (real-advisory runs), else meta.bench_app's key.
+export function resolveKey(args, meta = {}) {
+  const opt = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
+  const path = opt("--key") ?? (opt("--app") ? undefined : meta.key);
+  if (path) {
+    const key = resolve(path);
+    const name = opt("--key") ? (JSON.parse(readFileSync(key, "utf8")).app ?? basename(key, ".json")) : (meta.bench_app ?? basename(key, ".json"));
+    return { name, key };
+  }
+  const bench = benchApp(opt("--app") ?? meta.bench_app);
+  return { name: bench.name, key: bench.key };
+}
+
 // realpath on both sides: the skill is usually run through a symlink (~/.claude/skills/...).
 if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   const args = process.argv.slice(2);
-  const runDir = resolve(args.find((a) => !a.startsWith("--") && !["--label", "--tool", "--app"].includes(args[args.indexOf(a) - 1])) ?? ".");
+  const runDir = resolve(args.find((a) => !a.startsWith("--") && !["--label", "--tool", "--app", "--key"].includes(args[args.indexOf(a) - 1])) ?? ".");
   const label = args.indexOf("--label") >= 0 ? args[args.indexOf("--label") + 1] : "";
   const auditDir = join(runDir, "app", ".security-audit");
   const tool = args.includes("--tool") ? args[args.indexOf("--tool") + 1] : "security-audit";
@@ -224,7 +238,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     report = join(auditDir, "report.md");
   }
   const meta = existsSync(join(runDir, "meta.json")) ? JSON.parse(readFileSync(join(runDir, "meta.json"), "utf8")) : {};
-  const bench = benchApp(args.includes("--app") ? args[args.indexOf("--app") + 1] : meta.bench_app);
+  const bench = resolveKey(args, meta);
   const key = JSON.parse(readFileSync(bench.key, "utf8"));
   const r = score(findings, key);
 
@@ -233,7 +247,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     : null;
 
   console.log(`App ${bench.name}`);
-  console.log(`Recall ${r.found}/${r.seeded.length} (${Math.round(r.recall * 100)}%)${r.carried ? ` (${r.carried} carried over from a previous run)` : ""} · dropped by verifier ${r.dropped_by_verifier} · missed ${r.missed} · decoy false positives ${r.decoy_fp} · duration ${minutes ?? "?"} min`);
+  console.log(`Recall ${r.found}/${r.seeded.length} (${r.recall == null ? "no seeded bugs: control run" : `${Math.round(r.recall * 100)}%`})${r.carried ? ` (${r.carried} carried over from a previous run)` : ""} · dropped by verifier ${r.dropped_by_verifier} · missed ${r.missed} · decoy false positives ${r.decoy_fp} · duration ${minutes ?? "?"} min`);
   console.log(`Matching: exact by file and line (window ±${r.window}), loose matches ${r.loose_matches}`);
   console.log("");
   for (const s of r.seeded) console.log(`  ${s.id} ${s.result.padEnd(19)} ${s.match.padEnd(5)} ${s.by.join(", ").padEnd(24)} ${s.proof.join(",").padEnd(8)} ${s.carried ? "carried " : ""}${s.class}`);

@@ -345,3 +345,36 @@ test("answer key: every location points at real lines of a real file, ranges do 
     assert.ok(x.lines[1] < y.lines[0] || y.lines[1] < x.lines[0], `${x.id} and ${y.id} overlap in ${x.file}`);
   }
 });
+
+test("--key and meta.key pick the answer key; a key with no seeded bugs is a control run", async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { spawnSync } = await import("node:child_process");
+  const { resolveKey } = await import("../benchmark/score.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "sa-score-key-"));
+  const keyFile = join(dir, "answer-key-1.0.0.json");
+  writeFileSync(keyFile, JSON.stringify({ app: "real/demo-1.0.0", window: 2, seeded: [{ id: "SA-1", class: "demo", locations: [{ file: "src/a.php", lines: [3, 4] }] }], decoys: [], known_extras: [] }));
+  const control = join(dir, "control.json");
+  writeFileSync(control, JSON.stringify({ app: "real/demo-2.0.0", seeded: [], decoys: [{ id: "SA-1-fixed", locations: [{ file: "src/a.php", lines: [3, 4] }] }] }));
+
+  assert.deepEqual(resolveKey(["run", "--key", keyFile], {}), { name: "real/demo-1.0.0", key: keyFile });
+  assert.deepEqual(resolveKey(["run"], { key: keyFile, bench_app: "real/demo-1.0.0" }), { name: "real/demo-1.0.0", key: keyFile });
+  assert.equal(resolveKey(["run", "--key", control], { key: keyFile }).key, control, "--key beats meta.key");
+  assert.equal(resolveKey(["run", "--app", "php-tickets"], { key: keyFile }).name, "php-tickets", "--app beats meta.key");
+  assert.equal(resolveKey(["run"], {}).name, "ledgerly");
+  assert.equal(score([], JSON.parse(readFileSync(control, "utf8"))).recall, null);
+
+  const run = join(dir, "run");
+  mkdirSync(join(run, "app", ".security-audit", "findings"), { recursive: true });
+  writeFileSync(join(run, "meta.json"), JSON.stringify({ bench_app: "real/demo-1.0.0", key: keyFile }));
+  writeFileSync(join(run, "app", ".security-audit", "findings", "auth-001.md"), finding("auth-001", { file: "src/a.php:3" }).text);
+  const cli = (...extra) => spawnSync(process.execPath, [join(repo, "benchmark", "score.mjs"), run, "--no-save", ...extra], { encoding: "utf8" });
+  const viaMeta = cli();
+  assert.equal(viaMeta.status, 0, viaMeta.stderr);
+  assert.match(viaMeta.stdout, /^App real\/demo-1\.0\.0$/m);
+  assert.match(viaMeta.stdout, /Recall 1\/1 \(100%\)/);
+  const viaFlag = cli("--key", control, "--label", "control");
+  assert.equal(viaFlag.status, 0, viaFlag.stderr);
+  assert.match(viaFlag.stdout, /^App real\/demo-2\.0\.0$/m);
+  assert.match(viaFlag.stdout, /Recall 0\/0 \(no seeded bugs: control run\).*decoy false positives 1/);
+});
