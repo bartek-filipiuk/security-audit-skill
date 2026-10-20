@@ -145,15 +145,31 @@ Caveats (training data, nondeterminism, one module) and results: `benchmark/real
   seeded bugs in the prompt. The app source has no hint comments; keep it that way.
 - Compare runs on the same model and effort. Expect run-to-run variance: run twice before trusting
   a difference of one or two bugs.
-- Matching is exact, by file and line; there are no keywords and no fallback. A finding's primary
+- Matching is exact, by file and line; there are no keywords. A finding's primary
   location is the first `**File**:` line of its Evidence (else the first `path:line` it cites); other files
-  it cites are context and never match. It matches a key entry when the path ends with the entry's file
+  it cites are context and never match, except its secondary locations (below). It matches a key entry when the path ends with the entry's file
   and the line is inside one of the entry's ranges or at most `window` (2) lines outside it. When several
   entries are in reach, the nearest wins, so neighbouring ranges in one file (B06 and decoy D04) stay apart.
   `advisory: true` entries (vulnerable dependency versions) take only findings in category `dependency`,
   and those findings match nothing else, except `any_category: true` entries (supply-chain settings in a
   manifest, which an auditor may file as `config` or `dependency`). A finding without a line matches nothing, except a `file_level: true` entry (a secret committed in a file that
   exists only in git history, B15's `.env`): a finding that cites that file with no line matches it.
+- Secondary locations. When a finding's primary location matches nothing, its other locations are tried
+  with the same window and nearest-wins rules: every `path:line` on its `**File**:` line after the first,
+  and, for a class finding marked `systematic` (the skill's dedup rule merges one root cause at several
+  sinks into one finding, `systematic: N locations`), every `path:line` in its Evidence section outside
+  code blocks (`src/x.php:309,313,315` is three lines; a bare `:27-31` continues the previous file). Cites
+  elsewhere (TRACE, Impact, a plain finding's prose) stay context. A finding still matches at most one
+  entry this way, the nearest over all its secondary locations, and the primary is always preferred. The
+  entry is reported as `found (secondary location)` with match `secondary`, and the finding with the
+  location that matched, so each such pair can be checked by hand.
+- Decoys count only through the primary location. A secondary location whose nearest entry is a decoy is
+  skipped (the next one may still match a seeded bug) and listed under "Decoys cited only in a secondary
+  location", never counted as a decoy false positive. The primary location is the claim the finding is
+  about and the one its fix targets; a systematic list is the EXPAND step's "where else", checked less
+  deeply, and a decoy false positive blocks a merge (AGENTS.md rule 3), so counting those lists would let
+  one well-placed primary finding drag in a false positive from a sibling it only mentioned. Seeded hits go
+  the other way because the scorer is meant to credit what a reader of the report would credit.
   Cited files may be code, manifests, CI workflows (`.github/workflows/*.yml`), Dockerfiles, compose and IaC files.
 - A range is the vulnerable statement or the lines a fix changes, not the whole file. Decoy ranges
   cover the code that looks suspicious. When a real finding is scored as unmatched, check the range

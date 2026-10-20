@@ -5,15 +5,15 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { claudeSecurityLocation, distance, primaryLocation, score } from "../benchmark/score.mjs";
+import { citedLocations, claudeSecurityLocation, distance, primaryLocation, score, secondaryLocations } from "../benchmark/score.mjs";
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), "..");
 const key = JSON.parse(readFileSync(join(repo, "benchmark", "answer-key.json"), "utf8"));
 const app = join(repo, "benchmark", "app");
 
-const finding = (id, { status = "verified", category = id.split("-")[0], file, extra = "" }) => {
-  const text = `---\nid: ${id}\ncategory: ${category}\nseverity: HIGH\nstatus: ${status}\n---\n\n## Title\n${id} title\n\n## Evidence\n${file ? `- **File**: \`${file}\`\n` : ""}${extra}`;
-  return { stem: id, data: { id, category, severity: "HIGH", status }, body: `## Title\n${id} title\n`, text };
+const finding = (id, { status = "verified", category = id.split("-")[0], file, extra = "", title = `${id} title` }) => {
+  const text = `---\nid: ${id}\ncategory: ${category}\nseverity: HIGH\nstatus: ${status}\n---\n\n## Title\n${title}\n\n## Evidence\n${file ? `- **File**: \`${file}\`\n` : ""}${extra}`;
+  return { stem: id, data: { id, category, severity: "HIGH", status }, body: `## Title\n${title}\n`, text };
 };
 const run = (...fs) => score(fs, key);
 const entriesOf = (r, id) => r.matches.find((m) => m.finding === id).entries;
@@ -85,6 +85,65 @@ test("same file, different issue: outside every range stays unmatched", () => {
   const r = run(finding("injection-001", { file: "src/lib/auth.ts:23" })); // B12 is 28-29, B16 is 36
   assert.deepEqual(entriesOf(r, "injection-001"), []);
   assert.equal(r.found, 0);
+});
+
+test("secondary locations: the rest of the File line, and the Evidence of a systematic finding only", () => {
+  assert.deepEqual(citedLocations("`src/a.php:309,313,315` and `src/b.ts:13-17`, `:27-31`; `src/c.ts`"), [
+    { file: "src/a.php", start: 309, end: 309 }, { file: "src/a.php", start: 313, end: 313 }, { file: "src/a.php", start: 315, end: 315 },
+    { file: "src/b.ts", start: 13, end: 17 }, { file: "src/b.ts", start: 27, end: 31 },
+  ]);
+  assert.deepEqual(citedLocations("```\nsrc/x.ts:4 inside code\n```\n`src/y.ts:5`"), [{ file: "src/y.ts", start: 5, end: 5 }], "code blocks are skipped");
+  const fileLine = "## Title\nT\n\n## Evidence\n- **File**: `src/a.ts:3`, `src/b.ts:9`\nsee `src/c.ts:7`\n\n## TRACE\n- **Sink**: `src/d.ts:1`\n";
+  assert.deepEqual(secondaryLocations(fileLine), [{ file: "src/b.ts", start: 9, end: 9 }], "a plain finding: only the File line, never context cites");
+  const systematic = "## Title\nT (systematic: 3 locations)\n\n## Evidence\n- **File**: `src/a.ts:3`\nSame class:\n- `src/b.ts:9,12`\n- `src/a.ts:3`\n\n## TRACE\n- **Sink**: `src/d.ts:1`\n";
+  assert.deepEqual(secondaryLocations(systematic), [{ file: "src/b.ts", start: 9, end: 9 }, { file: "src/b.ts", start: 12, end: 12 }], "Evidence only, primary not repeated");
+});
+
+test("a systematic finding matches through a secondary location when its primary matches nothing", () => {
+  const extra = "Same class, same root cause:\n- `src/server/jobs/digest.ts:34,41` interpolates names unescaped.\n";
+  const r = run(finding("injection-001", { file: "src/lib/auth.ts:23", title: "HTML injection in emails (systematic: 2 locations)", extra }));
+  const m = r.matches.find((x) => x.finding === "injection-001");
+  assert.deepEqual(m.entries, ["B13"]);
+  assert.equal(m.match, "secondary");
+  assert.equal(m.secondary_location, "src/server/jobs/digest.ts:41");
+  const b13 = r.seeded.find((s) => s.id === "B13");
+  assert.deepEqual([b13.result, b13.match, b13.by], ["found", "secondary", ["injection-001"]]);
+  assert.equal(r.found, 1);
+  assert.equal(r.found_secondary, 1);
+  assert.equal(r.secondary_matches, 1);
+  assert.equal(r.matching, "exact", "a secondary location is still matched by file and line");
+  const plain = run(finding("injection-002", { file: "src/lib/auth.ts:23", extra }));
+  assert.deepEqual(entriesOf(plain, "injection-002"), [], "without the systematic marker the same cite is context");
+});
+
+test("secondary locations: one entry per finding, the nearest; the primary is always preferred", () => {
+  const two = run(finding("auth-001", { file: "src/lib/auth.ts:23, src/server/jobs/digest.ts:33, src/app/api/export/route.ts:11" }));
+  assert.deepEqual(entriesOf(two, "auth-001"), ["B03"], "distance 0 at B03 beats distance 2 at B13");
+  assert.equal(two.found, 1, "no double counting across secondary locations");
+  assert.equal(two.seeded.find((s) => s.id === "B13").result, "missed");
+  const primary = run(finding("auth-002", { file: "src/app/(app)/invoices/actions.ts:10, src/app/api/export/route.ts:10" }));
+  assert.deepEqual(entriesOf(primary, "auth-002"), ["B01"]);
+  assert.equal(primary.matches[0].match, "exact");
+  assert.equal(primary.seeded.find((s) => s.id === "B03").result, "missed", "secondaries are not tried when the primary matches");
+  const both = run(
+    finding("auth-003", { file: "src/app/api/export/route.ts:10" }),
+    finding("auth-004", { file: "src/lib/auth.ts:23, src/app/api/export/route.ts:11" }),
+  );
+  const b03 = both.seeded.find((s) => s.id === "B03");
+  assert.deepEqual([b03.match, b03.by], ["exact", ["auth-003", "auth-004"]], "an exact hit labels the entry exact");
+});
+
+test("decoys count only through the primary location", () => {
+  const r = run(finding("concurrency-001", { file: "src/app/(app)/invoices/actions.ts:22-25; src/server/ai/billing-tools.ts:27-29" }));
+  assert.equal(r.decoy_fp, 0, "a decoy hit by a secondary location is not a false positive");
+  assert.deepEqual(r.decoySecondary, [{ decoy: "D13", finding: "concurrency-001", location: "src/server/ai/billing-tools.ts:27-29" }]);
+  assert.deepEqual(r.unmatched.map((u) => u.id), ["concurrency-001"], "it stays listed for review");
+  const next = run(finding("concurrency-002", { file: "src/app/(app)/invoices/actions.ts:22-25; src/server/ai/billing-tools.ts:13-17, :27-29" }));
+  assert.deepEqual(entriesOf(next, "concurrency-002"), ["B22"], "a decoy secondary is skipped, the next location still matches");
+  assert.equal(next.decoy_fp, 0);
+  const prim = run(finding("concurrency-003", { file: "src/server/ai/billing-tools.ts:27, src/server/ai/billing-tools.ts:13" }));
+  assert.deepEqual(entriesOf(prim, "concurrency-003"), ["D13"]);
+  assert.equal(prim.decoy_fp, 1, "the primary location on a decoy still counts");
 });
 
 test("advisory entries take only dependency findings, and dependency findings only advisories", () => {

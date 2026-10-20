@@ -8,7 +8,7 @@
 // Matching is exact: by file and line, never by keywords (roadmap R03).
 // - A finding has one primary location: the first `**File**:` line of its Evidence section (else the
 //   first `path:line` it cites). A range (`:15-28`) counts as its start..end. Other files a finding
-//   cites (callers, chain links) are context and never match.
+//   cites (callers, chain links) are context and never match, except the secondary locations below.
 // - A key entry lists locations: file plus the inclusive line range of the vulnerable statement or of
 //   the code a fix changes. The file must be equal to the finding's path or a path suffix of it
 //   (`app/src/x.ts` matches `src/x.ts`; a bare `x.ts` matches nothing).
@@ -22,6 +22,15 @@
 //   which an auditor may file as `config` or `dependency`) match findings of any category.
 // - `file_level: true` entries (a secret committed in a file that exists only in git history) also match a
 //   finding that cites that file with no line, at distance 0. Every other entry needs a line.
+// - Secondary locations: when the primary location matches nothing, the finding's other locations are
+//   tried with the same window and nearest-wins rules. They are every `path:line` on the `**File**:` line
+//   after the first, and, for a class finding marked `systematic` (SKILL.md dedup rule: one finding for one
+//   root cause at several sinks), every `path:line` cited in its Evidence section outside code blocks.
+//   `309,313,315` lists lines of one file and a bare `:27-31` continues the previous file. A finding
+//   still matches at most one entry this way: the nearest over all its secondary locations. Such a hit
+//   is reported as `found (secondary location)` (match `secondary`).
+// - Decoys count only through the primary location. A secondary location whose nearest entry is a decoy
+//   is skipped and listed for review, never counted as a decoy false positive (see benchmark/README.md).
 // - A finding without a line, or outside every window, matches nothing and is listed for review.
 
 import { appendFileSync, existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
@@ -69,6 +78,48 @@ export function primaryLocation(text) {
   return parseLocation(body);
 }
 
+// Every location cited in `text`: `path:line`, `path:a-b`, `path:1,5,9` (one location per line or range)
+// and a bare `:27-31` that continues the previous file. Fenced code blocks are skipped.
+export function citedLocations(text) {
+  const out = [];
+  const prose = text.replace(/```[\s\S]*?(?:```|$)/g, "");
+  const CITE = new RegExp(String.raw`(?<![\w/.])(?:(${PATH}|\.env(?![.\w])))?:(\d+)(?:\s*[-\u2013]\s*(\d+))?((?:,\s?\d+(?:\s*[-\u2013]\s*\d+)?)*)`, "g");
+  let last = null;
+  for (const m of prose.matchAll(CITE)) {
+    let file = last;
+    if (m[1]) {
+      if (m[1] !== ".env" && !SOURCE_FILE.test(m[1].split("/").pop())) continue;
+      file = normalize(m[1]);
+    }
+    if (!file) continue;
+    last = file;
+    const ranges = [[m[2], m[3]], ...[...(m[4] ?? "").matchAll(/(\d+)(?:\s*[-\u2013]\s*(\d+))?/g)].map((r) => [r[1], r[2]])];
+    for (const [a, b] of ranges) {
+      const start = Number(a);
+      out.push({ file, start, end: b ? Math.max(Number(b), start) : start });
+    }
+  }
+  return out;
+}
+
+const section = (text, name) => text.match(new RegExp(String.raw`^## ${name}[^\n]*\n([\s\S]*?)(?=^## |(?![\s\S]))`, "m"))?.[1] ?? "";
+
+// Secondary locations of a finding (tried only when the primary matches nothing): the other locations on its
+// `**File**:` line and, for a `systematic` class finding, every location cited in its Evidence section.
+export function secondaryLocations(text, primary = primaryLocation(text)) {
+  const evidence = section(text, "Evidence");
+  const title = section(text, "Title");
+  const fileLine = text.match(/\*\*File\*\*:?\s*(.+)/)?.[1] ?? "";
+  const source = /\bsystematic\b/i.test(title + "\n" + evidence) ? evidence || fileLine : fileLine;
+  const seen = new Set([primary && `${primary.file}:${primary.start}-${primary.end}`]);
+  return citedLocations(source).filter((l) => {
+    const id = `${l.file}:${l.start}-${l.end}`;
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+}
+
 // Cited paths lose a leading `app/` (the run directory); a key file under Laravel's own `app/` is compared
 // with and without it, so `app/Http/X.php` and `app/app/Http/X.php` both match it.
 const samePath = (cited, file) => [...new Set([file, normalize(file)])].some((f) => cited === f || cited.endsWith("/" + f));
@@ -103,6 +154,22 @@ export function matchFinding(finding, entries, window = DEFAULT_WINDOW) {
   return { entries: hits, distance: hits.length ? best : null };
 }
 
+// Fallback for a finding whose primary location matched nothing: the nearest non-decoy entry over its
+// secondary locations (one entry at most; on a tie the first location, then seeded before extras). A
+// secondary location whose nearest entry is a decoy is skipped and returned in `decoys` for review.
+export function matchSecondary(finding, entries, window = DEFAULT_WINDOW) {
+  let best = null;
+  const decoys = [];
+  for (const loc of finding.secondary ?? []) {
+    const m = matchFinding({ ...finding, loc }, entries, window);
+    if (!m.entries.length) continue;
+    const real = m.entries.filter((e) => e.kind !== "decoy");
+    if (!real.length) { decoys.push(...m.entries.map((e) => ({ entry: e, loc }))); continue; }
+    if (!best || m.distance < best.distance) best = { entry: real[0], distance: m.distance, loc };
+  }
+  return { best, decoys };
+}
+
 export function score(findings, key) {
   const window = key.window ?? DEFAULT_WINDOW;
   const kinds = [
@@ -112,6 +179,7 @@ export function score(findings, key) {
   ];
   const fs = findings.map((f) => {
     const loc = f.loc ?? primaryLocation(f.text);
+    const secondary = f.secondary ?? (f.text ? secondaryLocations(f.text, loc) : []);
     const finding = {
       id: f.data?.id ?? f.stem,
       status: f.data?.status === "fixed" ? "verified" : f.data?.status,
@@ -121,9 +189,13 @@ export function score(findings, key) {
       carried: Boolean(f.data?.carried_from),
       title: titleOf(f.data ?? {}, f.body),
       loc,
+      secondary,
     };
     const m = matchFinding(finding, kinds, window);
-    return { ...finding, match: m.entries.length ? "exact" : "none", entries: m.entries, distance: m.distance };
+    if (m.entries.length) return { ...finding, match: "exact", entries: m.entries, distance: m.distance, decoysSecondary: [] };
+    const s = matchSecondary(finding, kinds, window);
+    if (s.best) return { ...finding, match: "secondary", entries: [s.best.entry], distance: s.best.distance, via: s.best.loc, decoysSecondary: s.decoys };
+    return { ...finding, match: "none", entries: [], distance: null, decoysSecondary: s.decoys };
   });
   const verified = fs.filter((f) => f.status === "verified");
   const rejected = fs.filter((f) => f.status === "rejected");
@@ -135,7 +207,7 @@ export function score(findings, key) {
     return {
       id: e.id, class: e.class, detect: e.detect,
       result: hit.length ? "found" : dropped.length ? "dropped_by_verifier" : "missed",
-      match: hit.length || dropped.length ? "exact" : "none",
+      match: (hit.length ? hit : dropped).some((f) => f.match === "exact") ? "exact" : (hit.length ? hit : dropped).length ? "secondary" : "none",
       by: (hit.length ? hit : dropped).map((f) => f.id),
       proof: hit.map((f) => f.proof).filter(Boolean),
       carried: hit.length > 0 && hit.every((f) => f.carried),
@@ -151,10 +223,12 @@ export function score(findings, key) {
   const unmatched = verified.filter((f) => !claimed.has(f.id) && !fpIds.has(f.id) && !extraIds.has(f.id));
   const found = seeded.filter((s) => s.result === "found").length;
   const where = (l) => (l ? `${l.file}${l.start != null ? `:${l.start}${l.end !== l.start ? `-${l.end}` : ""}` : " (no line)"}` : "(no location)");
+  const decoySecondary = verified.flatMap((f) => f.decoysSecondary.map((d) => ({ decoy: d.entry.id, finding: f.id, location: where(d.loc) })));
 
   return {
     recall: seeded.length ? +(found / seeded.length).toFixed(3) : null,
     found,
+    found_secondary: seeded.filter((s) => s.result === "found" && s.match === "secondary").length,
     carried: seeded.filter((s) => s.carried).length,
     dropped_by_verifier: seeded.filter((s) => s.result === "dropped_by_verifier").length,
     missed: seeded.filter((s) => s.result === "missed").length,
@@ -164,11 +238,12 @@ export function score(findings, key) {
     raw_left: fs.filter((f) => f.status === "raw").length,
     matching: "exact",
     loose_matches: 0,
+    secondary_matches: fs.filter((f) => f.status !== "raw" && f.match === "secondary").length,
     window,
-    seeded, decoyFp,
+    seeded, decoyFp, decoySecondary,
     extras: extras.map((f) => f.id),
     unmatched: unmatched.map((f) => ({ id: f.id, severity: f.severity, title: f.title, location: where(f.loc) })),
-    matches: fs.filter((f) => f.status !== "raw").map((f) => ({ finding: f.id, status: f.status, location: where(f.loc), match: f.match, entries: f.entries.map((e) => e.id), distance: f.distance })),
+    matches: fs.filter((f) => f.status !== "raw").map((f) => ({ finding: f.id, status: f.status, location: where(f.loc), match: f.match, entries: f.entries.map((e) => e.id), distance: f.distance, ...(f.via ? { secondary_location: where(f.via) } : {}) })),
   };
 }
 
@@ -247,13 +322,22 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     : null;
 
   console.log(`App ${bench.name}`);
-  console.log(`Recall ${r.found}/${r.seeded.length} (${r.recall == null ? "no seeded bugs: control run" : `${Math.round(r.recall * 100)}%`})${r.carried ? ` (${r.carried} carried over from a previous run)` : ""} · dropped by verifier ${r.dropped_by_verifier} · missed ${r.missed} · decoy false positives ${r.decoy_fp} · duration ${minutes ?? "?"} min`);
-  console.log(`Matching: exact by file and line (window ±${r.window}), loose matches ${r.loose_matches}`);
+  console.log(`Recall ${r.found}/${r.seeded.length} (${r.recall == null ? "no seeded bugs: control run" : `${Math.round(r.recall * 100)}%`})${r.found_secondary ? ` (${r.found_secondary} through a secondary location)` : ""}${r.carried ? ` (${r.carried} carried over from a previous run)` : ""} · dropped by verifier ${r.dropped_by_verifier} · missed ${r.missed} · decoy false positives ${r.decoy_fp} · duration ${minutes ?? "?"} min`);
+  console.log(`Matching: exact by file and line (window ±${r.window}), loose matches ${r.loose_matches}, secondary-location matches ${r.secondary_matches}`);
   console.log("");
-  for (const s of r.seeded) console.log(`  ${s.id} ${s.result.padEnd(19)} ${s.match.padEnd(5)} ${s.by.join(", ").padEnd(24)} ${s.proof.join(",").padEnd(8)} ${s.carried ? "carried " : ""}${s.class}`);
+  for (const s of r.seeded) console.log(`  ${s.id} ${(s.result + (s.match === "secondary" ? " (secondary location)" : "")).padEnd(32)} ${s.match.padEnd(9)} ${s.by.join(", ").padEnd(24)} ${s.proof.join(",").padEnd(8)} ${s.carried ? "carried " : ""}${s.class}`);
   if (r.decoyFp.length) {
     console.log("\nDecoy false positives:");
     for (const d of r.decoyFp) console.log(`  ${d.decoy} <- ${d.finding}: ${d.title}`);
+  }
+  if (r.decoySecondary.length) {
+    console.log("\nDecoys cited only in a secondary location (not counted as false positives, review by hand):");
+    for (const d of r.decoySecondary) console.log(`  ${d.decoy} <- ${d.finding} at ${d.location}`);
+  }
+  const viaSecondary = r.matches.filter((m) => m.match === "secondary");
+  if (viaSecondary.length) {
+    console.log("\nMatched through a secondary location (primary matched nothing):");
+    for (const m of viaSecondary) console.log(`  ${m.finding} ${m.location} -> ${m.entries.join(", ")} at ${m.secondary_location} (distance ${m.distance})`);
   }
   if (r.extras.length) console.log(`\nKnown extras (valid, not scored): ${r.extras.join(", ")}`);
   if (r.unmatched.length) {
@@ -263,7 +347,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   if (r.raw_left) console.log(`\nWARNING: ${r.raw_left} findings still raw.`);
 
   if (!args.includes("--no-save")) {
-    const { seeded, decoyFp, matches, ...summary } = r;
+    const { seeded, decoyFp, decoySecondary, matches, ...summary } = r;
     appendFileSync(
       join(here, "results.jsonl"),
       JSON.stringify({ date: new Date().toISOString(), app: bench.name, tool, label, skill_sha: meta.skill_sha, skill_dirty: meta.skill_dirty, minutes, ...summary, per_bug: Object.fromEntries(seeded.map((s) => [s.id, s.result])) }) + "\n",
