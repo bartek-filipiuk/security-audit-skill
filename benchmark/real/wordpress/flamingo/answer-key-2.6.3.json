@@ -1,0 +1,23 @@
+{
+  "version": 2,
+  "app": "real/wordpress/flamingo-2.6.3",
+  "module": "wordpress/flamingo",
+  "module_version": "2.6.3",
+  "note": "Negative control for answer-key-2.6.2.json: flamingo 2.6.3 is the release that fixes CVE-2026-12853. `seeded` is empty; `decoys` are the fixed registrations at 2.6.3 lines (verified against the extracted tree with `node benchmark/real/fetch.mjs wordpress/flamingo 2.6.3 --check --dest <run>`), so `decoy false positives` counts verified findings that still report the fixed issue. A verified finding that matches nothing is listed for review (README, findings outside the key). Same format and matching rules as benchmark/answer-key.json.",
+  "window": 2,
+  "seeded": [],
+  "decoys": [
+    {
+      "id": "CVE-2026-12853-fixed",
+      "locations": [
+        { "file": "includes/class-contact.php", "lines": [18, 47] },
+        { "file": "includes/class-contact.php", "lines": [49, 64] },
+        { "file": "includes/class-inbound-message.php", "lines": [29, 58] },
+        { "file": "includes/class-inbound-message.php", "lines": [68, 84] },
+        { "file": "includes/capabilities.php", "lines": [6, 18] }
+      ],
+      "why": "Contacts, messages and both taxonomies are registered non-public, hidden from REST, and with every post and term capability mapped to flamingo_* meta capabilities, which flamingo_map_meta_cap() maps to edit_users."
+    }
+  ],
+  "known_extras": []
+}

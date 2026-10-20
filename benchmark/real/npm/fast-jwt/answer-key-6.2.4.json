@@ -1,0 +1,48 @@
+{
+  "version": 2,
+  "app": "real/npm/fast-jwt-6.2.4",
+  "module": "npm/fast-jwt",
+  "module_version": "6.2.4",
+  "note": "Ground truth for the public release fast-jwt 6.2.4 (npm, fetched by benchmark/real/fetch.mjs; manifest.json pins the tarball sha256). Never copy this file into the audited directory. One entry per GitHub advisory; `locations` are files relative to the package root (the run's app/) with 1-based inclusive line ranges of the code the fix commits change, verified against the extracted 6.2.4 tree (`node benchmark/real/fetch.mjs npm/fast-jwt 6.2.4 --check --dest <run>`). Same format and matching rules as benchmark/answer-key.json. The 6.3.1 key is the false-positive control.",
+  "window": 2,
+  "seeded": [
+    {
+      "id": "GHSA-5hjw-83fp-phq9",
+      "class": "GHSA-5hjw-83fp-phq9 (CVE-2026-107723): a JSON array is accepted as the claims set, and every claim validator is then skipped",
+      "severity": "HIGH",
+      "advisory_url": "https://github.com/advisories/GHSA-5hjw-83fp-phq9",
+      "locations": [
+        { "file": "src/decoder.js", "lines": [65, 67] },
+        { "file": "src/verifier.js", "lines": [304, 313] }
+      ],
+      "detect": "llm",
+      "why": "The decoder's payload check is `typeof payload !== 'object'`, which an array passes; verifyToken() then skips each configured validator whose claim is not `in` the payload, so for an array none of exp, nbf, iss, aud, sub, jti or nonce is enforced and the array is returned as a verified payload. The signature is still checked: impact needs a validly signed array-shaped token. Fixed in 6.3.0 (86e83efd) by rejecting arrays in the decoder."
+    },
+    {
+      "id": "GHSA-g3jj-5cmm-3hxx",
+      "class": "GHSA-g3jj-5cmm-3hxx (CVE-2026-107724): key detection treats any non-PEM string, including serialized public JWK or JWKS JSON, as an HMAC secret",
+      "severity": "HIGH",
+      "advisory_url": "https://github.com/advisories/GHSA-g3jj-5cmm-3hxx",
+      "locations": [
+        { "file": "src/crypto.js", "lines": [127, 139] }
+      ],
+      "detect": "llm",
+      "why": "performDetectPublicKeyAlgorithms() returns the HS algorithms for every key without a PEM header. A verifier configured with a serialized public JWK therefore accepts HS256 tokens keyed with that public text, so anyone who knows the public key material can mint tokens with arbitrary claims. Fixed in 6.3.0 (10f95913) by refusing asymmetric JWK/JWKS JSON as a raw secret."
+    },
+    {
+      "id": "GHSA-8wpc-h4q6-8fxv",
+      "class": "GHSA-8wpc-h4q6-8fxv (CVE-2026-107720): createVerifier accepts an empty or null key with an explicit algorithm list, and then accepts unsigned tokens",
+      "severity": "HIGH",
+      "advisory_url": "https://github.com/advisories/GHSA-8wpc-h4q6-8fxv",
+      "locations": [
+        { "file": "src/verifier.js", "lines": [506, 525] },
+        { "file": "src/verifier.js", "lines": [270, 280] },
+        { "file": "src/verifier.js", "lines": [166, 171] }
+      ],
+      "detect": "llm",
+      "why": "createVerifier() only type-checks the key, so '' or null skips key preparation while the caller's algorithms allowlist stays active. verifyToken() treats 'no key and no signature' as consistent and validateAlgorithmAndSignature() verifies a signature only when one is present, so a token with an allowed alg header and an empty signature passes with whatever claims it carries. Fixed in 6.3.1 (e22a151e) by requiring a usable key unless 'none' is the only allowed algorithm."
+    }
+  ],
+  "decoys": [],
+  "known_extras": []
+}

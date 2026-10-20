@@ -1,0 +1,31 @@
+{
+  "project": "fast-jwt",
+  "ecosystem": "npm",
+  "name": "fast-jwt (JSON Web Token library for Node.js)",
+  "homepage": "https://github.com/nearform/fast-jwt",
+  "license": "Apache-2.0",
+  "loc": "JavaScript 1.5k lines in src/ (11 files in the package)",
+  "note": "Public releases fetched by benchmark/real/fetch.mjs from the npm registry (immutable tarballs), never vendored. 6.2.4 is the vulnerable target; 6.3.1 is the control (6.3.0 fixed GHSA-5hjw-83fp-phq9 and GHSA-g3jj-5cmm-3hxx, 6.3.1 also GHSA-8wpc-h4q6-8fxv). The sha256 values were checked against the registry's sha512 integrity field. Fix commits (nearform/fast-jwt): 86e83efd (decoder), 10f95913 (crypto), e22a151e (verifier). Git heads: 6.2.4 044bf42c, 6.3.1 865c5226.",
+  "archive": "tar.gz",
+  "versions": {
+    "6.2.4": {
+      "url": "https://registry.npmjs.org/fast-jwt/-/fast-jwt-6.2.4.tgz",
+      "sha256": "a5f9969cc722df5b54c803123f14c90131f857c56cc299c9e7efea99e708a287",
+      "tag": "v6.2.4",
+      "released": "2026-04-29",
+      "key": "answer-key-6.2.4.json"
+    },
+    "6.3.1": {
+      "url": "https://registry.npmjs.org/fast-jwt/-/fast-jwt-6.3.1.tgz",
+      "sha256": "1c46c6dcf1b55657205efc3abb5c56b8d0d1fa4e6f75dc8ed118a53a4abab282",
+      "tag": "v6.3.1",
+      "released": "2026-07-30",
+      "key": "answer-key-6.3.1.json"
+    }
+  },
+  "advisories": [
+    { "id": "GHSA-5hjw-83fp-phq9", "cve": "CVE-2026-107723", "risk": "High 8.1", "type": "Claim validators skipped when the payload is a JSON array", "fixed_in": "6.3.0", "url": "https://github.com/advisories/GHSA-5hjw-83fp-phq9" },
+    { "id": "GHSA-g3jj-5cmm-3hxx", "cve": "CVE-2026-107724", "risk": "High 7.4", "type": "Serialized public JWK or JWKS accepted as an HMAC secret (algorithm confusion)", "fixed_in": "6.3.0", "url": "https://github.com/advisories/GHSA-g3jj-5cmm-3hxx" },
+    { "id": "GHSA-8wpc-h4q6-8fxv", "cve": "CVE-2026-107720", "risk": "High 7.4", "type": "Unsigned tokens accepted when the key is empty or null and algorithms are set", "fixed_in": "6.3.1", "url": "https://github.com/advisories/GHSA-8wpc-h4q6-8fxv" }
+  ]
+}

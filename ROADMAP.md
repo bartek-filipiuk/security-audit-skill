@@ -91,6 +91,14 @@ Rules that apply to every item:
   advisories by hand; 3.2.0 control: no fixed advisory reported again). Results in `benchmark/real/README.md`. `benchmark/real/fetch.mjs` (pinned sha256,
   `--check`), `score.mjs --key`, and keys for the Drupal module `miniorange_saml` 3.1.3 (11 drupal.org advisories)
   with 3.2.0 as the fixed control.
+- **R31 Weekly real-advisory dataset.** Extends R30 with a few public modules a week across ecosystems
+  (Drupal, WordPress, npm, PyPI, RubyGems, Go), each pinned to a release before a recent advisory and scored
+  against its fixed release as the control. Unmatched findings are never published; the owner verifies them
+  and reports privately (policy in `benchmark/real/README.md`).
+  Status (2026-10-20): tooling and week-1 keys in; runs pending the owner's budget. `fetch.mjs` takes
+  `ecosystem/package` ids, zip and gem archives with entry checks, and an explicit module root; week 1 is
+  `drupal/rest_api_authentication` 3.1.0, `wordpress/flamingo` 2.6.2, `npm/fast-jwt` 6.2.4 (3 advisories)
+  and `go/goshs` v2.1.4 (8 advisories).
 - **R16 Ruby on Rails profile** (`brakeman`).
 - **R18 Second private benchmark app**, never published, for measuring changes without training-data risk.
 - **R27 Native code and memory safety** (C, C++, unsafe Rust), **R28 mobile and local IPC** (deep links,

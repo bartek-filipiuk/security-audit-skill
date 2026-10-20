@@ -1,0 +1,107 @@
+{
+  "version": 2,
+  "app": "real/go/goshs-v2.1.4",
+  "module": "go/goshs",
+  "module_version": "v2.1.4",
+  "note": "Ground truth for the public release goshs.de/goshs/v2 v2.1.4 (Go module proxy zip, fetched by benchmark/real/fetch.mjs; manifest.json pins the zip sha256 and the module root inside it). Never copy this file into the audited directory. One entry per repository advisory fixed in v2.1.5; `locations` are files relative to the module root (the run's app/) with 1-based inclusive line ranges of the code the fixes change, verified against the extracted v2.1.4 tree (`node benchmark/real/fetch.mjs go/goshs v2.1.4 --check --dest <run>`). Same format and matching rules as benchmark/answer-key.json. The v2.1.5 key is the false-positive control. Advisories published after v2.1.5 also affect v2.1.4 and are not keyed yet: an unmatched finding here can be one of them.",
+  "window": 2,
+  "seeded": [
+    {
+      "id": "GHSA-6m5c-fv2q-jrj2",
+      "class": "GHSA-6m5c-fv2q-jrj2: the basic-auth middlewares exempt any request for one helper script path that carries a marker query key, regardless of method or other parameters (authentication bypass)",
+      "severity": "CRITICAL",
+      "advisory_url": "https://github.com/goshs-labs/goshs/security/advisories/GHSA-6m5c-fv2q-jrj2",
+      "locations": [
+        { "file": "httpserver/middleware.go", "lines": [115, 119] },
+        { "file": "httpserver/middleware.go", "lines": [144, 148] }
+      ],
+      "detect": "llm+entrypoints",
+      "why": "BasicAuthMiddleware and InvisibleBasicAuthMiddleware pass a request straight to the handler when its path is the shell helper and its query has the `conpty` key. Method and the remaining query keys are not checked, so other methods (PUT, DELETE) and the query-driven features served from the same request (bulk download, server info, WebSocket, catcher API) run without credentials. Fixed in v2.1.5 by limiting the exemption to GET/HEAD with that single key."
+    },
+    {
+      "id": "GHSA-966r-mw4j-rv64",
+      "class": "GHSA-966r-mw4j-rv64: no-delete and upload-only modes do not stop uploads that overwrite existing files (HTTP PUT, multipart upload, WebDAV PUT)",
+      "severity": "CRITICAL",
+      "advisory_url": "https://github.com/goshs-labs/goshs/security/advisories/GHSA-966r-mw4j-rv64",
+      "locations": [
+        { "file": "httpserver/updown.go", "lines": [55, 62] },
+        { "file": "httpserver/updown.go", "lines": [144, 149] },
+        { "file": "httpserver/updown.go", "lines": [199, 200] },
+        { "file": "httpserver/webdav_acl.go", "lines": [46, 50] }
+      ],
+      "detect": "llm",
+      "why": "put() opens the target with O_TRUNC, the multipart handler renames its temp file over an existing name, and the WebDAV guard checks PUT only against read-only. Under --no-delete or --upload-only an unauthenticated client can therefore replace the contents of any existing file, which those modes are meant to prevent. Fixed in v2.1.5 by refusing overwrites of existing files in all three paths."
+    },
+    {
+      "id": "GHSA-6wwv-mx7w-35jx",
+      "class": "GHSA-6wwv-mx7w-35jx: the FTP filesystem ignores upload-only and its no-delete wrapper blocks only removal",
+      "severity": "HIGH",
+      "advisory_url": "https://github.com/goshs-labs/goshs/security/advisories/GHSA-6wwv-mx7w-35jx",
+      "locations": [
+        { "file": "ftpserver/ftpserver.go", "lines": [121, 128] },
+        { "file": "ftpserver/ftpserver.go", "lines": [135, 146] }
+      ],
+      "detect": "llm",
+      "why": "The FTP driver picks either a read-only or a no-delete filesystem and never applies --upload-only, so FTP clients can download the whole webroot in upload-only mode; noDeleteFs overrides only Remove and RemoveAll, so rename and truncating writes still destroy existing files in no-delete mode. Fixed in v2.1.5 with stacked no-delete and upload-only wrappers that also cover Rename, Create and truncating OpenFile."
+    },
+    {
+      "id": "GHSA-rc9g-fmpg-c6pp",
+      "class": "GHSA-rc9g-fmpg-c6pp: the WebDAV mode guard blocks only GET and HEAD in upload-only mode, while the WebDAV handler serves POST like GET",
+      "severity": "HIGH",
+      "advisory_url": "https://github.com/goshs-labs/goshs/security/advisories/GHSA-rc9g-fmpg-c6pp",
+      "locations": [
+        { "file": "httpserver/webdav_acl.go", "lines": [70, 75] }
+      ],
+      "detect": "llm",
+      "why": "webdavGuard denies reads in upload-only mode by method name (GET, HEAD); golang.org/x/net/webdav routes POST to the same read handler, so a POST returns file contents that upload-only mode is meant to hide. Fixed in v2.1.5 by rejecting WebDAV POST."
+    },
+    {
+      "id": "GHSA-wg2q-39h6-66x9",
+      "class": "GHSA-wg2q-39h6-66x9 (CVE-2026-66063): the multipart upload file name is reduced to its last path segment but a parent-directory name is not rejected (path traversal on write)",
+      "severity": "MEDIUM",
+      "advisory_url": "https://github.com/advisories/GHSA-wg2q-39h6-66x9",
+      "locations": [
+        { "file": "httpserver/updown.go", "lines": [134, 136] }
+      ],
+      "detect": "llm",
+      "why": "upload() keeps the part after the last '/', which can still be '..'; filepath.Join(targetDir, '..') then points at the parent of the upload folder, so the temp file is created outside the served tree. Fixed in v2.1.5 (f3ef599e) by rejecting empty, '.' and '..' names and re-checking containment with sanitizePath."
+    },
+    {
+      "id": "GHSA-964w-f6gj-5236",
+      "class": "GHSA-964w-f6gj-5236 (CVE-2026-66064): sendFile applies the ACL-file and block-list checks to a name taken from the raw request path, not to the file it opened",
+      "severity": "MEDIUM",
+      "advisory_url": "https://github.com/advisories/GHSA-964w-f6gj-5236",
+      "locations": [
+        { "file": "httpserver/handler.go", "lines": [787, 800] }
+      ],
+      "detect": "llm",
+      "why": "The file is opened from the cleaned path, but the name compared with '.goshs' and with the block list is the last segment of req.URL.Path. A trailing slash makes that segment empty, so block-listed files and the ACL file itself (which can hold a password hash) are served to clients the block-only ACL should stop; per-directory authentication is not affected. Fixed in v2.1.5 (f3ef599e) by taking the name from the opened file's stat."
+    },
+    {
+      "id": "GHSA-4wh5-87mw-whxf",
+      "class": "GHSA-4wh5-87mw-whxf: the SFTP server has no no-delete setting, so remove, rename and overwrite stay available",
+      "severity": "MEDIUM",
+      "advisory_url": "https://github.com/goshs-labs/goshs/security/advisories/GHSA-4wh5-87mw-whxf",
+      "locations": [
+        { "file": "sftpserver/helper.go", "lines": [140, 153] },
+        { "file": "sftpserver/helper.go", "lines": [156, 167] }
+      ],
+      "detect": "llm",
+      "why": "writeFile() creates (truncates) the target and cmdFile() runs Remove, Rmdir and Rename with only the read-only and path checks; the SFTP server is never given the --no-delete option, so authenticated SFTP users can destroy files the operator meant to protect. Fixed in v2.1.5 by passing NoDelete and refusing those operations."
+    },
+    {
+      "id": "GHSA-mqvv-v9g7-4h3j",
+      "class": "GHSA-mqvv-v9g7-4h3j: share tokens are minted without the per-directory ACL check and redeemed with an empty ACL",
+      "severity": "MEDIUM",
+      "advisory_url": "https://github.com/goshs-labs/goshs/security/advisories/GHSA-mqvv-v9g7-4h3j",
+      "locations": [
+        { "file": "httpserver/handler.go", "lines": [1003, 1012] },
+        { "file": "httpserver/handler.go", "lines": [1114, 1121] }
+      ],
+      "detect": "llm",
+      "why": "The share endpoint issues a token for any path the global credential can reach without resolving the .goshs ACL of the file's directory, and redemption calls sendFile() with an empty configFile{}, so a token holder receives files protected by per-directory authentication or the block list. Fixed in v2.1.5 by enforcing the effective ACL when minting and redeeming."
+    }
+  ],
+  "decoys": [],
+  "known_extras": []
+}

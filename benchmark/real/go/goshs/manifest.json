@@ -1,0 +1,40 @@
+{
+  "project": "goshs.de/goshs/v2",
+  "ecosystem": "go",
+  "name": "goshs (single-binary file server: HTTP, WebDAV, FTP, SFTP and more)",
+  "homepage": "https://github.com/goshs-labs/goshs",
+  "license": "MIT",
+  "loc": "Go 18.2k lines without tests (246 files in the module zip)",
+  "note": "Public releases fetched by benchmark/real/fetch.mjs from the Go module proxy (immutable zips; the canonical module path goshs.de/goshs/v2 from go.mod, also served under github.com/goshs-labs/goshs/v2 with the same files but different zip bytes). The zips' go.sum hashes were recomputed and match sum.golang.org. v2.1.4 is the vulnerable target, v2.1.5 the control; eight repository advisories are fixed between them (the two with CVEs, GHSA-964w-f6gj-5236 and GHSA-wg2q-39h6-66x9, in commit f3ef599e). Commits from the proxy .info: v2.1.4 d4e775d5, v2.1.5 3a24c85a. The release ships .claude/rules/*.md (the maintainer's agent notes); fetch.mjs removes them from app/. Many later advisories (August to October 2026) still affect v2.1.5: on the control, unmatched findings are expected and some are real.",
+  "archive": "zip",
+  "versions": {
+    "v2.1.4": {
+      "url": "https://proxy.golang.org/goshs.de/goshs/v2/@v/v2.1.4.zip",
+      "sha256": "0d81d7f1170527ddf0461d2be95fc7719fdb36dd3486d8e27a12179d6babeec9",
+      "root": "goshs.de/goshs/v2@v2.1.4",
+      "tag": "v2.1.4",
+      "commit": "d4e775d5a84d662d426bc19a95d9b990a97d60e4",
+      "released": "2026-07-03",
+      "key": "answer-key-v2.1.4.json"
+    },
+    "v2.1.5": {
+      "url": "https://proxy.golang.org/goshs.de/goshs/v2/@v/v2.1.5.zip",
+      "sha256": "e820de244852581e94a7e9c697131bd35e8cc9d631aa113a61f98aeb23709b85",
+      "root": "goshs.de/goshs/v2@v2.1.5",
+      "tag": "v2.1.5",
+      "commit": "3a24c85a82c494b947a83989b5f28fbda260a961",
+      "released": "2026-08-02",
+      "key": "answer-key-v2.1.5.json"
+    }
+  },
+  "advisories": [
+    { "id": "GHSA-964w-f6gj-5236", "cve": "CVE-2026-66064", "risk": "Moderate 5.3", "type": "ACL and block-list bypass: served file name taken from the raw request path", "fixed_in": "v2.1.5", "url": "https://github.com/advisories/GHSA-964w-f6gj-5236" },
+    { "id": "GHSA-wg2q-39h6-66x9", "cve": "CVE-2026-66063", "risk": "Moderate 6.5", "type": "Path traversal: multipart upload file name not checked for a parent-directory name", "fixed_in": "v2.1.5", "url": "https://github.com/advisories/GHSA-wg2q-39h6-66x9" },
+    { "id": "GHSA-6m5c-fv2q-jrj2", "risk": "Critical 9.8", "type": "Authentication bypass through an over-broad unauthenticated route exemption", "fixed_in": "v2.1.5", "url": "https://github.com/goshs-labs/goshs/security/advisories/GHSA-6m5c-fv2q-jrj2" },
+    { "id": "GHSA-966r-mw4j-rv64", "risk": "Critical 9.1", "type": "no-delete and upload-only modes bypassed by overwriting existing files (HTTP and WebDAV)", "fixed_in": "v2.1.5", "url": "https://github.com/goshs-labs/goshs/security/advisories/GHSA-966r-mw4j-rv64" },
+    { "id": "GHSA-rc9g-fmpg-c6pp", "risk": "High 7.5", "type": "upload-only mode bypassed: WebDAV POST is served like GET", "fixed_in": "v2.1.5", "url": "https://github.com/goshs-labs/goshs/security/advisories/GHSA-rc9g-fmpg-c6pp" },
+    { "id": "GHSA-6wwv-mx7w-35jx", "risk": "High 8.1", "type": "FTP server ignores upload-only and only partly enforces no-delete", "fixed_in": "v2.1.5", "url": "https://github.com/goshs-labs/goshs/security/advisories/GHSA-6wwv-mx7w-35jx" },
+    { "id": "GHSA-4wh5-87mw-whxf", "risk": "Moderate 6.5", "type": "SFTP server ignores no-delete", "fixed_in": "v2.1.5", "url": "https://github.com/goshs-labs/goshs/security/advisories/GHSA-4wh5-87mw-whxf" },
+    { "id": "GHSA-mqvv-v9g7-4h3j", "risk": "Moderate 6.5", "type": "Share links bypass the per-directory ACL and block list", "fixed_in": "v2.1.5", "url": "https://github.com/goshs-labs/goshs/security/advisories/GHSA-mqvv-v9g7-4h3j" }
+  ]
+}
