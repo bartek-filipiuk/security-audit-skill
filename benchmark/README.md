@@ -125,13 +125,16 @@ result route, a bound `text()`, router-level `Depends(require_staff)` with a pub
 health check, `render_template` with a variable, `send_from_directory` with `secure_filename`,
 `yaml.safe_load` and the public sign-in view.
 
-## Real advisories (R30)
+## Real advisories (R30, R31)
 
 `benchmark/real/` scores the skill on public open-source modules pinned to a release from before a
 published security fix, instead of planted bugs. The code is not in the repo: `benchmark/real/fetch.mjs`
 downloads the release, checks its pinned sha256 and builds the run directory; the keys list the code each
 advisory's fix changes. First module: the Drupal contrib module `miniorange_saml` 3.1.3 (11 scored
 drupal.org advisories, SA-CONTRIB-2026-031 and the 2026-09-09 batch) with 3.2.0 as the fixed control.
+R31 adds a weekly batch across ecosystems (`benchmark/real/<ecosystem>/<package>/`, ids like
+`npm/fast-jwt`); week 1 is Drupal `rest_api_authentication`, WordPress `flamingo`, npm `fast-jwt` and Go
+`goshs`, each with its fixed release as control.
 
     node benchmark/real/fetch.mjs miniorange_saml 3.1.3      # --dest DIR, --tarball FILE, --check
     cd <run>/app && CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 claude -p "/security-audit" --permission-mode auto --output-format json

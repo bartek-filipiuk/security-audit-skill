@@ -1,0 +1,32 @@
+{
+  "version": 2,
+  "app": "real/drupal/rest_api_authentication-3.1.0",
+  "module": "drupal/rest_api_authentication",
+  "module_version": "3.1.0",
+  "note": "Ground truth for the public release rest_api_authentication 3.1.0 (Drupal contrib, fetched by benchmark/real/fetch.mjs; manifest.json pins the tarball sha256). Never copy this file into the audited directory. One entry per drupal.org advisory; `locations` are files relative to the module root (the run's app/) with 1-based inclusive line ranges of the code the published fix changes, verified against the extracted 3.1.0 tree (`node benchmark/real/fetch.mjs drupal/rest_api_authentication 3.1.0 --check --dest <run>`). Same format and matching rules as benchmark/answer-key.json. The 3.2.0 key is the false-positive control. When a real finding is scored as unmatched, check the range against the code and the fix diff, then fix the key, not the finding.",
+  "window": 2,
+  "seeded": [
+    {
+      "id": "SA-2026-182",
+      "class": "SA-CONTRIB-2026-182 (CVE-2026-96385): the authentication provider decides whether a request is an API request by substring checks on the raw request URI (access bypass)",
+      "severity": "MEDIUM",
+      "advisory_url": "https://www.drupal.org/sa-contrib-2026-182",
+      "locations": [
+        { "file": "src/Authentication/Provider/RestAPI.php", "lines": [78, 86] },
+        { "file": "src/PageCache/DisallowAPIRequests.php", "lines": [22, 27] }
+      ],
+      "detect": "llm+entrypoints",
+      "why": "RestAPI::applies() only claims a request when getRequestUri() contains '/jsonapi/' or the literal '?_format=', so a REST request whose format parameter is not the first query parameter, or a URI whose JSON:API marker sits outside the routed path, is not handled by the module's provider and the configured API authentication is not enforced for it; the page-cache policy DisallowAPIRequests::check() uses the same test, so such responses can also be cached. Fixed in 3.2.0 by matching getPathInfo() and query->has('_format')."
+    }
+  ],
+  "decoys": [],
+  "known_extras": [
+    {
+      "id": "extra-embedded-vendor-key",
+      "locations": [
+        { "file": "src/MiniorangeApiAuthConstants.php", "lines": [28, 29] }
+      ],
+      "why": "Fallback vendor customer id and API key for the miniOrange notification service are constants in the source, used when no account is configured. Present in 3.1.0 and 3.2.0, no advisory. Valid if reported, not scored. Never quote the value."
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "project": "rest_api_authentication",
+  "ecosystem": "drupal",
+  "name": "REST & JSON API Authentication (Drupal contrib)",
+  "homepage": "https://www.drupal.org/project/rest_api_authentication",
+  "license": "GPL-2.0-or-later",
+  "loc": "PHP 5.1k lines in 52 files (plus images)",
+  "note": "Public releases fetched by benchmark/real/fetch.mjs, never vendored. 3.1.0 is the vulnerable target, 3.2.0 the fixed control. Fix diff: https://git.drupalcode.org/api/v4/projects/project%2Frest_api_authentication/repository/compare?from=3.1.0&to=3.2.0 (one change, in RestAPI::applies() and DisallowAPIRequests::check()).",
+  "archive": "tar.gz",
+  "secret_constants": [
+    { "file": "src/MiniorangeApiAuthConstants.php", "name": "FALLBACK_API_KEY", "why": "a vendor notification key shipped in the module (no advisory); fetch.mjs --check fails if its value ever lands in benchmark/real/" }
+  ],
+  "versions": {
+    "3.1.0": {
+      "url": "https://ftp.drupal.org/files/projects/rest_api_authentication-3.1.0.tar.gz",
+      "sha256": "42e0e47447a5853f43fdfd62c4b0282ad0545a6d230ed6b442650f334bf5d6d4",
+      "tag": "3.1.0",
+      "released": "2026-04-23",
+      "key": "answer-key-3.1.0.json"
+    },
+    "3.2.0": {
+      "url": "https://ftp.drupal.org/files/projects/rest_api_authentication-3.2.0.tar.gz",
+      "sha256": "020e456a68abc13af7f9098e3a8ac6608ee6ea35378931bd638c9edb25812ce2",
+      "tag": "3.2.0",
+      "released": "2026-09-23",
+      "key": "answer-key-3.2.0.json"
+    }
+  },
+  "advisories": [
+    { "sa": "SA-CONTRIB-2026-182", "cve": "CVE-2026-96385", "risk": "Moderately critical 13/25", "type": "Access bypass (API requests not recognised by the authentication provider)", "fixed_in": "3.2.0", "url": "https://www.drupal.org/sa-contrib-2026-182" }
+  ]
+}

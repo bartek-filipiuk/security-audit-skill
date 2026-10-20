@@ -1,0 +1,29 @@
+{
+  "project": "flamingo",
+  "ecosystem": "wordpress",
+  "name": "Flamingo (WordPress plugin, message storage for Contact Form 7)",
+  "homepage": "https://wordpress.org/plugins/flamingo/",
+  "license": "GPL-2.0-or-later",
+  "loc": "PHP 3.6k lines in 26 files",
+  "note": "Public releases fetched by benchmark/real/fetch.mjs, never vendored. 2.6.2 is the vulnerable target, 2.6.3 the fixed control. WordPress.org builds these zips from the SVN tag, so a re-committed tag can change the bytes: the sha256 stays pinned and a mismatch means re-pin after diffing, never skip the check. The fix diff was computed zip against zip (includes/capabilities.php, includes/class-contact.php, includes/class-inbound-message.php). `released` is the newest file date inside each zip.",
+  "archive": "zip",
+  "versions": {
+    "2.6.2": {
+      "url": "https://downloads.wordpress.org/plugin/flamingo.2.6.2.zip",
+      "sha256": "dcd011f77f744a05e2bb789c54f56dc898a307d655bf2fa55f1f0d2bcbd3987e",
+      "tag": "2.6.2",
+      "released": "2026-05-13",
+      "key": "answer-key-2.6.2.json"
+    },
+    "2.6.3": {
+      "url": "https://downloads.wordpress.org/plugin/flamingo.2.6.3.zip",
+      "sha256": "e7a6334c135437a1941f52dfb0b92e60620d0a45d51ef6fb5b651a83a01fc296",
+      "tag": "2.6.3",
+      "released": "2026-07-17",
+      "key": "answer-key-2.6.3.json"
+    }
+  },
+  "advisories": [
+    { "id": "CVE-2026-12853", "cve": "CVE-2026-12853", "risk": "CVSS 5.4 MEDIUM (Wordfence)", "type": "Missing authorization: contact tags and channel terms readable through core APIs by any contributor", "fixed_in": "2.6.3", "url": "https://www.cve.org/CVERecord?id=CVE-2026-12853" }
+  ]
+}
