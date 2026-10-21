@@ -19,3 +19,30 @@ test("verifier: unauthenticated config/admin writes and shipped secrets are neve
   assert.match(gate, /only valid rejection for these is a cited file:line of a control that actually blocks it/);
   assert.match(verifier, /never dismissed without it \(6c\)/);
 });
+
+test("checklist: the SAML/SSO service-provider subsection sits under 2.1 and its patterns reach every brief", async () => {
+  const { patternsFor } = await import("./briefs.mjs");
+  const ck = readFileSync(join(repo, "references", "audit-checklist.md"), "utf8");
+  const auth = ck.match(/^## 2\.1 [\s\S]*?(?=^## )/m)?.[0] ?? "";
+  const saml = auth.match(/^### SAML and SSO service providers[\s\S]*$/m)?.[0] ?? "";
+  assert.ok(saml, "SAML subsection inside 2.1, so the auth brief carries it");
+  for (const re of [
+    /allow-list configured on the SP[^.]*never from the `SignatureMethod`/,
+    /failed or missing signature check stops the login/,
+    /`InResponseTo` matches a request id the SP issued/,
+    /accepted once/,
+    /`NotBefore`\/`NotOnOrAfter` are enforced/,
+    /`Audience` and `Recipient`\/`Destination`/,
+    /configuration, never with a certificate or key embedded in the response/,
+    /constant-time function/,
+    /fetched only from hosts configured by an administrator/,
+    /without following redirects/,
+    /disabled in production or requires an administrator permission/,
+    /without escaping/,
+  ]) assert.match(saml, re);
+  const items = saml.split("\n").filter((l) => l.startsWith("- [ ]"));
+  assert.ok(items.length >= 6);
+  for (const item of items) assert.match(item, /Regression test:/, `${item.slice(0, 40)}… has a regression test idea`);
+  assert.doesNotMatch(saml, /exploit|payload|attack step|proof of concept/i, "defensive wording only");
+  for (const langs of [["js"], ["php"], ["python"]]) assert.match(patternsFor(langs), /## SAML and SSO \(service provider\)\n\| Area[\s\S]*\| Signature result \|[\s\S]*\| Debug \/ test ACS \|/);
+});
