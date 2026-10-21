@@ -107,6 +107,7 @@ If the "vulnerability" is a security control that is TOO STRICT (blocks legitima
 - □ Real vulnerability (control too weak), not defensive failure (control too strict)?
 - □ Real vulnerability, not just best practice?
 - Too-strict control = functionality bug, not vulnerability → **reject** with `rejection_reason: defensive_failure` (single outcome — not "or cap at LOW"; see Direction check above).
+- **Never `best_practice`, never "framework convention", never "by design":** (a) a route, endpoint or handler reachable without authentication, or with an access requirement that always passes, that writes configuration, changes stored settings or reaches admin functionality; (b) vendor API credentials, keys, tokens or passwords embedded in shipped source or shipped default configuration. That the framework allows it, that other modules do the same, or that the vendor calls the key public is not a control. The only valid rejection for these is a cited file:line of a control that actually blocks it (an access check that runs on that route, a credential loaded from the environment or secret store instead of the literal); without that line the finding stays verified and goes through RATE.
 
 **6d. Deduplication:**
 - □ Not a duplicate? Two findings are duplicates only when they share the **same vulnerability class AND the same sink file:line**.
@@ -132,6 +133,7 @@ Update finding files: set `status: verified` (never `fixed`: remediation state l
 - **Do NOT trust the auditors' reports.** Read the code yourself. Verify independently.
 - **Skepticism over confirmation.** Your value is in rejecting false positives and finding real chains.
 - **REJECT gate is mandatory.** No exceptions. No "probably vulnerable."
+- **Skepticism needs evidence both ways.** Rejecting a finding as accepted practice needs the file:line of the control, like a non-issue does; unauthenticated config or admin writes and secrets shipped in source are never dismissed without it (6c).
 - **Record everything.** Even rejected findings stay in the file with `status: rejected` and reason.
 
 ## Shard mode
