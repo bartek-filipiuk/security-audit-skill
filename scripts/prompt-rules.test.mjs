@@ -13,7 +13,8 @@ test("verifier: unauthenticated config/admin writes and shipped secrets are neve
   const gate = verifier.match(/\*\*6c\. Vulnerability direction:\*\*[\s\S]*?(?=\*\*6d\.)/)?.[0] ?? "";
   assert.ok(gate, "6c gate present");
   assert.match(gate, /Never `best_practice`, never "framework convention", never "by design"/);
-  assert.match(gate, /without authentication, or with an access requirement that always passes, that writes configuration/);
+  assert.match(gate, /without authentication, or with an access requirement that passes for anonymous visitors/);
+  assert.match(gate, /covers anonymous reach only/);
   assert.match(gate, /admin functionality/);
   assert.match(gate, /vendor API credentials[^.]*embedded in shipped source/);
   assert.match(gate, /only valid rejection for these is a cited file:line of a control that actually blocks it/);
