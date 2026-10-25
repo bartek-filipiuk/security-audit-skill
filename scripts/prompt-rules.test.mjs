@@ -18,7 +18,8 @@ test("verifier: unauthenticated config/admin writes and shipped secrets are neve
   assert.match(gate, /admin functionality/);
   assert.match(gate, /vendor API credentials[^.]*embedded in shipped source/);
   assert.match(gate, /only valid rejection for these is a cited file:line of a control that actually blocks it/);
-  assert.match(verifier, /never dismissed without it \(6c\)/);
+  assert.match(verifier, /never dismissed as accepted practice without the file:line of the control that blocks them \(6c\)/);
+  assert.match(verifier, /Other findings keep the usual standard/);
 });
 
 test("checklist: the SAML/SSO service-provider subsection sits under 2.1 and its patterns reach every brief", async () => {
