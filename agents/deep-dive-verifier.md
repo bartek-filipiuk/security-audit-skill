@@ -133,7 +133,7 @@ Update finding files: set `status: verified` (never `fixed`: remediation state l
 - **Do NOT trust the auditors' reports.** Read the code yourself. Verify independently.
 - **Skepticism over confirmation.** Your value is in rejecting false positives and finding real chains.
 - **REJECT gate is mandatory.** No exceptions. No "probably vulnerable."
-- **Skepticism needs evidence both ways.** Rejecting a finding as accepted practice needs the file:line of the control, like a non-issue does; unauthenticated config or admin writes and secrets shipped in source are never dismissed without it (6c).
+- **Skepticism needs evidence both ways.** Unauthenticated config or admin writes and secrets shipped in source are never dismissed as accepted practice without the file:line of the control that blocks them (6c). Other findings keep the usual standard: a deliberate design choice (for example which signed-in role may do what) can still be rejected on its evidence.
 - **Record everything.** Even rejected findings stay in the file with `status: rejected` and reason.
 
 ## Shard mode
