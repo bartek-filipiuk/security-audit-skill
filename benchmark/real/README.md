@@ -151,10 +151,16 @@ control release, is unmatched, not "new":
 | | 3.1.3 | B (repeat) | | | not run yet | | | |
 | | `drupal/rest_api_authentication` 3.1.0 (and 3.2.0 control) | A, B | | | not run yet | | | |
 | | `wordpress/flamingo` 2.6.2 (and 2.6.3 control) | A, B | | | not run yet | | | |
-| | `npm/fast-jwt` 6.2.4 (and 6.3.1 control) | A, B | | | not run yet | | | |
-| | `go/goshs` v2.1.4 (and v2.1.5 control) | A, B | | | not run yet | | | |
+| 2026-10-26 | `npm/fast-jwt` 6.2.4 | A | eefbb83 | Opus 5.5 | 1/3 (GHSA-5hjw array payload); missed GHSA-g3jj and GHSA-8wpc | 0 | 1, under review | 1.50 USD / 4.3 min |
+| 2026-10-26 | `npm/fast-jwt` 6.3.1 | control | eefbb83 | Opus 5.5 | 0/0 (control) | 0 | 2, under review | 1.58 USD / 4.8 min |
+| | `npm/fast-jwt` 6.2.4 | B (repeat) | | | not run yet | | | |
+| 2026-10-26 | `go/goshs` v2.1.4 | A | eefbb83 | Opus 5.5 | 6/8 (both Critical: GHSA-6m5c as the top finding, GHSA-966r; 6wwv, rc9g, wg2q, 964w); missed GHSA-4wh5 and GHSA-mqvv | 0 | 38, under review | 16.70 USD / 32 min |
+| | `go/goshs` v2.1.5 control, v2.1.4 B | | | | not run yet | | | |
 
 Notes:
+- goshs v2.1.4 first scored 0/8: the scorer did not accept `.go` paths, so every finding fell back to
+  an unrelated file or to no location. Fixed in #33 and re-scored from the same report: 6/8. The goshs
+  control run (v2.1.5) was skipped for cost.
 - The prompt was `/security-audit` and nothing else; the skill was not told about the advisories.
 - Run A: no CRITICAL or HIGH false positive. First scored 3/11 with 2 unmatched, when the scorer matched only the
   primary location of a finding: the systematic XSS finding lists SA-2026-147's lines as a secondary location.
