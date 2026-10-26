@@ -92,7 +92,7 @@ Rules that apply to every item:
   `--check`), `score.mjs --key`, and keys for the Drupal module `miniorange_saml` 3.1.3 (11 drupal.org advisories)
   with 3.2.0 as the fixed control.
   Fix from the first run (2026-10-21, SEC-21, waits for a benchmark run): the verifier never rejects an
-  unauthenticated config or admin write, or a vendor secret shipped in source, as best practice; only a cited control does.
+  unauthenticated config or admin write as best practice; only a cited control does.
   SEC-22 (2026-10-21, waits for a benchmark run): a SAML/SSO service-provider subsection under checklist 2.1 and its
   stack patterns (algorithm allow-list, signature failure stops login, replay, configured cert, metadata fetch, debug ACS).
 - **R31 Weekly real-advisory dataset.** Extends R30 with a few public modules a week across ecosystems
