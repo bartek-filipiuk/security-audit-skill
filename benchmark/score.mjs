@@ -45,8 +45,9 @@ export const DEFAULT_WINDOW = 2;
 const PATH = String.raw`[\w.()[\]@-]+(?:\/[\w.()[\]@-]+)*`;
 const LOC = new RegExp(String.raw`(${PATH}|\.env(?![.\w]))(?::(\d+)(?:\s*[-\u2013]\s*(\d+))?)?`, "g");
 
-// File names a finding may cite: code, config, manifests, CI workflows, Dockerfiles and IaC.
-const SOURCE_FILE = /\.(?:[cm]?[jt]sx?|json|ya?ml|md|example|env|toml|tf|hcl|dockerfile|sql|rules|php|twig|module|inc|install|theme|py|html?|txt|cfg|ini)$|^\.env|^(?:Dockerfile|Containerfile)(?:\.[\w-]+)?$|^\.npmrc$/;
+// File names a finding may cite: code (JS/TS, PHP, Python, Go, Rust, JVM, Ruby, Elixir, .NET, Swift, Dart, C/C++,
+// shell), config, manifests, CI workflows, Dockerfiles and IaC.
+const SOURCE_FILE = /\.(?:[cm]?[jt]sx?|json|ya?ml|md|example|env|toml|tf|hcl|dockerfile|sql|rules|php|twig|module|inc|install|theme|py|html?|txt|cfg|ini|go|mod|rs|java|kts?|scala|groovy|gradle|rb|erb|ex|exs|cs|swift|dart|c|h|cc|cpp|hpp|lua|sh|bash|xml|properties|conf|vue|svelte)$|^\.env|^(?:Dockerfile|Containerfile)(?:\.[\w-]+)?$|^\.npmrc$/;
 
 const normalize = (p) => p.replace(/^\((?![^/]*\))/, "").replace(/^\.\//, "").replace(/^app\//, "");
 
