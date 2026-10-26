@@ -31,6 +31,10 @@ test("primary location understands CI workflows, Dockerfiles and IaC files", () 
   assert.deepEqual(primaryLocation("- **File**: `.github/workflows/preview.yml:16-17`"), { file: ".github/workflows/preview.yml", start: 16, end: 17 });
   assert.deepEqual(primaryLocation("- **File**: `Dockerfile:20`"), { file: "Dockerfile", start: 20, end: 20 });
   assert.deepEqual(primaryLocation("- **File**: `app/docker/Dockerfile.worker:3`"), { file: "docker/Dockerfile.worker", start: 3, end: 3 });
+  assert.deepEqual(primaryLocation("- **File**: `httpserver/middleware.go:116` (also `:145`), `httpserver/handler.go:219-350`"), { file: "httpserver/middleware.go", start: 116, end: 116 });
+  for (const f of ["src/lib.rs", "src/Main.java", "app/models/user.rb", "lib/app.ex", "Controllers/Home.cs", "Sources/App.swift", "src/main.c", "deploy.sh", "go.mod"]) {
+    assert.deepEqual(primaryLocation(`- **File**: \`${f}:7\``), { file: f.replace(/^app\//, ""), start: 7, end: 7 }, f);
+  }
   assert.deepEqual(primaryLocation("- **File**: `infra/main.tf:12`"), { file: "infra/main.tf", start: 12, end: 12 });
   assert.deepEqual(primaryLocation("- **File**: `.npmrc:2`"), { file: ".npmrc", start: 2, end: 2 });
 });
