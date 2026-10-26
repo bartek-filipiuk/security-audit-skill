@@ -93,6 +93,8 @@ Rules that apply to every item:
   with 3.2.0 as the fixed control.
   Fix from the first run (2026-10-21, SEC-21, waits for a benchmark run): the verifier never rejects an
   unauthenticated config or admin write as best practice; only a cited control does.
+  SEC-22 (2026-10-21, waits for a benchmark run): a SAML/SSO service-provider subsection under checklist 2.1 and its
+  stack patterns (algorithm allow-list, signature failure stops login, replay, configured cert, metadata fetch, debug ACS).
 - **R31 Weekly real-advisory dataset.** Extends R30 with a few public modules a week across ecosystems
   (Drupal, WordPress, npm, PyPI, RubyGems, Go), each pinned to a release before a recent advisory and scored
   against its fixed release as the control. Unmatched findings are never published; the owner verifies them

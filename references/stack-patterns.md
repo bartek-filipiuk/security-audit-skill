@@ -242,6 +242,20 @@ Express-style patterns (`req.body`, `app.get`) find nothing in these frameworks.
 | Method inconsistency | For same path: compare middleware on GET vs POST vs PUT vs DELETE. Different protection = BFLA |
 | Unprotected mutations | POST/PUT/DELETE routes with no auth middleware at all — especially: checkout, payment, upgrade, transfer, delete-account |
 
+## SAML and SSO (service provider)
+
+Search patterns for the checklist subsection "SAML and SSO service providers" (2.1). Each hit is a place to read the control, not a finding.
+
+| Area | Patterns to search |
+|------|-------------------|
+| Detection | `acs`, `AssertionConsumerService`, `SAMLResponse`, `RelayState`, `onelogin\\saml2`, `xmlseclibs`, `SimpleSAML`, `python3-saml`, `saml2\.`, `@node-saml`, `passport-saml`, `ruby-saml`, `crewjam/saml` |
+| Signature algorithm | `SignatureMethod`, `getAttribute\(['"]Algorithm`, `->type\s*=`, `XMLSecurityKey\(` with a value read from the document instead of configuration; algorithm allow-list settings (`signatureAlgorithm`, `wantAssertionsSigned`, `rejectUnsolicitedResponsesWithInResponseTo`) |
+| Signature result | the return value of `verify\(`, `validateSignature\(`, `isValid\(`, `validateReference\(`, `checkSign`: is it used in a condition that returns or throws, or only logged (`log`, `watchdog`, `logger`, `messenger\(\)->add`) before `user_login_finalize\(`, `login\(`, `Auth::login`, session writes |
+| Replay | `InResponseTo`, `NotOnOrAfter`, `NotBefore`, `Audience`, `Recipient`, `Destination`, a stored request id or assertion id cache; request ids from `uniqid\(`, `rand\(`, `mt_rand\(`, `Math\.random` |
+| Certificate | `KeyInfo`, `X509Certificate` read from the response, `openssl_x509_fingerprint`, fingerprint or HMAC compared with `==`/`===`/`strcmp` instead of `hash_equals`/`compare_digest`/`timingSafeEqual` |
+| Metadata fetch | `metadata_url`, `idp_metadata`, `file_get_contents\(\$`, `curl_setopt.*CURLOPT_FOLLOWLOCATION`, `CURLOPT_SSL_VERIFYPEER.*(0\|false)`, `verify\s*=\s*False`, HTTP clients called with an admin-entered URL and no host allow-list |
+| Debug / test ACS | routes named `test`, `debug`, `testConfig`, `test_configuration`; responses that print attributes, `NameID` or the raw XML with `echo`, `print`, `Markup::create\(`, `\|raw`, `#markup` without escaping |
+
 ## LLM and Agent Features
 
 Model call sites first: `generateText\(|streamText\(|generateObject\(|streamObject\(` (AI SDK `ai`), `chat\.completions\.create|responses\.create` (`openai`), `messages\.create|messages\.stream` (`@anthropic-ai/sdk`, `anthropic`), `\.invoke\(|\.stream\(|AgentExecutor|createReactAgent|create_react_agent` (LangChain, LangGraph), `query\(` from the Claude Agent SDK, `server\.tool\(|registerTool\(` (MCP). Then follow the output and the tool arguments.
