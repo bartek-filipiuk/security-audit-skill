@@ -223,6 +223,7 @@ From the recon output, extract:
 - Stack info (start from the Stack and Profile section of `prepass.md`; it determines which patterns from `references/stack-patterns.md` to pass)
 - Security claims (become verification targets)
 - Authorization Map, especially "proximity-only" entry points (only guarded by proxy/middleware, a layout or a page)
+- Crypto-heavy flag (Stack section): yes when the project is a crypto, auth or token library or hand-rolls token, signature or encryption code
 
 ---
 
@@ -245,6 +246,8 @@ Write the briefs first (checklist sections per auditor plus stack patterns for t
 ```bash
 node "$SKILL_DIR/scripts/briefs.mjs"
 ```
+
+Crypto-heavy project: add `--crypto-heavy`, which moves 2.8 to the Auth Auditor; 2.8 is then never skipped.
 
 **Provide each agent with:**
 1. The paths of `.security-audit/recon.md`, `.security-audit/prepass.md` and its brief `.security-audit/briefs/<name>.md`, plus the rules block
@@ -406,7 +409,7 @@ Trades depth for speed. Use for initial assessments or time-constrained reviews.
 This methodology is stack-agnostic. Phase 1 discovers the stack; Phase 2 adapts.
 
 - Pass relevant patterns from `references/stack-patterns.md` to auditor agents
-- Skip inapplicable categories (no uploads → skip 2.6, no crypto → skip 2.8)
+- Skip inapplicable categories (no uploads → skip 2.6, no crypto → skip 2.8, never when recon marks the project crypto-heavy)
 - For frameworks with built-in protections (Django CSRF, Rails strong params), verify enabled and not bypassed
 - Laravel, Symfony and Drupal (profile R05): the pre-pass lists routes from `routes/*.php` (with group middleware), `#[Route]`/`config/routes*.yaml` (with `#[IsGranted]` and the matching `access_control` rule) and `*.routing.yml` (with requirements), and ranks each by the controller method it calls; Blade `{!! !!}`, Twig `|raw`, `$guarded = []` and CSRF exceptions are hotspots of their own. Psalm taint analysis is NOT RUN by design (it loads the project's autoloader): record it in `not-assessed.md`. `briefs.mjs` adds the profile checklists when it finds the framework's files or `composer.json` packages
 - Django, FastAPI and Flask (profile R06): the pre-pass lists Django routes through the `include()` chain and DRF routers (with the view's decorators, mixins and `permission_classes`, or the `REST_FRAMEWORK` default), FastAPI routes with the `Depends()` of the route, router, app and `include_router`, and Flask routes with `*_required` decorators and `before_request` hooks, and ranks each by its view; `|safe` templates, literal `SECRET_KEY`/`secret_key`, DEBUG defaults, `csrf_exempt` and CORS with credentials are hotspots of their own. bandit runs in the pre-pass tool runner when it is installed (it only parses the code); its hits are Tool Candidates, and when it applies but is not installed the pre-pass writes its `not-assessed.md` row. `briefs.mjs` adds the profile checklists from `manage.py`/`urls.py` or the packages in `requirements*.txt`/`pyproject.toml`

@@ -80,6 +80,11 @@ Express-style patterns (`req.body`, `app.get`) find nothing in these frameworks.
 | `DES`, `RC4`, `ECB` | Broken cipher/mode |
 | `Math\.random`, `random\.random`, `rand\(\)` | Non-cryptographic RNG |
 | `AES.*128` with `ECB` | Insecure mode |
+| `header\.alg`, `\[["']alg["']\]`, `decoded\.header` | Algorithm taken from the token |
+| `["']none["']`, `alg.*none` | Unsigned tokens accepted |
+| `createHmac\(`, `hmac\.new\(`, `hash_hmac\(` with a key that can hold a public key | Key/algorithm confusion |
+| `[=!]==?` on `signature`, `digest`, `mac`, `hmac`, `token` | Timing-unsafe compare |
+| `createCipheriv\(` / `AESGCM` with a constant or reused IV/nonce | IV/nonce reuse |
 
 ## Deserialization
 
