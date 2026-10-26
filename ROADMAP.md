@@ -91,6 +91,8 @@ Rules that apply to every item:
   advisories by hand; 3.2.0 control: no fixed advisory reported again). Results in `benchmark/real/README.md`. `benchmark/real/fetch.mjs` (pinned sha256,
   `--check`), `score.mjs --key`, and keys for the Drupal module `miniorange_saml` 3.1.3 (11 drupal.org advisories)
   with 3.2.0 as the fixed control.
+  Fix from the first run (2026-10-21, SEC-21, waits for a benchmark run): the verifier never rejects an
+  unauthenticated config or admin write as best practice; only a cited control does.
 - **R31 Weekly real-advisory dataset.** Extends R30 with a few public modules a week across ecosystems
   (Drupal, WordPress, npm, PyPI, RubyGems, Go), each pinned to a release before a recent advisory and scored
   against its fixed release as the control. Unmatched findings are never published; the owner verifies them
