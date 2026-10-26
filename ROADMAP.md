@@ -11,6 +11,14 @@ Rules that apply to every item:
 
 ## Now
 
+- **R32 Crypto and token API misuse.** Priority (2026-10-26): R31 showed the skill finds authorization and
+  flow bugs (goshs 6/8) but misses crypto API misuse (fast-jwt 6.2.4: 1/3; missed a public JWK accepted as an
+  HMAC secret and an empty key with an algorithm list accepting unsigned tokens). Checklist and verifier rules
+  for key/algorithm confusion, empty or null keys, `alg` taken from the token, `none`, claim validation on
+  non-object payloads, timing-unsafe compares, weak randomness for tokens, IV/nonce reuse; applies to apps
+  and to libraries. Done when: fast-jwt 6.2.4 scores 3/3 on two runs, the 6.3.1 control stays at 0 decoy FP,
+  and Ledgerly recall does not drop.
+
 - **R05 PHP profile: Laravel, Symfony, Drupal.** Priority (2026-10-19): first in line for a scored run.
   Route-based entry points, unscoped Eloquent/Doctrine queries, `composer audit`, Psalm taint. Done when: its benchmark app scores.
   Status (2026-10-07): checklist sections, stack patterns, Laravel/Symfony entry points (Drupal's existed)
