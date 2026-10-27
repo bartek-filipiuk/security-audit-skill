@@ -26,7 +26,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { inScope, LOCKFILES, phpTaintStatus, rankHotspots, scanEntryPoints, scanScope, walk } from "./surface.mjs";
-import { detectStack, label as stackLabel, resolveStack, stackMarkdown } from "./stack.mjs";
+import { detectStack, label as stackLabel, resolveStack, stackGapRows, stackMarkdown } from "./stack.mjs";
 import { inventory, mergeNotAssessed, renderTools, rulesetStack, runTools } from "./tools.mjs";
 import { changedSince, loadItems, loadPreviousRun, planIncremental, readAliases, resolveCommit, trackedFiles, writeCarried } from "./incremental.mjs";
 
@@ -355,9 +355,10 @@ function runCodeTools() {
     write: (name, text) => writeFileSync(join(toolsDir, name), text),
   });
   writeFileSync(join(toolsDir, "tool-candidates.json"), JSON.stringify(results.map(({ rows, all, ...r }) => ({ ...r, candidates: all ?? [] })), null, 2));
-  // A tool that applied but did not run is a coverage gap; record it so the report cannot stay silent.
+  // A tool that applied but did not run, or a stack without a dedicated profile, is a coverage gap; record it
+  // so the report cannot stay silent.
   const naPath = join(out, "not-assessed.md");
-  const merged = mergeNotAssessed(existsSync(naPath) ? readFileSync(naPath, "utf8") : "", results);
+  const merged = mergeNotAssessed(existsSync(naPath) ? readFileSync(naPath, "utf8") : "", results, stackGapRows(stack));
   if (merged || existsSync(naPath)) writeFileSync(naPath, merged);
   return results;
 }

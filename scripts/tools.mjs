@@ -302,12 +302,13 @@ export function renderTools(results, table) {
 export const gapRows = (results) =>
   results.filter((r) => r.state === "not-run" || r.state === "failed").map((r) => `| ${r.category} | ${r.check} | ${r.status.replace(/\|/g, "\\|")} (prepass) |`);
 
-// Replaces this pre-pass's earlier tool rows and keeps everything the agents or a carried run wrote.
-export function mergeNotAssessed(text, results) {
+// Replaces this pre-pass's earlier tool and stack-profile rows and keeps everything the agents or a carried
+// run wrote. `extra` are ready rows (stackGapRows in stack.mjs).
+export function mergeNotAssessed(text, results, extra = []) {
   const head = "| Category | Check | Why not assessed |\n|---|---|---|";
   const ours = new Set(TOOLS.map((t) => t.name));
-  const lines = (text ?? "").split("\n").filter((l) => !/\(prepass\) \|$/.test(l) || ![...ours].some((n) => l.includes(n)));
-  const rows = gapRows(results);
+  const lines = (text ?? "").split("\n").filter((l) => !/\(prepass\) \|$/.test(l) || (!l.startsWith("| Stack profile |") && ![...ours].some((n) => l.includes(n))));
+  const rows = [...extra, ...gapRows(results)];
   if (!rows.length) return lines.join("\n");
   const body = lines.join("\n").replace(/\n+$/, "");
   return `${body.includes("| Category |") ? body : body ? `${head}\n${body}` : head}\n${rows.join("\n")}\n`;

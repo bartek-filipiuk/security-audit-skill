@@ -174,6 +174,8 @@ Rules that apply to every item:
   and `prepass.md`, `report.md` and `report.html` name the applied profile, what it covers and what it does not;
   stacks without a dedicated profile say "general checklist". `--stack` forces a profile and warns on a
   conflict. Ledgerly, a Laravel fixture and Django/FastAPI fixtures are detected correctly (`scripts/stack.test.mjs`).
+  A stack that is not detected (`generic`) or has no dedicated profile also gets a `Stack profile` row in
+  `not-assessed.md` from the pre-pass, replaced on re-run (`scripts/stack.test.mjs`).
   Benchmark 2026-10-08 (batch #12, Ledgerly x1): recall 20/23, 0 decoy false positives.
 
 - **R03 Exact benchmark scoring** (2026-10-05): findings match the answer key by the file and line of their
