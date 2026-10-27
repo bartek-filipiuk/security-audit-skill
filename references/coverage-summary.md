@@ -1,7 +1,7 @@
 ```
 Security Audit Skill — Coverage Summary
 
-12 security categories + 8 stack profiles, 216 checklist items, 42 pattern sections
+12 security categories + 9 stack profiles, 235 checklist items, 44 pattern sections
 OWASP Top 10 2021: 10/10 | OWASP API Security Top 10 2023: 10/10
 Stack patterns: JS/TS (Next.js App Router, tRPC, Hono, Drizzle, Better-Auth, AI SDK tools), Python, PHP, Go, Ruby, Java;
   GitHub Actions, Dockerfile and compose, Terraform/Kubernetes/CloudFormation, package manifests and lockfiles;
@@ -13,12 +13,14 @@ Stack patterns: JS/TS (Next.js App Router, tRPC, Hono, Drizzle, Better-Auth, AI 
   Laravel (routes and middleware, Eloquent scope, mass assignment, *Raw SQL, Blade, CSRF exceptions, uploads),
   Symfony (#[Route], IsGranted/access_control, voters, Doctrine DQL, Twig |raw), Drupal (routing.yml access, database API, Markup, CSRF tokens),
   Django (urls.py/DRF routes and permissions, user-owned querysets, raw SQL, |safe, csrf_exempt, settings), FastAPI (Depends auth, response_model,
-  text() SQL, BackgroundTasks SSRF, CORS), Flask (login_required/before_request, render_template_string, send_file, secret_key, debug)
+  text() SQL, BackgroundTasks SSRF, CORS), Flask (login_required/before_request, render_template_string, send_file, secret_key, debug),
+  Go (net/http, chi, gin, echo, gorilla/mux, fiber routes and middleware, path traversal and zip slip, os/exec, Sprintf SQL, text/template,
+  discarded security errors, shared maps, InsecureSkipVerify, math/rand tokens, server timeouts, CORS, jwt.Parse algorithm)
 Pre-pass (deterministic, seconds): hotspot ranking, entry points by framework convention, Drizzle tenant-scope scan,
   Supabase/Firebase policy scan, PHP routes (Laravel, Symfony, Drupal) ranked by their controller method,
-  Python routes (Django, FastAPI, Flask) ranked by their view, with a user-owned model scan,
+  Python routes (Django, FastAPI, Flask) ranked by their view, with a user-owned model scan, Go routes ranked by their handler,
   dependency advisories (osv-scanner, composer audit and pip-audit fallbacks), secrets across git history (gitleaks, redacted);
-  rule scanners semgrep, zizmor, hadolint, trivy (native or pinned docker image) and bandit (native) as candidates;
+  rule scanners semgrep, zizmor, hadolint, trivy (native or pinned docker image), bandit, gosec and govulncheck (native) as candidates;
   Psalm taint analysis reported NOT RUN (it would execute the project's autoloader)
 
 Categories:
@@ -48,7 +50,7 @@ Benchmark (OWASP Juice Shop v19.2.1, public, likely in model training data):
 
 Modes: Standard (<20 endpoints) | Triage (20-50) | Parallel (>50) | partial: --scope auth|payments|...|<path>|topN
 Stack: detected from manifests and framework files; dedicated profile for JS/TS (Node), PHP (Laravel, Symfony, Drupal)
-  and Python (Django, FastAPI, Flask), general checklist for Go, Rust, Ruby, JVM, .NET (the report says which);
+  Python (Django, FastAPI, Flask) and Go, general checklist for Rust, Ruby, JVM, .NET (the report says which);
   --stack <name> forces a profile
 Report: report.md + report.html (to fix / verified safe / not assessed)
 Private benchmark: benchmark/ (Ledgerly, own stack, 26 seeded bugs + 16 decoys; supabase-notes, 10 + 12; php-tickets, 13 + 14; py-clinic, 18 + 18), see benchmark/README.md

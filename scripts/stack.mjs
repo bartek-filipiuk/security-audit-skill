@@ -64,7 +64,7 @@ const JAVA_FRAMEWORKS = [["spring-boot", "Spring Boot"], ["org.springframework.b
 // Libraries that are not frameworks (no entry points, no profile gap) but pick semgrep rulesets (tools.mjs).
 const JS_LIBRARIES = [["react", "React"]];
 const COMMON_GAPS = [
-  "rule scanners (semgrep, zizmor, hadolint, trivy, bandit) run only when installed or docker is available; one that did not run is listed in not-assessed.md",
+  "rule scanners (semgrep, zizmor, hadolint, trivy, bandit, gosec, govulncheck) run only when installed or docker is available; one that did not run is listed in not-assessed.md",
 ];
 
 // Profiles the pre-pass can apply. `dedicated: false` means: the general checklist only.
@@ -120,10 +120,21 @@ export const PROFILES = {
       ...COMMON_GAPS,
     ],
   },
+  // Go (roadmap R09): dedicated whatever the router, since net/http is in the standard library.
   go: {
-    name: "Go", dedicated: false, lang: "go", roadmap: "R09",
-    covers: ["Go stack patterns for the auditors", "dependency advisories on go.sum (osv-scanner) and secrets in git history (gitleaks)"],
-    gaps: ["routes are not enumerated: recon finds entry points by reading the code", "no ORM tenant-scope scan", "gosec is not run (roadmap R09)", ...COMMON_GAPS],
+    name: "Go", dedicated: true, lang: "go",
+    covers: [
+      "Go entry points of net/http ServeMux (Go 1.22 method patterns), chi, gin, echo, gorilla/mux and fiber, with the middleware of the route, its group, its router and a wrapped server handler",
+      "Go hotspot ranking by the handler: no auth middleware or 401/403 check, records loaded by an id from the request without an owner, filepath.Join and http.ServeFile on request paths, os/exec, SQL built with fmt.Sprintf or +, io.ReadAll on the body without MaxBytesReader; InsecureSkipVerify, math/rand for tokens, servers without timeouts, text/template and template.HTML, zip slip, package-level maps without a lock, CORS any origin with credentials, jwt.Parse without an algorithm check, discarded errors of security checks",
+      "Go stack patterns and checklist section for the auditors",
+      "gosec and govulncheck through the rule-scanner runner when they are installed (no toolchain or module downloads), dependency advisories on go.sum (osv-scanner) and secrets in git history (gitleaks)",
+    ],
+    gaps: [
+      "regex and brace matching, not go/ast: routes registered in loops or from tables, routers kept in struct fields and wrapper chains such as alice are not seen",
+      "no ORM tenant-scope scan (GORM, sqlc, ent): the ranking flags id loads without an owner, auditors confirm the scope by hand",
+      "gRPC, GraphQL and message consumers are not enumerated: recon finds those entry points by reading the code",
+      ...COMMON_GAPS,
+    ],
   },
   rust: {
     name: "Rust", dedicated: false, lang: null, roadmap: "R10",

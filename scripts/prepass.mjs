@@ -12,7 +12,7 @@
 // Writes <out>/prepass.md (read by recon) and raw tool output to <out>/tools/.
 // Tools: osv-scanner and gitleaks, native binary first, then their official docker images; semgrep,
 // zizmor, hadolint and trivy (tools.mjs) when the project has something for them, native first, then
-// docker pinned by digest; bandit (tools.mjs) natively for Python source. Tool hits are candidates for
+// docker pinned by digest; bandit, gosec and govulncheck (tools.mjs) natively for Python and Go source. Tool hits are candidates for
 // the auditors, never findings.
 // --stack forces the profile (js, php, python, go, rust, ruby, java, dotnet, generic, or an alias such as
 // laravel, django, nextjs) instead of the one detected from the manifests (stack.mjs). stack.mjs is the
@@ -347,7 +347,7 @@ function runSecrets() {
 // ---------------------------------------------------------------- semgrep, zizmor, hadolint, trivy
 
 function runCodeTools() {
-  for (const f of ["semgrep.json", "zizmor.sarif", "hadolint.json", "trivy.json", "bandit.json", "tool-candidates.json"]) rmSync(join(toolsDir, f), { force: true });
+  for (const f of ["semgrep.json", "zizmor.sarif", "hadolint.json", "trivy.json", "bandit.json", "gosec.json", "govulncheck.json", "tool-candidates.json"]) rmSync(join(toolsDir, f), { force: true });
   const inv = inventory(root);
   const results = runTools({
     root, inv, stack: rulesetStack(inv, stack),

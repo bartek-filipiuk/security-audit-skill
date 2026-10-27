@@ -476,3 +476,23 @@ Routes live in every `urls.py` reached through `include()` from `ROOT_URLCONF`, 
 | Sessions | `secret_key = "`, `config\["SECRET_KEY"\] = "`, `SECRET_KEY.*getenv\(.*, "` |
 | Debug | `app\.run\(.*debug=True`, `config\["DEBUG"\] = True`, `FLASK_DEBUG=1` in production config |
 | Tools | `bandit -r . -f json` (B201 debug, B301 pickle, B506 yaml.load, B608 SQL strings, B105 secrets) and `pip-audit -r requirements.txt --no-deps --disable-pip` as candidates |
+
+## Go
+
+Routes come from net/http `ServeMux` (Go 1.22 `"GET /items/{id}"` patterns), chi, gin, echo, gorilla/mux and fiber; the pre-pass lists each with the middleware of the route, its group, its router and a wrapped server handler, and resolves the handler function. Middleware registered with `Use` after a route does not cover it in chi, gin, fiber and gorilla groups.
+
+| Area | Patterns to search |
+|------|-------------------|
+| Routes | `HandleFunc\(`, `\.(Get\|Post\|GET\|POST)\(` on routers and groups without an auth middleware in `Use(`, `Group(`, `With(` or a wrapper like `requireAuth\(`; `Use\(` placed after the routes it should guard |
+| Object access | `chi\.URLParam\(`, `c\.Param\("id"\)`, `mux\.Vars\(r\)\["id"\]`, `r\.PathValue\("id"\)` feeding `db\.First\(`, `QueryRow\(`, `Get\(` without the caller's user or tenant id |
+| Paths | `filepath\.Join\(.*r\.(URL\|FormValue)`, `filepath\.Join\(.*\.Name\)` in archive extraction, `http\.ServeFile\(w, r, \w+\)`, `http\.Dir\("\."\)`; safe: `filepath\.IsLocal`, `filepath\.Rel` or `strings\.HasPrefix` after `filepath\.Clean`, `os\.OpenRoot` |
+| Commands | `exec\.Command\(.*r\.`, `exec\.Command\("sh", "-c"` |
+| SQL | `fmt\.Sprintf\("SELECT`, `Query\(".*" \+`, GORM `Raw\(fmt\.Sprintf`, `Where\(".*" \+`, `Order\(` with request data |
+| Templates | `"text/template"` used for HTML, `template\.HTML\(`, `template\.JS\(`, `template\.URL\(` on request or stored user data |
+| Errors | `_ = \w+\.Verify`, `, _ := jwt\.Parse`, `_ = bcrypt\.CompareHashAndPassword`, `if err != nil \{ log\.` without `return` in an auth check |
+| Concurrency | package-level `map\[` written from handlers without `sync\.Mutex`/`sync\.Map`; `go func` capturing loop variables or the request |
+| TLS and randomness | `InsecureSkipVerify: true`; `"math/rand"` in code that makes tokens, reset codes, session ids or nonces |
+| Server limits | `http\.ListenAndServe\(` (no timeouts), `http\.Server\{` without `ReadHeaderTimeout`; `io\.ReadAll\(r\.Body\)` or `json\.NewDecoder\(r\.Body\)` without `http\.MaxBytesReader` |
+| CORS | `AllowedOrigins: \[\]string\{"\*"\}` or `AllowAllOrigins: true` with `AllowCredentials: true`; `Access-Control-Allow-Origin` set from `r\.Header\.Get\("Origin"\)` |
+| JWT | `jwt\.Parse\(` whose key function never checks `token\.Method` and no `jwt\.WithValidMethods`; claims read before `token\.Valid` |
+| Tools | `gosec -fmt=json ./...` (G101 secrets, G104 unchecked errors, G107 URL from input, G201/G202 SQL, G204 exec, G304/G305 file paths and zip slip, G402 TLS, G404 math/rand) and `govulncheck -json ./...` (vulnerable symbols actually called) as candidates |

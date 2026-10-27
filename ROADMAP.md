@@ -85,6 +85,10 @@ Rules that apply to every item:
 
 - **R09 Go profile** (`gosec`, error handling) and **R10 Rust profile** (`cargo-audit`, unsafe).
   Done when: their benchmark apps score.
+  R09 status (2026-10-27): Go profile merged on branch, waiting for a benchmark run (real go/goshs key).
+  net/http (Go 1.22 patterns), chi, gin, echo, gorilla/mux and fiber entry points with their middleware,
+  ranked by the handler; Go file signals; gosec and govulncheck in the R07 runner (native only, NOT RUN
+  otherwise); a `Stack profile: Go` checklist section and Go stack patterns. R10 is still open.
 - **R13 Cheaper auditors.** Measure on the benchmark whether auditors can run on a lighter model without
   losing recall. Done when: the number is published, whatever it says.
 - **R26 Any coding agent.** Install and run outside Claude Code (skills CLI), with the same report.
