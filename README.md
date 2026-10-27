@@ -20,6 +20,9 @@ Requirements: Claude Code, Node 20+. For dependency and secret scanning, either 
 Optional live progress panel (a Claude Code mod, 2.1.287+): `cp -r ~/.claude/skills/security-audit/audit-live
 ~/.claude/skills/`. It only reads `.security-audit/`; see `audit-live/README.md`.
 
+OpenCode: the same audit as OpenCode agents with enforced permissions, any model provider. Build with
+`node opencode/build.mjs` and install with `node dist/opencode/install.mjs`; see `opencode/README.md`.
+
 ## Use
 
 In your project, in Claude Code:
