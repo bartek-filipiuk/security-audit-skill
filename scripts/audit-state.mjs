@@ -136,6 +136,8 @@ export function validate({ findings, nonIssues }, { final = false } = {}) {
         err(f, `${fm.severity} finding needs proof: test | static`);
     }
     if (fm.proof !== undefined && !PROOFS.includes(fm.proof)) err(f, `proof "${fm.proof}" not in: ${PROOFS.join(", ")}`);
+    carriedErrors(fm).forEach((e) => err(f, e));
+    if (fm.carried_from !== undefined && fm.status === "raw") err(f, "a carried finding cannot be raw (only verified or rejected findings are carried)");
     if (fm.proof === "test" && !section(f.body, "Regression Test")) err(f, 'proof: test needs a "## Regression Test" section with the test path and its output');
 
     if (fm.remediation !== undefined) {
@@ -156,8 +158,19 @@ export function validate({ findings, nonIssues }, { final = false } = {}) {
     if (!n.data) continue;
     if (n.data.id !== n.stem) err(n, `id "${n.data.id}" must equal the file name "${n.stem}"`);
     if (!CATEGORIES.includes(n.data.category)) err(n, `category "${n.data.category}" not in: ${CATEGORIES.join(", ")}`);
+    carriedErrors(n.data).forEach((e) => err(n, e));
   }
   return errors;
+}
+
+// carried_from / carried_run are written by prepass --since: the commit and run in which the item's
+// code was last read. Both or neither.
+function carriedErrors(fm) {
+  if (fm.carried_from === undefined && fm.carried_run === undefined) return [];
+  const out = [];
+  if (!/^[0-9a-f]{7,40}$/.test(String(fm.carried_from ?? ""))) out.push(`carried_from must be a git commit (got "${fm.carried_from ?? ""}")`);
+  if (!String(fm.carried_run ?? "").trim()) out.push("carried_run is required with carried_from");
+  return out;
 }
 
 export function summarize({ findings, nonIssues }) {
@@ -166,11 +179,12 @@ export function summarize({ findings, nonIssues }) {
   const verified = fs.filter((f) => f.data.status === "verified")
     .sort((a, b) => SEVERITIES.indexOf(a.data.severity) - SEVERITIES.indexOf(b.data.severity) || a.stem.localeCompare(b.stem));
   const rejected = fs.filter((f) => f.data.status === "rejected");
+  const carried = fs.filter((f) => f.data.carried_from).length + nonIssues.filter((n) => n.data?.carried_from).length;
   const L = [
-    `status: ${JSON.stringify(by(fs, (f) => f.data.status))} · non-issues: ${nonIssues.length}`,
+    `status: ${JSON.stringify(by(fs, (f) => f.data.status))} · non-issues: ${nonIssues.length}${carried ? ` · carried from a previous run: ${carried} (do not re-verify)` : ""}`,
     `verified by severity: ${JSON.stringify(by(verified, (f) => f.data.severity))} · by category: ${JSON.stringify(by(verified, (f) => f.data.category))}`,
     `rejected by reason: ${JSON.stringify(by(rejected, (f) => String(f.data.rejection_reason ?? "").match(/^[\w-]+/)?.[0]?.replace(/^duplicate_of_.*/, "duplicate") ?? "?"))}`,
-    ...verified.map((f) => `  ${f.data.severity.padEnd(8)} ${f.stem.padEnd(22)} ${(f.data.proof ?? "-").padEnd(7)} pre=${f.data.prerequisite_count ?? "?"} ${titleOf(f.data, f.body).slice(0, 110)}`),
+    ...verified.map((f) => `  ${f.data.severity.padEnd(8)} ${f.stem.padEnd(22)} ${(f.data.proof ?? "-").padEnd(7)} pre=${f.data.prerequisite_count ?? "?"} ${f.data.carried_from ? "[carried] " : ""}${titleOf(f.data, f.body).slice(0, 110)}`),
   ];
   return L.join("\n");
 }
@@ -193,6 +207,7 @@ export function buildRemediation({ findings, nonIssues }, prev, { project, sourc
       fix_evidence: Array.isArray(r.fix_evidence) ? r.fix_evidence : [],
       verification: r.verification || "",
       regression_test: r.regression_test || undefined,
+      carried_from: fm.carried_from || undefined,
       public_safe: status === "fixed",
     };
     return JSON.parse(JSON.stringify(e));

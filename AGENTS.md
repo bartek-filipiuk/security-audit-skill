@@ -6,10 +6,10 @@ For anyone who changes this repository, person or agent. Read it before the firs
 
 `SKILL.md` (the pipeline), `agents/` (prompts of the sub-agents), `references/` (checklist, formats, stack
 patterns), `scripts/` (deterministic pre-pass, state validation, report rendering), `benchmark/` (Ledgerly,
-a test app with 16 seeded bugs and 8 decoys, plus the scorer and the usage counter), `audit-live/`
-(optional Claude Code mod), `opencode/` (the OpenCode variant: agent frontmatters, command, guard plugin,
-build and install; `node opencode/build.mjs` assembles it from the shared prompts into `dist/opencode/`),
-`ROADMAP.md` (the plan, ids R01…).
+a test app with 26 seeded bugs and 16 decoys, plus the scorer and the usage counter), `audit-live/`
+(optional Claude Code mod), `examples/` (CI workflow examples, never under `.github/workflows`), `opencode/`
+(the OpenCode variant: agent frontmatters, command, guard plugin, build and install; `node opencode/build.mjs`
+assembles it from the shared prompts into `dist/opencode/`), `ROADMAP.md` (the plan, ids R01…).
 
 ## Rules
 
@@ -25,10 +25,13 @@ build and install; `node opencode/build.mjs` assembles it from the shared prompt
    `node benchmark/usage.mjs <session id>`. Paste both outputs into the pull request. Run twice before
    trusting a difference of one or two bugs. A change that lowers recall or adds a decoy false positive does
    not merge, whatever else it improves.
-4. **Scripts have tests.** `node --test scripts/ opencode/` must pass; the mod: `cd audit-live && claude plugin
-   validate . && claude plugin test`. Add a test for every new script behaviour.
+4. **Scripts have tests.** `node --test scripts/*.test.mjs opencode/` must pass; the mod: `cd audit-live && claude plugin
+   validate . && claude plugin test`. Add a test for every new script behaviour. `scripts/portability.test.mjs` runs the
+   script pipeline from a skill directory outside `~/.claude` with an empty HOME: scripts must not depend on
+   Claude Code paths, so the skill keeps working in other agents (R26).
 5. **No real projects.** No names, paths, findings or numbers from anyone's real project in the repo.
-   Ledgerly is the only project that may be named. Never commit `.security-audit/` output or `.env` files.
+   Ledgerly and the other benchmark apps under `benchmark/` are the only projects that may be named. Never commit `.security-audit/` output or `.env` files.
+   Exception: public open-source modules under `benchmark/real/`, referenced by a published advisory and fetched by script (never vendored), may be named with their answer keys.
 
 ## Stack profiles
 

@@ -1,0 +1,74 @@
+{
+  "version": 2,
+  "app": "real/go/goshs-v2.1.5",
+  "module": "go/goshs",
+  "module_version": "v2.1.5",
+  "note": "Negative control for answer-key-v2.1.4.json: goshs v2.1.5 fixes the eight advisories scored there. `seeded` is empty; `decoys` are the fixed code at v2.1.5 lines (verified against the extracted tree with `node benchmark/real/fetch.mjs go/goshs v2.1.5 --check --dest <run>`), so `decoy false positives` counts verified findings that still report a fixed advisory. Many advisories published after this release (August to October 2026, listed on the repository's security page) still affect v2.1.5 and are not keyed, so unmatched findings on this control are expected and some are real; they are reviewed by hand like any other (README, findings outside the key). Same format and matching rules as benchmark/answer-key.json.",
+  "window": 2,
+  "seeded": [],
+  "decoys": [
+    {
+      "id": "GHSA-6m5c-fv2q-jrj2-fixed",
+      "locations": [
+        { "file": "httpserver/middleware.go", "lines": [120, 129] }
+      ],
+      "why": "conPtyExempt() allows only GET or HEAD of the helper path with `conpty` as the sole query key."
+    },
+    {
+      "id": "GHSA-966r-mw4j-rv64-fixed",
+      "locations": [
+        { "file": "httpserver/updown.go", "lines": [55, 63] },
+        { "file": "httpserver/updown.go", "lines": [166, 174] },
+        { "file": "httpserver/webdav_acl.go", "lines": [46, 57] }
+      ],
+      "why": "PUT, multipart upload and WebDAV PUT refuse to overwrite an existing file under --no-delete or --upload-only."
+    },
+    {
+      "id": "GHSA-6wwv-mx7w-35jx-fixed",
+      "locations": [
+        { "file": "ftpserver/ftpserver.go", "lines": [128, 138] },
+        { "file": "ftpserver/ftpserver.go", "lines": [152, 210] }
+      ],
+      "why": "The FTP filesystem stacks no-delete and upload-only wrappers; no-delete also blocks Rename, Create and truncating OpenFile of existing files, upload-only blocks reading files."
+    },
+    {
+      "id": "GHSA-rc9g-fmpg-c6pp-fixed",
+      "locations": [
+        { "file": "httpserver/webdav_acl.go", "lines": [58, 64] }
+      ],
+      "why": "WebDAV POST is rejected outright."
+    },
+    {
+      "id": "GHSA-wg2q-39h6-66x9-fixed",
+      "locations": [
+        { "file": "httpserver/updown.go", "lines": [144, 154] },
+        { "file": "httpserver/updown.go", "lines": [176, 182] }
+      ],
+      "why": "Empty, '.' and '..' upload names are skipped and the destination is re-checked with sanitizePath()."
+    },
+    {
+      "id": "GHSA-964w-f6gj-5236-fixed",
+      "locations": [
+        { "file": "httpserver/handler.go", "lines": [787, 811] }
+      ],
+      "why": "The ACL-file and block-list checks use the opened file's stat name."
+    },
+    {
+      "id": "GHSA-4wh5-87mw-whxf-fixed",
+      "locations": [
+        { "file": "sftpserver/helper.go", "lines": [150, 161] },
+        { "file": "sftpserver/helper.go", "lines": [180, 191] }
+      ],
+      "why": "With --no-delete, SFTP refuses overwriting existing files and Remove, Rmdir and Rename."
+    },
+    {
+      "id": "GHSA-mqvv-v9g7-4h3j-fixed",
+      "locations": [
+        { "file": "httpserver/handler.go", "lines": [1016, 1034] },
+        { "file": "httpserver/handler.go", "lines": [1140, 1157] }
+      ],
+      "why": "Share tokens are minted only after the effective .goshs ACL allows the caller, and redemption resolves the ACL of the file's directory."
+    }
+  ],
+  "known_extras": []
+}

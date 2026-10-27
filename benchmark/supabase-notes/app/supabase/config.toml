@@ -1,0 +1,24 @@
+project_id = "notes-local"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public"]
+max_rows = 1000
+
+[auth]
+site_url = "https://notes.example"
+additional_redirect_urls = ["https://notes.example/auth/callback"]
+enable_signup = true
+
+[auth.email]
+enable_confirmations = true
+
+[storage]
+file_size_limit = "10MiB"
+
+[functions.export-notes]
+verify_jwt = false
+
+[functions.inbound-email]
+verify_jwt = false

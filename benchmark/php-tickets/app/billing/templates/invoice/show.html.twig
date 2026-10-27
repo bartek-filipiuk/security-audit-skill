@@ -1,0 +1,7 @@
+{% extends 'base.html.twig' %}
+
+{% block body %}
+    <h1>Invoice {{ invoice.number }}</h1>
+    <p>Status: {{ invoice.status }}</p>
+    <a href="{{ path('invoice_pdf', {id: invoice.id}) }}">Download PDF</a>
+{% endblock %}

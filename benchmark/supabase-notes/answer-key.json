@@ -1,0 +1,190 @@
+{
+  "version": 2,
+  "app": "supabase-notes",
+  "note": "Ground truth for benchmark/supabase-notes/app (Next.js on Supabase, with Firestore whiteboards). Never copy this file into the audited directory. Same format and matching rules as benchmark/answer-key.json: `locations` are files relative to app/ with 1-based inclusive line ranges of the vulnerable statement or of the code a fix changes; a finding matches by its primary location only (window, nearest entry wins). When a real finding is scored as unmatched, check the range against the code, then fix the key, not the finding.",
+  "window": 2,
+  "seeded": [
+    {
+      "id": "B01",
+      "class": "Table exposed through the Data API without Row Level Security",
+      "severity": "HIGH",
+      "locations": [
+        { "file": "supabase/migrations/20260501090000_init.sql", "lines": [120, 127] }
+      ],
+      "detect": "llm+policy-scan",
+      "why": "public.note_shares never gets `enable row level security`, so anyone holding the public anon key can read every share (who shares which note with which email) and insert shares to give themselves access."
+    },
+    {
+      "id": "B02",
+      "class": "RLS select policy `using (true)` on private data",
+      "severity": "CRITICAL",
+      "locations": [
+        { "file": "supabase/migrations/20260501090000_init.sql", "lines": [103, 105] },
+        { "file": "src/app/(app)/notes/[id]/page.tsx", "lines": [9, 9] }
+      ],
+      "detect": "llm+policy-scan",
+      "why": "\"notes: readable\" lets every signed-in user read every note; the note page selects by id only and relies on that policy."
+    },
+    {
+      "id": "B03",
+      "class": "RLS update policy checks login, not ownership",
+      "severity": "HIGH",
+      "locations": [
+        { "file": "supabase/migrations/20260501090000_init.sql", "lines": [83, 85] }
+      ],
+      "detect": "llm+policy-scan",
+      "why": "\"notebooks: members rename\" uses auth.role() = 'authenticated' with no WITH CHECK, so any user can rename any notebook or set owner_id to themselves."
+    },
+    {
+      "id": "B04",
+      "class": "SECURITY DEFINER RPC without ownership check or search_path, executable with the anon key",
+      "severity": "HIGH",
+      "locations": [
+        { "file": "supabase/migrations/20260508090000_sharing.sql", "lines": [1, 17] },
+        { "file": "src/components/share-dialog.tsx", "lines": [18, 18] }
+      ],
+      "detect": "llm+policy-scan",
+      "why": "share_note() bypasses RLS, never compares the note's owner with auth.uid(), keeps the default EXECUTE grant to PUBLIC/anon and has no fixed search_path: a caller shares any note with themselves."
+    },
+    {
+      "id": "B05",
+      "class": "Storage policies scoped to the bucket, not to the owner",
+      "severity": "HIGH",
+      "locations": [
+        { "file": "supabase/migrations/20260512090000_storage.sql", "lines": [14, 20] }
+      ],
+      "detect": "llm+policy-scan",
+      "why": "Any signed-in user can list, download and add objects anywhere in the private attachments bucket; nothing ties the object path to the note owner."
+    },
+    {
+      "id": "B06",
+      "class": "Service-role key shipped to the browser (NEXT_PUBLIC_ and imported by a client component)",
+      "severity": "CRITICAL",
+      "locations": [
+        { "file": "src/lib/supabase/admin.ts", "lines": [3, 7] },
+        { "file": "src/components/share-dialog.tsx", "lines": [4, 4] },
+        { "file": "src/components/share-dialog.tsx", "lines": [13, 13] },
+        { "file": ".env.example", "lines": [4, 4] }
+      ],
+      "detect": "llm+hotspot",
+      "why": "NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY is inlined into the client bundle via share-dialog.tsx; the service role bypasses every RLS policy."
+    },
+    {
+      "id": "B07",
+      "class": "Edge Function without JWT verification trusts a user id from the body",
+      "severity": "CRITICAL",
+      "locations": [
+        { "file": "supabase/functions/export-notes/index.ts", "lines": [9, 14] },
+        { "file": "supabase/config.toml", "lines": [20, 21] }
+      ],
+      "detect": "llm+entrypoints",
+      "why": "export-notes runs with verify_jwt = false and a service-role client, and exports the notes of whatever userId the caller sends."
+    },
+    {
+      "id": "B08",
+      "class": "Firestore rules: signed-in is treated as owner",
+      "severity": "HIGH",
+      "locations": [
+        { "file": "firestore.rules", "lines": [10, 10] },
+        { "file": "firestore.rules", "lines": [13, 13] }
+      ],
+      "detect": "llm+policy-scan",
+      "why": "Any signed-in user can read, change and delete every board and its strokes; only create checks ownerId."
+    },
+    {
+      "id": "B09",
+      "class": "Storage rules `allow read, write: if true`",
+      "severity": "HIGH",
+      "locations": [
+        { "file": "storage.rules", "lines": [11, 12] }
+      ],
+      "detect": "llm+policy-scan",
+      "why": "exports/ is world readable and writable: anyone can read, overwrite or host arbitrary files under exports/ in the project bucket."
+    },
+    {
+      "id": "B10",
+      "class": "Callable Cloud Function without an auth or ownership check (App Check is not authorization)",
+      "severity": "HIGH",
+      "locations": [
+        { "file": "functions/src/index.ts", "lines": [20, 23] }
+      ],
+      "detect": "llm+entrypoints",
+      "why": "deleteBoard uses the Admin SDK (bypasses rules) and deletes any board and its files by id; enforceAppCheck only proves the call came from the app, not who made it."
+    }
+  ],
+  "decoys": [
+    {
+      "id": "D01",
+      "locations": [{ "file": "supabase/migrations/20260501090000_init.sql", "lines": [49, 51] }],
+      "why": "plans is a public price catalogue with no personal data; `using (true)` for select is intended."
+    },
+    {
+      "id": "D02",
+      "locations": [{ "file": "supabase/migrations/20260501090000_init.sql", "lines": [23, 34] }],
+      "why": "handle_new_user is a SECURITY DEFINER trigger function with `set search_path = ''`; trigger functions cannot be called through the Data API."
+    },
+    {
+      "id": "D03",
+      "locations": [{ "file": "supabase/migrations/20260501090000_init.sql", "lines": [15, 21] }],
+      "why": "The owner-update policy is scoped to auth.uid() and column grants limit updates to display_name and avatar_path, so email cannot be changed."
+    },
+    {
+      "id": "D04",
+      "locations": [
+        { "file": "supabase/migrations/20260501090000_init.sql", "lines": [111, 114] },
+        { "file": "src/components/note-editor.tsx", "lines": [15, 15] }
+      ],
+      "why": "The browser updates a note by id only, but the update policy restricts USING and WITH CHECK to owner_id = auth.uid()."
+    },
+    {
+      "id": "D05",
+      "locations": [{ "file": "supabase/migrations/20260508090000_sharing.sql", "lines": [20, 34] }],
+      "why": "SECURITY DEFINER with `set search_path = ''`, filters by auth.uid(), EXECUTE revoked from public and anon."
+    },
+    {
+      "id": "D06",
+      "locations": [{ "file": "supabase/migrations/20260512090000_storage.sql", "lines": [1, 12] }],
+      "why": "avatars is public by design; uploads and replacements are limited to the caller's own folder."
+    },
+    {
+      "id": "D07",
+      "locations": [
+        { "file": "src/lib/supabase/service.ts", "lines": [1, 8] },
+        { "file": "src/app/api/account/route.ts", "lines": [5, 13] }
+      ],
+      "why": "The service-role client is server-only (`import \"server-only\"`, non-public env name) and deletes only the authenticated user's own account."
+    },
+    {
+      "id": "D08",
+      "locations": [
+        { "file": "src/lib/supabase/client.ts", "lines": [3, 5] },
+        { "file": "src/lib/firebase/client.ts", "lines": [7, 13] }
+      ],
+      "why": "The Supabase anon key and the Firebase web config (apiKey included) are public by design; access is decided by RLS and rules."
+    },
+    {
+      "id": "D09",
+      "locations": [
+        { "file": "supabase/functions/inbound-email/index.ts", "lines": [9, 27] },
+        { "file": "supabase/config.toml", "lines": [23, 24] }
+      ],
+      "why": "verify_jwt = false is right for a provider webhook; the function verifies an HMAC-SHA256 signature over timestamp and raw body with a 5-minute window before any write."
+    },
+    {
+      "id": "D10",
+      "locations": [{ "file": "firestore.rules", "lines": [4, 6] }],
+      "why": "users/{userId} requires request.auth.uid == userId."
+    },
+    {
+      "id": "D11",
+      "locations": [{ "file": "storage.rules", "lines": [4, 9] }],
+      "why": "Thumbnails check the board's ownerId through firestore.get(), plus size and content type on writes."
+    },
+    {
+      "id": "D12",
+      "locations": [{ "file": "functions/src/index.ts", "lines": [9, 18] }],
+      "why": "renameBoard checks request.auth and the board's ownerId before writing."
+    }
+  ],
+  "known_extras": []
+}

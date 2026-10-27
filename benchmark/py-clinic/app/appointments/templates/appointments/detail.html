@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% load clinic_tags %}
+{% block content %}
+<h1>{{ appointment.doctor.name }} &middot; {{ appointment.starts_at|date:"j M Y H:i" }}</h1>
+<p>{% status_badge appointment %}</p>
+<p>{{ appointment.reason }}</p>
+<p class="notes">{{ appointment.notes|linebreaksbr }}</p>
+
+<section class="thread">
+  {% for message in thread %}
+    <article>
+      <header>{{ message.author.get_full_name }} &middot; {{ message.created_at|date:"j M H:i" }}</header>
+      <div class="body">{{ message.body|safe }}</div>
+    </article>
+  {% endfor %}
+</section>
+
+<form method="post" action="{% url 'appointments:post_message' appointment.pk %}">
+  {% csrf_token %}
+  <textarea name="body" rows="4"></textarea>
+  <button type="submit">Send</button>
+</form>
+{% endblock %}

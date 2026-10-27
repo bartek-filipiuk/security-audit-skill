@@ -3,7 +3,7 @@
 A Claude Code skill that audits the security of your own code and hands back a report: what to fix, what is
 verified safe (with the control's file:line) and what could not be checked. Open source, MIT.
 
-Project page: https://security-audit.dev
+Project page: https://security-audit.dev · Build log (daily stand-ups): https://www.youtube.com/@SecurityAuditDev
 
 ## Install
 
@@ -11,14 +11,22 @@ Project page: https://security-audit.dev
 git clone https://github.com/bartek-filipiuk/security-audit-skill ~/.claude/skills/security-audit
 ```
 
-Update with `git -C ~/.claude/skills/security-audit pull`. Check the scripts (seconds, no tokens):
-`cd ~/.claude/skills/security-audit && node --test scripts/`.
+Update with `git -C ~/.claude/skills/security-audit pull`. Or with the skills CLI, which also links the skill into
+other agents: `npx skills add bartek-filipiuk/security-audit-skill -g`. Either way the install directory must be
+named `security-audit` (the skill's name). Check the scripts (seconds, no tokens):
+`cd ~/.claude/skills/security-audit && node --test scripts/*.test.mjs`.
 
-Requirements: Claude Code, Node 20+. For dependency and secret scanning, either `osv-scanner` and `gitleaks` on
-`PATH` or a running docker daemon; without them the report lists those two checks as not run. Tested on Linux.
+Requirements: Claude Code (or another agent, see Other agents), Node 20+.
+For dependency and secret scanning, either `osv-scanner` and `gitleaks` on
+`PATH` or a running docker daemon; without them the report lists those two checks as not run. Optional rule
+scanners, used when the project has something for them: `semgrep` (code), `zizmor` (GitHub Actions), `hadolint`
+(Dockerfiles), `trivy` (Dockerfiles and IaC), `bandit` (Python, native only). Install them (`pipx install semgrep
+zizmor bandit`, `brew install hadolint trivy`) or run docker, and the pre-pass uses the official images of the
+first four, pinned by digest. Each one that applies but cannot run is listed as not assessed. Tested on Linux.
 
-Optional live progress panel (a Claude Code mod, 2.1.287+): `cp -r ~/.claude/skills/security-audit/audit-live
-~/.claude/skills/`. It only reads `.security-audit/`; see `audit-live/README.md`.
+Optional live progress panel (a Claude Code mod, 2.1.287+): phase, time per phase, findings by severity and
+by auditor, session cost. `cp -r ~/.claude/skills/security-audit/audit-live ~/.claude/skills/`. It only reads
+`.security-audit/` and Claude Code's own session cost figure; see `audit-live/README.md`.
 
 OpenCode: the same audit as OpenCode agents with enforced permissions, any model provider. Build with
 `node opencode/build.mjs` and install with `node dist/opencode/install.mjs`; see `opencode/README.md`.
@@ -33,19 +41,91 @@ In your project, in Claude Code:
 /security-audit --scope auth        # areas: auth, admin, payments, webhooks, files, ai, jobs, api
 /security-audit --scope src/app/api # a path
 /security-audit --verify-fixes      # recompute what is fixed, change nothing
+/security-audit --since last        # re-audit only what changed since the last audit
+/security-audit --since <commit>    # ... or since a commit; the rest of the report is carried over
+/security-audit --stack laravel     # force a profile instead of the detected one (js, php, python, go, ...)
 ```
+
+The pre-pass detects the stack from the manifests (package.json, composer.json, pyproject.toml or
+requirements.txt, go.mod, Cargo.toml, Gemfile, pom.xml, ...) and the report names the applied profile, what it
+covers and what it does not. Only JavaScript/TypeScript (Node) has a dedicated profile today; PHP, Python and
+the rest run on the general checklist, and the report says so. In a monorepo every detected stack gets its own
+profile line, with the directories it was found in. `--stack` applies one profile instead and warns when it
+does not match the code.
+
+`--since` audits the entry points whose code changed (directly or through an imported file) and copies the
+previous run's findings and verified-safe items that cite no changed file, each marked with the commit it was
+read at. Without a usable previous full audit, or when a file that gates every route changed, it runs a full
+audit and says why.
+
+From the second audit on, the report has a "Since last audit" section: findings that are new, fixed, regressed or
+unchanged against the previous run (kept in `.security-audit/history/`), computed by a script, no tokens.
+
+After Not Assessed the report has a "Production checklist": deployment checks a code audit cannot settle (headers,
+TLS, limits, env vars, secrets, backups, logging, updates), each with how to verify it on your own host. Items that
+match a Not Assessed row are marked "from this audit"; the rest are a baseline.
 
 Install the project's dependencies first, so the regression tests the audit writes can run. The report is
 `.security-audit/report.html`; the directory is gitignored because it names unfixed weaknesses.
 
-Cost: a full run on the benchmark app (45 entry points) took 32 minutes and 23.8M tokens, about 11.70 USD at
-API prices (Opus 5.5, effort xhigh); a 160-entry-point project took 2 h 11 min. Start big projects with
-`--scope top20`.
+Export the findings for GitHub code scanning, Linear or Jira (no network, no token; you upload or import the file):
+
+```
+node <skill dir>/scripts/export.mjs --format sarif    # → .security-audit/export/security-audit.sarif
+node <skill dir>/scripts/export.mjs --format linear   # → .security-audit/export/linear.csv (Linear CSV import)
+node <skill dir>/scripts/export.mjs --format jira     # → .security-audit/export/jira.csv (Jira CSV import)
+```
+
+Each finding in `remediation.json` that is not fixed or accepted (`--all` for every one) becomes a SARIF result
+or a task with its file and line, severity, impact and fix. Upload the SARIF with
+`github/codeql-action/upload-sarif`, only to a private repository: it names unfixed weaknesses.
+
+### CI (example)
+
+[`examples/github-actions/security-audit.yml`](examples/github-actions/security-audit.yml) audits every pull
+request from a branch of the same repository (roadmap R15). It is an example, not yet run end to end: copy it to
+`.github/workflows/`, set the `ANTHROPIC_API_KEY` secret and replace each `<pin-sha>` (the skill has no release
+tags yet, so it is pinned by commit).
+
+- `scripts/ci-scope.mjs --base origin/<base branch>` turns the changed directories into a `--scope` value
+  (`top20` when more than 20 directories, or only root files, changed). `--since` is not used: a fresh checkout
+  has no previous audit, and it cannot be combined with `--scope`.
+- `scripts/ci-summary.mjs` writes one sticky PR comment with the unresolved findings by severity (titles only
+  with `--titles`) and exits 1 at or above `--fail-on` (default HIGH), 2 when the audit did not finish.
+- **The API key is readable by the pull request's code** (the audit runs project code under the same process).
+  Put the job behind an `environment:` with required reviewers, use a dedicated key with a spend cap, and keep
+  `npm ci --ignore-scripts`; project `.claude/` settings are not loaded (`--setting-sources user`).
+- The skill is installed in `~/.claude/skills`, not in the checkout, so its benchmark app is not audited as your
+  code. SARIF goes to code scanning on private repositories only.
+- It uses `pull_request`, never `pull_request_target`: the audit runs the project's code, which must not see the
+  API key of the base repository. Forks and Dependabot are skipped. The budget cap is the repository variable
+  `SECURITY_AUDIT_BUDGET_USD` (default 15).
+
+Cost (Claude Code): a full run on the benchmark app (45 entry points) took 32 minutes and 23.8M tokens, about
+11.70 USD at API prices (Opus 5.5, effort xhigh); a 160-entry-point project took 2 h 11 min. Start big projects
+with `--scope top20`. Re-auditing a one-line change with `--since` cost 4.7M tokens and 15 minutes on the same app
+(a headless full run there: 11.6M and 26 minutes).
+
+## Other agents
+
+Status: installs; end-to-end benchmark in another agent not run yet. The scripts are tested without Claude Code
+(`scripts/portability.test.mjs`); every number in this README is from Claude Code.
+
+- **OpenCode** reads skills from `~/.claude/skills` and `.agents/skills`, so either install works. It has a Task
+  tool, so parallel mode is expected to run as in Claude Code.
+- **Codex CLI:** start it with `$security-audit` and the flags. It has subagents, so parallel mode is expected to
+  run.
+- **Gemini CLI, Cursor and other agents without subagents:** the phases run one after another in the same
+  context (the Portability section of `SKILL.md`). Same prompts, scripts and report; slower and with a fuller
+  context on big projects, so start with `--scope top20`.
+
+The pre-pass and report scripts need only Node and git, never a Claude Code path. The optional live progress
+panel is Claude Code only.
 
 ## How it compares
 
 Anthropic's free [Claude Security plugin](https://code.claude.com/docs/en/claude-security) does a similar
-multi-agent scan. On the benchmark app both found the seeded bugs (16 of 16 here, 15 of 16 for the plugin) with
+multi-agent scan. On the benchmark app as it was then (16 seeded bugs, before R08, R21, R23, R24 and R25 added ten) both found them (16 of 16 here, 15 of 16 for the plugin) with
 no decoy false positives; the plugin was faster. This skill adds dependency advisories (osv-scanner), secrets in
 the whole git history (gitleaks), regression tests that fail today as proof, a verified-safe list, a
 not-assessed list and a review of the project's tests. The plugin adds SARIF, branch-diff scans and reviewed
@@ -65,7 +145,8 @@ A deterministic pre-pass (seconds) followed by a 5-phase agent pipeline (Recon �
 
 ```
 prepass.mjs (no LLM) → entry points by framework convention, Drizzle scope scan,
-                       osv-scanner advisories, gitleaks over git history → prepass.md
+                       osv-scanner advisories, gitleaks over git history,
+                       semgrep / zizmor / hadolint / trivy / bandit candidates → prepass.md
         ↓
 Recon Scanner (Sonnet) → maps exposed surface + authorization map, writes .security-audit/recon.md
         ↓
@@ -90,10 +171,12 @@ All agents communicate via `.security-audit/` directory:
 ├── findings/         # One file per finding (raw → verified/rejected)
 ├── non-issues/       # Areas examined and found secure (with the control's file:line)
 ├── not-assessed.md   # Coverage gaps
+├── coverage/         # Coverage ledger: per auditor, which entry points and classes were checked (JSON, schema-validated)
 ├── tests/            # Regression tests for HIGH/CRITICAL
 ├── test-quality.md   # Test coverage assessment
 ├── report.md         # Final report
-└── remediation.json  # Generated from finding frontmatter
+├── remediation.json  # Generated from finding frontmatter
+└── export/           # Optional: SARIF and Linear/Jira CSV from scripts/export.mjs
 ```
 
 The directory is added to `.gitignore` before anything is written: it names unfixed weaknesses with file and line.
@@ -116,35 +199,46 @@ references/
 scripts/
   prepass.mjs                     # Phase 0: deterministic pre-pass (node, no deps; docker for scanners)
   surface.mjs                     # Entry point enumeration + Drizzle scope scan
+  stack.mjs                       # Stack detection from manifests, profiles, --stack
+  tools.mjs                       # semgrep, zizmor, hadolint, trivy, bandit: detect, run, normalize candidates
+  incremental.mjs                 # --since: changed files -> re-audit targets, carried findings
   audit-state.mjs                 # Validates findings, generates remediation.json
   report-html.mjs                 # Renders report.html: to fix / verified safe / not assessed
   report-md.mjs                   # Assembles report.md from the coordinator's summary.md + audit files
   briefs.mjs                      # Per-auditor briefs (checklist sections + patterns for the repo's languages)
   workspace-check.mjs             # What changed in the project while the audit ran
-  selftest.test.mjs               # node --test scripts/
+  coverage.mjs                    # Validates the coverage ledger, renders the Coverage and Not Assessed sections
+  export.mjs                      # remediation.json → SARIF 2.1.0, Linear CSV, Jira CSV
+  ci-scope.mjs, ci-summary.mjs    # CI example: --scope from a PR's changed directories, sticky PR comment and verdict
+  diff.mjs                        # "Since last audit": new / fixed / regressed findings against history/
+  prod-checklist.mjs              # "Production checklist": deployment checks from the Not Assessed rows
+  selftest.test.mjs               # node --test scripts/*.test.mjs
 benchmark/
   app/                            # Ledgerly: seeded-bug app in the target stack
   answer-key.json                 # Ground truth (never copied into the audited dir)
   setup.mjs, score.mjs            # Create a run, score it (also Claude Security output); results.jsonl keeps history
   usage.mjs                       # Tokens and API-price cost of a session, subagents included
   COMPARISON.md                   # Head-to-head with the Claude Security plugin
+examples/
+  github-actions/security-audit.yml  # PR-audit workflow (example, not yet run end to end)
 ```
 
-Requirements: Node 20+. For dependency and secret scanning, either `osv-scanner` and `gitleaks` on PATH or a running docker daemon (official images are pulled on first use). Without them the pre-pass says NOT RUN and the report lists the gap.
+Requirements: Node 20+. For dependency and secret scanning, either `osv-scanner` and `gitleaks` on PATH or a running docker daemon (official images are pulled on first use). The rule scanners `semgrep`, `zizmor`, `hadolint` and `trivy` are optional the same way: native binary first, then the official image pinned by digest; `bandit` (Python) runs natively only. Without them the pre-pass says NOT RUN with how to enable it and the report lists the gap. Their hits are candidates for the auditors, never findings.
 
 ## Key features
 
 - **Evidence-based**: every finding requires file:line, code snippet, and an Impact section (who can do what they should not)
 - **Deterministic first**: entry points, tenant-scope candidates, CVEs and secrets in git history come from scripts and scanners, not from model memory
 - **Anti-hallucination**: 12 hard rules + mandatory 4-part REJECT gate (evidence, reachability, direction, dedup); no "secure" without the control's file:line
+- **Coverage ledger**: auditors record every entry point and class as checked, not applicable or not assessed; the report lists what nobody looked at, so "not found" is never confused with "not looked at"
 - **Proof labels**: every HIGH/CRITICAL is marked `test` (a regression test fails today) or `static` (code reading only)
 - **Measurement-driven**: Deep Dive iterates (max 3) and stops on set-convergence (no new findings / status changes / chains); score is a reporting metric
 - **Separate verification**: a different agent re-reads the code for every finding and rejects what it cannot confirm
 - **Cross-domain chain detection**: verifier sees findings from ALL auditors, detects multi-step chains
-- **Stack-aware**: most precise on Next.js App Router, tRPC, Hono, Drizzle, Better-Auth, AI SDK and plain Node; other languages run on general rules
+- **Stack-aware**: most precise on Next.js App Router, tRPC, Hono, Drizzle, Better-Auth, AI SDK and plain Node, plus a Supabase and Firebase profile (RLS and storage policies, SECURITY DEFINER functions, Edge Functions, Firestore/Storage rules, Cloud Functions, service-role keys in the client), and a PHP profile for Laravel, Symfony and Drupal (route entry points with their middleware, IsGranted and access requirements, records loaded without an owner check, mass assignment, raw SQL and DQL, Blade/Twig/Markup output, CSRF exceptions), and a Python profile for Django, FastAPI and Flask (urls.py, router and blueprint entry points with login_required, permission classes, Depends() and before_request guards, queries on user-owned models without a user filter, raw SQL and `text()` f-strings, `|safe`, SSTI, `send_file` paths, unsafe YAML/pickle, CORS with credentials, literal secret keys); other languages run on general rules
 - **Persistent**: findings survive sessions — resume, re-run, extend anytime
 - **Hotspots first**: the pre-pass ranks entry points and auth/CORS/env config by risk signals; auditors start there
-- **Measured**: a seeded-bug benchmark (`benchmark/`) scores recall, verifier drops and decoy false positives per change
+- **Measured**: seeded-bug benchmark apps (`benchmark/`: Ledgerly, `supabase-notes` for the Supabase and Firebase profile, `php-tickets` for the PHP profile, `py-clinic` for the Python profile) score recall, verifier drops and decoy false positives per change
 
 ## Audit categories
 

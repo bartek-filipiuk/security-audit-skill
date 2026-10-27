@@ -2,8 +2,9 @@
 
 A small multi-tenant SaaS in the stack this skill is used on (Next.js 16 App Router, Better-Auth with
 organizations, Drizzle on Postgres, tRPC, a Hono public API, pg-boss, Stripe, Resend, R2 presigned
-uploads, AI SDK tools). It contains 16 seeded vulnerabilities and 8 decoys (secure code that looks
-suspicious). It was written for this skill and was private until the project went open source on
+uploads, AI SDK tools). It contains 26 seeded vulnerabilities and 16 decoys (secure code that looks
+suspicious); until R08 (2026-10-06) it had 16 and 8, R08 made it 20 and 11, R21 23 and 13, R23 24 and 14, R24 25 and 15, and R25 26 and 16, so compare
+recall only between runs on the same key. It was written for this skill and was private until the project went open source on
 2026-10-03, so treat later results with care: it may reach model training data. The skill was also
 developed against it, so a high score shows these bug classes are covered, not how much the skill finds in
 arbitrary code. A second, never-published app is on the roadmap (R18).
@@ -13,10 +14,22 @@ from here you cannot tell whether "faster" cost recall.
 
 ## Run
 
-    node benchmark/setup.mjs                  # prints the run directory
+    node benchmark/setup.mjs                  # prints the run directory (--app supabase-notes, php-tickets or py-clinic)
     cd <run>/app && claude                    # fresh session, then: /security-audit
     node benchmark/score.mjs <run> --label "what changed"
     node benchmark/usage.mjs <session id>       # tokens and API-price cost, subagents included
+
+Headless instead of an interactive session:
+
+    cd <run>/app && CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 claude -p "/security-audit" \
+      --dangerously-skip-permissions --output-format json --session-id <uuid>
+
+Without `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0` print mode stops background subagents (the Phase 3
+verifiers) after 600 s and exits with no report.
+
+Incremental run (`--since`): after a full run, copy the run directory, make and commit a small change in
+`<copy>/app`, set `started_at` in `<copy>/meta.json` to now, then run `/security-audit --since <commit>` there
+and score the copy. `score.mjs` prints how many found bugs were carried over.
 
 To score the Claude Security plugin on the same app, run `/claude-security` in `<run>/app` and add
 `--tool claude-security` to the score command. See COMPARISON.md for the first head-to-head.
@@ -27,16 +40,107 @@ contains it). The audit only ever sees `<run>/app`.
 
 `score.mjs` prints recall, findings the verifier wrongly rejected (`dropped_by_verifier`), decoy false
 positives, known extras (real advisories in the pinned dependencies), verified findings that matched
-nothing (read those by hand), the severity and proof label of each found bug, the rejection reason of
-each dropped one, findings with no readable status (`unparsed`), and the run time. It appends one
-line to `results.jsonl`.
+nothing with their location (read those by hand), the match type (`exact` or `none`) and proof label of
+each seeded bug, and the run time. It appends one line to `results.jsonl`.
 
-To score another app (a real project with a patched CVE, say), write a key with the same schema:
-`seeded[]` with `id`, `class`, `files` (any of them, path suffix) and `keywords`; `decoys` and
-`known_extras` are optional. Put `meta.json` with at least `started_at` in the run directory (every
-field goes into the saved line), then `node benchmark/score.mjs <run> --key <key.json> --results
-<file>`. Paths are recognised in JS/TS, JSON, YAML, Markdown, PHP (`.php`, `.module`, `.inc`,
-`.install`, `.theme`) and Python files.
+## Second app: supabase-notes
+
+`benchmark/supabase-notes/` is the benchmark of the Supabase and Firebase profile (roadmap R02): a Next.js
+notes app on Supabase (SQL migrations with RLS policies, a SECURITY DEFINER RPC, storage buckets and
+policies, two Edge Functions and `config.toml`) with Firestore whiteboards (`firestore.rules`,
+`storage.rules`, callable Cloud Functions). 10 seeded bugs and 12 decoys; the key is
+`benchmark/supabase-notes/answer-key.json`, in the same format and with the same matching rules.
+
+    node benchmark/setup.mjs --app supabase-notes   # one commit, meta.json records bench_app
+    cd <run>/app && claude                          # fresh session, then: /security-audit
+    node benchmark/score.mjs <run> --label "what changed"   # picks the key from meta.json (or --app)
+
+It has no lockfile, so the dependency scan has nothing to read there; a finding about the missing lockfile
+is valid and shows up as unmatched. Seeded classes: a table without RLS, `using (true)` on private notes,
+an update policy that checks login instead of ownership, a SECURITY DEFINER RPC without an ownership check or
+`search_path` and executable with the anon key, bucket-wide storage policies, the service-role key behind
+`NEXT_PUBLIC_` imported by a client component, an Edge Function with `verify_jwt = false` that trusts a user
+id from the body, Firestore rules that treat any signed-in user as owner, Storage rules `if true`, and a
+callable Cloud Function without an auth check (App Check only). Decoys: a public price table, scoped
+SECURITY DEFINER functions, column-limited profile updates, browser updates guarded by RLS, a public avatars
+bucket with owner-scoped writes, a server-only service-role client, the anon key and Firebase web config, a
+webhook Edge Function that verifies an HMAC, and owner-scoped rules and callables.
+
+## Third app: php-tickets
+
+`benchmark/php-tickets/` is the benchmark of the PHP profile (roadmap R05): a Laravel helpdesk (routes,
+controllers, models, a CSRF middleware, Blade views) with a Symfony billing service in `billing/` (attribute
+routes, Doctrine repository, voter, `security.yaml`) and a Drupal custom module in `portal/` (routing.yml,
+controller). Plain PHP files laid out like the real frameworks: no `vendor/`, nothing to install, nothing to
+run. 13 seeded bugs and 14 decoys; the key is `benchmark/php-tickets/answer-key.json`.
+
+    node benchmark/setup.mjs --app php-tickets      # one commit, meta.json records bench_app
+    cd <run>/app && claude                          # fresh session, then: /security-audit
+    node benchmark/score.mjs <run> --label "what changed"
+
+Laravel keeps its code in `app/`, the same name as the run directory: the scorer compares a cited path with
+and without the leading `app/`, so `app/Http/...` and `app/app/Http/...` both match. There is no
+`composer.lock`, so the dependency scan has nothing to read; Psalm taint analysis is NOT RUN by design.
+Seeded classes: Laravel `findOrFail($id)` without a user scope or policy, `whereRaw` with an interpolated
+search term, `update($request->all())` on a model with `$guarded = []`, an API route outside the
+`auth:sanctum` group, `{!! !!}` on comment bodies, a CSRF exception on `account/*`, uploads stored on the
+public disk under the client file name; Symfony DQL built by concatenation (and not scoped to the customer)
+and `find($id)` behind a login-only `IsGranted`; Drupal `_access: 'TRUE'` on a route serving tickets, a
+concatenated `database()->query()`, a state-changing GET route without `_csrf_token`, and `Markup::create()`
+on user text. Decoys: a policy-checked update, a bound `whereRaw`, `create($request->validated())`, an
+HMAC-verified webhook outside auth and CSRF, an admin group with `can:admin`, `{!! nl2br(e()) !!}`, a
+validated avatar upload, a parameterised QueryBuilder, a voter-checked PDF download, a public status route,
+a placeholder query, a reopen route with `_csrf_token`, `#markup` through `t()` placeholders and
+`APP_DEBUG=true` only in `.env.example`.
+
+## Fourth app: py-clinic
+
+`benchmark/py-clinic/` is the benchmark of the Python profile (roadmap R06): a Django patient portal
+(`clinic/` settings and urls, `appointments/` with views, templates and a DRF API, `records/`, a payment
+webhook in `payments/`) with a FastAPI lab service in `labs/` (routers, SQLAlchemy models, pydantic schemas,
+cookie auth) and a Flask back office in `backoffice/` (blueprint, Flask-Login, Jinja templates). Plain
+Python files laid out like the real frameworks: no virtualenv, nothing to install, nothing to run; the
+`requirements.txt` files are pinned. 18 seeded bugs and 18 decoys; the key is
+`benchmark/py-clinic/answer-key.json`.
+
+    node benchmark/setup.mjs --app py-clinic        # one commit, meta.json records bench_app
+    cd <run>/app && claude                          # fresh session, then: /security-audit
+    node benchmark/score.mjs <run> --label "what changed"
+
+The scorer parses `.py`, `.html`, `.txt`, `.cfg` and `.ini` locations. bandit runs in the pre-pass
+tool runner when it is installed (native only); osv-scanner reads the three `requirements.txt` files, and an advisory it reports for a pinned
+version is not in the key (it shows up as an unmatched finding, not as a decoy false positive).
+Seeded classes: Django `get_object_or_404(pk=)` without a patient filter, `.raw()` with an f-string, a DRF
+viewset whose queryset is every patient's prescriptions, a patient CSV export without `login_required`,
+`|safe` on message bodies, `csrf_exempt` on a session view that changes the account e-mail, a literal
+`SECRET_KEY` fallback, an upload path from a form field, `yaml.load` with `yaml.Loader`; FastAPI a PDF route
+without the auth dependency that loads any result by id, `text()` with an f-string, a `BackgroundTasks`
+callback to a caller-chosen URL whose reply is stored and returned, a `response_model` with password hashes
+and TOTP secrets, CORS `*` with credentials; Flask `render_template_string` on the letter body, `send_file`
+with a joined query parameter, a role change route without `login_required`, a literal `secret_key`.
+Decoys: owner-filtered lists and gets, a parameterised `.raw()`, a scoped `get_queryset`, `AllowAny` on the
+read-only doctors directory, `format_html`, a signed webhook with `csrf_exempt`, DEBUG and hosts from the
+environment (`DJANGO_DEBUG=1`/`FLASK_DEBUG=1` only in `.env.example`), an owner-checked download, a scoped
+result route, a bound `text()`, router-level `Depends(require_staff)` with a public schema on `/staff/me`, a
+health check, `render_template` with a variable, `send_from_directory` with `secure_filename`,
+`yaml.safe_load` and the public sign-in view.
+
+## Real advisories (R30, R31)
+
+`benchmark/real/` scores the skill on public open-source modules pinned to a release from before a
+published security fix, instead of planted bugs. The code is not in the repo: `benchmark/real/fetch.mjs`
+downloads the release, checks its pinned sha256 and builds the run directory; the keys list the code each
+advisory's fix changes. First module: the Drupal contrib module `miniorange_saml` 3.1.3 (11 scored
+drupal.org advisories, SA-CONTRIB-2026-031 and the 2026-09-09 batch) with 3.2.0 as the fixed control.
+R31 adds a weekly batch across ecosystems (`benchmark/real/<ecosystem>/<package>/`, ids like
+`npm/fast-jwt`); week 1 is Drupal `rest_api_authentication`, WordPress `flamingo`, npm `fast-jwt` and Go
+`goshs`, each with its fixed release as control.
+
+    node benchmark/real/fetch.mjs miniorange_saml 3.1.3      # --dest DIR, --tarball FILE, --check
+    cd <run>/app && CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 claude -p "/security-audit" --permission-mode auto --output-format json
+    node benchmark/score.mjs <run> --label "..."             # the key path comes from meta.json (or --key)
+
+Caveats (training data, nondeterminism, one module) and results: `benchmark/real/README.md`.
 
 ## Rules
 
@@ -44,11 +148,39 @@ field goes into the saved line), then `node benchmark/score.mjs <run> --key <key
   seeded bugs in the prompt. The app source has no hint comments; keep it that way.
 - Compare runs on the same model and effort. Expect run-to-run variance: run twice before trusting
   a difference of one or two bugs.
-- Matching is by cited file plus keyword. A keyword must not appear in a file name it is paired with
-  (`next` + `next.config.ts` matches everything). When a real finding is scored as unmatched, fix the
-  key, not the finding.
+- Matching is exact, by file and line; there are no keywords. A finding's primary
+  location is the first `**File**:` line of its Evidence (else the first `path:line` it cites); other files
+  it cites are context and never match, except its secondary locations (below). It matches a key entry when the path ends with the entry's file
+  and the line is inside one of the entry's ranges or at most `window` (2) lines outside it. When several
+  entries are in reach, the nearest wins, so neighbouring ranges in one file (B06 and decoy D04) stay apart.
+  `advisory: true` entries (vulnerable dependency versions) take only findings in category `dependency`,
+  and those findings match nothing else, except `any_category: true` entries (supply-chain settings in a
+  manifest, which an auditor may file as `config` or `dependency`). A finding without a line matches nothing, except a `file_level: true` entry (a secret committed in a file that
+  exists only in git history, B15's `.env`): a finding that cites that file with no line matches it.
+- Secondary locations. When a finding's primary location matches nothing, its other locations are tried
+  with the same window and nearest-wins rules: every `path:line` on its `**File**:` line after the first,
+  and, for a class finding marked `systematic` (the skill's dedup rule merges one root cause at several
+  sinks into one finding, `systematic: N locations`), every `path:line` in its Evidence section outside
+  code blocks (`src/x.php:309,313,315` is three lines; a bare `:27-31` continues the previous file). Cites
+  elsewhere (TRACE, Impact, a plain finding's prose) stay context. A finding still matches at most one
+  entry this way, the nearest over all its secondary locations, and the primary is always preferred. The
+  entry is reported as `found (secondary location)` with match `secondary`, and the finding with the
+  location that matched, so each such pair can be checked by hand.
+- Decoys count only through the primary location. A secondary location whose nearest entry is a decoy is
+  skipped (the next one may still match a seeded bug) and listed under "Decoys cited only in a secondary
+  location", never counted as a decoy false positive. The primary location is the claim the finding is
+  about and the one its fix targets; a systematic list is the EXPAND step's "where else", checked less
+  deeply, and a decoy false positive blocks a merge (AGENTS.md rule 3), so counting those lists would let
+  one well-placed primary finding drag in a false positive from a sibling it only mentioned. Seeded hits go
+  the other way because the scorer is meant to credit what a reader of the report would credit.
+  Cited files may be code, manifests, CI workflows (`.github/workflows/*.yml`), Dockerfiles, compose and IaC files.
+- A range is the vulnerable statement or the lines a fix changes, not the whole file. Decoy ranges
+  cover the code that looks suspicious. When a real finding is scored as unmatched, check the range
+  against the code and fix the key, not the finding.
 - When you add a seeded bug: add it to `app/` without comments, add an entry to `answer-key.json`
-  with `files`, `keywords`, `detect` and `why`, and rerun `node --test scripts/`.
+  with `locations` (file and inclusive line range), `detect` and `why`, and rerun
+  `node --test scripts/*.test.mjs`; `scripts/score.test.mjs` checks that every range points at real,
+  non-blank lines and that ranges do not overlap. Editing a seeded file moves lines: update the ranges.
 
 ## Seeded classes
 
@@ -58,4 +190,28 @@ outside the proxy matcher, full DB row serialized to a public client component, 
 returns the response body, AI tool that takes `orgId` from the model, presigned upload key from the
 client, `role` mass assignment through Better-Auth `additionalFields`, digest job emailing every
 user, vulnerable Next.js version reachable through `images.remotePatterns`, live key in git history,
-CORS reflecting any origin with `SameSite=None` cookies. Details: `answer-key.json`.
+CORS reflecting any origin with `SameSite=None` cookies; since R08 also a cookie-authenticated route handler
+without an origin check (CSRF), a `pull_request_target` workflow that builds the pull request head with
+secrets, runtime secrets baked into the image through Dockerfile `ARG`/`ENV`, and a `postinstall` script that
+pipes an unpinned download into a shell. Decoys added with them: a server action (origin-checked by Next.js),
+a CI workflow that passes PR text through `env:`, and a compose file with a localhost-only database port.
+Since R21: an invoice summary that renders model output (built from invoice notes) as raw HTML, an agent tool
+that voids any invoice by a model-chosen id with no tenant scope, role check or approval, and an agent route
+that takes the model, output tokens and step count from the request body. Decoys added with them: a reminder
+email whose model-written text is HTML-escaped and whose recipient comes from the org-scoped database row, and
+an org-scoped tool that requires approval (`needsApproval`). The seeded LLM code calls no model unless the app
+runs with a key.
+Since R23: a sign-up route that sends a billed SMS code to any phone number with no session, rate limit,
+captcha or per-number cap (denial of wallet). Decoy added with it: an SMS reminder server action behind the
+org session, sent to the customer's phone from the org-scoped row, at most once per invoice per day and 50 per
+organization per day. The SMS client posts to the gateway in `SMS_GATEWAY_URL` (`sms.example.com` in
+`.env.example`), so nothing is sent unless someone configures a real one.
+Since R24: an owner-only "delete organization" action that deletes the organization row and relies on cascades,
+so the documents rows go but the uploaded objects they point to stay in the bucket (incomplete erasure). Decoy
+added with it: a customer erasure behind an owner/admin check that anonymizes the customer and clears the copies
+of their phone number and the invoice notes in one org-scoped transaction.
+Since R25: a payment widget wrapper on the billing page whose window message listener checks neither the
+sender's origin nor its source and navigates the page to a URL taken from the message (DOM XSS through a
+`javascript:` URL, or an open redirect). Decoy added with it: an e-signature frame on open invoices whose
+listener accepts only its own iframe on the signing origin, validates the message with zod and only resizes or
+refreshes. Both embed `*.example.com` hosts, so nothing loads unless someone changes them. Details: `answer-key.json`.

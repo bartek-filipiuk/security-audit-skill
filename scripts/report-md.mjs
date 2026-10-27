@@ -9,6 +9,10 @@ import { existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadAudit, section, titleOf } from "./audit-state.mjs";
+import { notAssessedRows, renderCoverageMd } from "./coverage.mjs";
+import { diffAudit, renderDiffMd } from "./diff.mjs";
+import { renderProdChecklistMd } from "./prod-checklist.mjs";
+import { profileHeadline } from "./stack.mjs";
 
 const ORDER = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
 const FIELDS = ["Evidence", "TRACE", "Impact", "Regression Test", "Chained With", "Recommendation", "Test Coverage"];
@@ -23,11 +27,32 @@ export function renderReportMd(dir) {
     .sort((a, b) => (ORDER[a.data.severity] ?? 9) - (ORDER[b.data.severity] ?? 9) || a.stem.localeCompare(b.stem));
   const rejected = findings.filter((f) => f.data?.status === "rejected");
 
-  const L = [summary, "", "## Findings", ""];
+  const inc = existsSync(join(dir, "tools", "incremental.json")) ? JSON.parse(read("tools/incremental.json")) : null;
+  const carriedNote = (fm) => (fm.carried_from ? ` · **Carried over** from the audit of commit ${String(fm.carried_from).slice(0, 12)} (run ${fm.carried_run})` : "");
+  const L = [summary, ""];
+  const stack = existsSync(join(dir, "tools", "summary.json")) ? JSON.parse(read("tools/summary.json")).stack : null;
+  if (stack?.profiles?.length) {
+    L.push("## Stack and Profile", "", `Detected: ${stack.detected.length ? stack.detected.join("; ") : "no known manifest"}.${stack.forced ? ` Profile forced with --stack.` : ""}`);
+    if (stack.warning) L.push("", `**Warning:** ${stack.warning}`);
+    for (const p of stack.profiles) {
+      L.push("", `**Profile: ${profileHeadline(p)}.**`, "", `- Covers: ${p.covers.join("; ")}.`, `- Does not cover: ${p.gaps.join("; ")}.`);
+    }
+    L.push("");
+  }
+  if (inc?.mode === "incremental") {
+    const cf = findings.filter((f) => f.data?.carried_from).length;
+    const cn = nonIssues.filter((n) => n.data?.carried_from).length;
+    L.push("## Incremental Audit", "", `Re-audited ${inc.targets.length} of ${inc.total} targets whose code changed since commit ${inc.since.slice(0, 12)} (${inc.changed.length} changed files). ${cf} findings and ${cn} non-issues were carried over from the audit of commit ${inc.carried_from.slice(0, 12)} (run ${inc.carried_run}) because none of the files they cite changed; they are marked "Carried over" below.`, "");
+  } else if (inc) {
+    L.push("## Incremental Audit", "", `An incremental audit was requested, but this is a full audit: ${inc.reason}.`, "");
+  }
+  const diff = renderDiffMd(diffAudit(dir));
+  if (diff) L.push(diff);
+  L.push("## Findings", "");
   verified.forEach((f, i) => {
     const fm = f.data;
     L.push(`### [F${i + 1}] ${titleOf(fm, f.body)}`);
-    L.push(`- **Id**: ${fm.id} · **Severity**: ${fm.severity} · **Category**: ${fm.category} · **Prerequisites**: ${fm.prerequisite_count ?? 0}${["CRITICAL", "HIGH"].includes(fm.severity) ? ` · **Proof**: ${fm.proof}` : ""}`);
+    L.push(`- **Id**: ${fm.id} · **Severity**: ${fm.severity} · **Category**: ${fm.category} · **Prerequisites**: ${fm.prerequisite_count ?? 0}${["CRITICAL", "HIGH"].includes(fm.severity) ? ` · **Proof**: ${fm.proof}` : ""}${carriedNote(fm)}`);
     for (const name of FIELDS) {
       const body = section(f.body, name);
       if (body) L.push("", `**${name}**`, "", body);
@@ -37,10 +62,11 @@ export function renderReportMd(dir) {
 
   L.push("## Non-Issues (examined and found secure)", "", "| # | Id | Area Examined | Evidence |", "|---|---|---|---|");
   nonIssues.forEach((n, i) => {
-    L.push(`| ${i + 1} | ${n.stem} | ${cell((section(n.body, "Area Examined") ?? "").split("\n")[0]).slice(0, 180)} | ${firstLoc(section(n.body, "Evidence") ?? n.body)} |`);
+    L.push(`| ${i + 1} | ${n.stem}${n.data?.carried_from ? ` (carried from ${String(n.data.carried_from).slice(0, 7)})` : ""} | ${cell((section(n.body, "Area Examined") ?? "").split("\n")[0]).slice(0, 180)} | ${firstLoc(section(n.body, "Evidence") ?? n.body)} |`);
   });
 
-  L.push("", "## Not Assessed (coverage gaps)", "", "Nobody checked these. They are unknown, not safe.", "", read("not-assessed.md") || "No coverage gaps recorded.", "");
+  L.push("", renderCoverageMd(dir));
+  L.push(renderProdChecklistMd(notAssessedRows(dir)));
 
   const docs = findings.filter((f) => f.data?.category === "docs-vs-reality");
   L.push("## Documentation vs Reality", "");
@@ -57,7 +83,7 @@ export function renderReportMd(dir) {
   }
 
   L.push("## Filtered Out (rejected by the verifier)", "", "| Id | Reason |", "|---|---|");
-  for (const f of rejected) L.push(`| ${f.stem} | ${cell(f.data.rejection_reason).slice(0, 160)} |`);
+  for (const f of rejected) L.push(`| ${f.stem}${f.data.carried_from ? " (carried)" : ""} | ${cell(f.data.rejection_reason).slice(0, 160)} |`);
   return L.join("\n") + "\n";
 }
 

@@ -1,0 +1,14 @@
+services:
+  db:
+    image: postgres:17.2-alpine
+    environment:
+      POSTGRES_USER: ledgerly
+      POSTGRES_DB: ledgerly
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:

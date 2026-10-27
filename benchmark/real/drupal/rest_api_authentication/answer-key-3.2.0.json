@@ -1,0 +1,28 @@
+{
+  "version": 2,
+  "app": "real/drupal/rest_api_authentication-3.2.0",
+  "module": "drupal/rest_api_authentication",
+  "module_version": "3.2.0",
+  "note": "Negative control for answer-key-3.1.0.json: rest_api_authentication 3.2.0 is the release that fixes SA-CONTRIB-2026-182. `seeded` is empty; `decoys` are the fixed code at 3.2.0 lines (verified against the extracted tree with `node benchmark/real/fetch.mjs drupal/rest_api_authentication 3.2.0 --check --dest <run>`), so `decoy false positives` counts verified findings that still report the fixed advisory. A verified finding that matches nothing is listed for review (README, findings outside the key). Same format and matching rules as benchmark/answer-key.json.",
+  "window": 2,
+  "seeded": [],
+  "decoys": [
+    {
+      "id": "SA-2026-182-fixed",
+      "locations": [
+        { "file": "src/Authentication/Provider/RestAPI.php", "lines": [78, 91] },
+        { "file": "src/PageCache/DisallowAPIRequests.php", "lines": [22, 27] }
+      ],
+      "why": "applies() and the page-cache policy now match the routed path (getPathInfo()) and the parsed query (query->has('_format')), so the position of the format parameter no longer decides whether API authentication runs."
+    }
+  ],
+  "known_extras": [
+    {
+      "id": "extra-embedded-vendor-key",
+      "locations": [
+        { "file": "src/MiniorangeApiAuthConstants.php", "lines": [28, 29] }
+      ],
+      "why": "Fallback vendor customer id and API key for the miniOrange notification service are still constants in the source. No advisory. Valid if reported, not scored. Never quote the value."
+    }
+  ]
+}

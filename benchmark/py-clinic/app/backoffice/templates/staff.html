@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Staff</title></head>
+<body>
+  <table>
+    {% for member in staff %}
+      <tr><td>{{ member.full_name }}</td><td>{{ member.email }}</td><td>{{ member.role }}</td></tr>
+    {% endfor %}
+  </table>
+</body>
+</html>

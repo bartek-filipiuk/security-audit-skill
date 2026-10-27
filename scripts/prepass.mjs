@@ -1,17 +1,34 @@
 #!/usr/bin/env node
 // Deterministic pre-pass for the security-audit skill. Runs before any agent reads code.
 //   node prepass.mjs [--root DIR] [--out DIR] [--no-docker] [--scope auth,payments|src/app/api|top20] [--new-run]
+//                    [--since <commit>|last] [--stack <name>]
 // --new-run (Phase 0 of a fresh audit): moves a previous run into <out>/history/<date>/ so the new
 // agents cannot anchor on old results, and records the workspace state for workspace-check.mjs.
+// --since (implies --new-run): incremental audit. Targets whose code changed since the commit (or since
+// the previous audit with "last") are marked for re-audit; findings and non-issues of the previous run
+// that cite no changed or affected file are copied back with carried_from/carried_run. Without a usable
+// previous run it falls back to a full audit and says why (see incremental.mjs).
 // Defaults: --root = cwd, --out = <root>/.security-audit
 // Writes <out>/prepass.md (read by recon) and raw tool output to <out>/tools/.
-// Tools: osv-scanner and gitleaks, native binary first, then their official docker images.
+// Tools: osv-scanner and gitleaks, native binary first, then their official docker images; semgrep,
+// zizmor, hadolint and trivy (tools.mjs) when the project has something for them, native first, then
+// docker pinned by digest; bandit (tools.mjs) natively for Python source. Tool hits are candidates for
+// the auditors, never findings.
+// --stack forces the profile (js, php, python, go, rust, ruby, java, dotnet, generic, or an alias such as
+// laravel, django, nextjs) instead of the one detected from the manifests (stack.mjs). stack.mjs is the
+// only stack detector: tools.mjs picks semgrep rulesets from its result.
+// Psalm taint analysis for PHP is reported NOT RUN with how to run it (it would execute the project's
+// autoloader). Without osv-scanner and docker, the dependency
+// fallback runs `pip-audit --no-deps --disable-pip` on requirements.txt (reads the file, installs nothing).
 // Secrets are always redacted (gitleaks --redact) so no secret value lands on disk or in agent context.
 
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
-import { inScope, LOCKFILES, rankHotspots, scanEntryPoints, scanScope, walk } from "./surface.mjs";
+import { inScope, LOCKFILES, phpTaintStatus, rankHotspots, scanEntryPoints, scanScope, walk } from "./surface.mjs";
+import { detectStack, label as stackLabel, resolveStack, stackGapRows, stackMarkdown } from "./stack.mjs";
+import { inventory, mergeNotAssessed, renderTools, rulesetStack, runTools } from "./tools.mjs";
+import { changedSince, loadItems, loadPreviousRun, planIncremental, readAliases, resolveCommit, trackedFiles, writeCarried } from "./incremental.mjs";
 
 const args = process.argv.slice(2);
 const opt = (name, fallback) => {
@@ -23,18 +40,28 @@ const out = resolve(opt("--out", join(root, ".security-audit")));
 const toolsDir = join(out, "tools");
 const allowDocker = !args.includes("--no-docker");
 const scopeSpec = opt("--scope", "");
+const stackArg = args.includes("--stack") ? (opt("--stack") ?? "") : null;
 try {
   if (scopeSpec) inScope(scopeSpec, []);
+  if (stackArg !== null) resolveStack(stackArg.startsWith("--") ? "" : stackArg);
 } catch (err) {
   console.error(`prepass: ${err.message}`);
   process.exit(2);
 }
-if (args.includes("--new-run")) {
-  archivePreviousRun();
+// `--since` with no value (or "last") means: since the commit of the previous audit.
+const sinceArg = args.includes("--since") ? (opt("--since", "") && !opt("--since", "").startsWith("--") ? opt("--since", "") : "last") : null;
+if (sinceArg && scopeSpec) {
+  console.error("prepass: --since and --scope cannot be combined (an incremental run carries a full report over)");
+  process.exit(2);
+}
+let previous = sinceArg ? loadPreviousRun(out) : null;
+if (args.includes("--new-run") || sinceArg) {
+  const archived = archivePreviousRun();
+  if (previous?.ok) previous = archived ? { ...previous, dir: archived } : { ok: false, reason: "the previous audit could not be archived" };
   rmSync(join(toolsDir, "workspace-mark.json"), { force: true });
 }
 mkdirSync(toolsDir, { recursive: true });
-for (const d of ["findings", "non-issues", "tests"]) mkdirSync(join(out, d), { recursive: true });
+for (const d of ["findings", "non-issues", "tests", "coverage"]) mkdirSync(join(out, d), { recursive: true });
 
 const run = (cmd, argv, opts = {}) =>
   spawnSync(cmd, argv, { encoding: "utf8", maxBuffer: 512 * 1024 * 1024, timeout: 600_000, ...opts });
@@ -45,6 +72,7 @@ const isGit = run("git", ["-C", root, "rev-parse", "--is-inside-work-tree"]).std
 // History lives at the repo top level; a monorepo package audit still needs the whole history scanned.
 const gitTop = isGit ? run("git", ["-C", root, "rev-parse", "--show-toplevel"]).stdout.trim() : root;
 const commit = isGit ? run("git", ["-C", root, "rev-parse", "--short", "HEAD"]).stdout.trim() : "";
+const commitFull = isGit ? run("git", ["-C", root, "rev-parse", "HEAD"]).stdout.trim() : "";
 
 // The package name reads better than a directory called "app"; fall back to the directory.
 function packageName(root) {
@@ -72,6 +100,7 @@ for (let dir = root; !lockfiles.length && dir !== dirname(dir) && relative(gitTo
   if (found.length) { depRoot = dir; lockfiles = found; }
   if (dir === gitTop) break;
 }
+const stack = detectStack(root, { force: stackArg });
 const entries = scanEntryPoints(files);
 const scope = scanScope(files, depRoot === root ? files : walk(depRoot).files);
 const ranked = rankHotspots(files, entries, scope);
@@ -81,32 +110,89 @@ const pick = scopeSpec ? inScope(scopeSpec, ranked.filter((h) => h.score > 0)) :
 for (const h of ranked) h.inScope = pick(h);
 const hotspots = ranked.filter((h) => h.score > 0);
 const scoped = scopeSpec ? { label: scopeSpec, entries: ranked.filter((h) => h.inScope), total: ranked.length } : null;
+const incremental = sinceArg ? planRun() : null;
+if (incremental?.mode === "incremental") {
+  const reaudit = new Set(incremental.reaudit.map((t) => `${t.file}:${t.line}`));
+  for (const h of ranked) h.inScope = reaudit.has(`${h.file}:${h.line}`);
+}
 const deps = runDeps();
 const secrets = runSecrets();
+const toolResults = runCodeTools();
+const phpTaint = phpTaintStatus(files);
 
+writeFileSync(join(toolsDir, "stack.json"), JSON.stringify(stack, null, 2));
 writeFileSync(join(toolsDir, "entry-points.json"), JSON.stringify(entries, null, 2));
 writeFileSync(join(toolsDir, "scope-scan.json"), JSON.stringify(scope, null, 2));
 writeFileSync(join(toolsDir, "hotspots.json"), JSON.stringify(hotspots, null, 2));
 if (scoped) writeFileSync(join(toolsDir, "scope.json"), JSON.stringify(scoped, null, 2));
 else rmSync(join(toolsDir, "scope.json"), { force: true });
+if (incremental) writeFileSync(join(toolsDir, "incremental.json"), JSON.stringify(incrementalSummary(), null, 2));
+else rmSync(join(toolsDir, "incremental.json"), { force: true });
 writeFileSync(join(toolsDir, "summary.json"), JSON.stringify({
-  generated_at: new Date().toISOString(), project: packageName(root) ?? basename(root), commit,
+  generated_at: new Date().toISOString(), project: packageName(root) ?? basename(root), commit, commit_full: commitFull,
+  incremental: incremental?.mode === "incremental" ? { since: incremental.since, carried_from: incremental.prevCommit, targets: incremental.reaudit.length, total: incremental.total } : null,
   scope: scoped && { label: scoped.label, entries: scoped.entries.length, total: scoped.total },
+  stack: { applied: stack.applied, forced: stack.forced, warning: stack.warning, profiles: stack.profiles, detected: stack.detected.map(stackLabel), framework_profiles: stack.framework_profiles },
   entry_points: entries.length, scope_candidates: scope.sites.filter((s) => s.status !== "scoped").length,
   deps: { status: deps.status, rows: deps.rows }, secrets: { status: secrets.status, rows: secrets.rows },
+  tools: Object.fromEntries(toolResults.map((t) => [t.tool, { status: t.status, candidates: t.total }])),
+  ...(phpTaint ? { php_taint: { status: phpTaint } } : {}),
 }, null, 2));
 writeFileSync(join(out, "prepass.md"), render());
 
 const unscoped = scope.sites.filter((s) => s.status !== "scoped").length;
 console.log(
   `prepass: ${entries.length} entry points, ${hotspots.length} hotspots, ${unscoped} scope candidates, ` +
-    `deps: ${deps.status}, secrets: ${secrets.status} (${((Date.now() - t0) / 1000).toFixed(1)}s) -> ${join(out, "prepass.md")}`,
+    `deps: ${deps.status}, secrets: ${secrets.status}, tools: ${toolResults.map((t) => `${t.tool} ${t.state}`).join(", ")} (${((Date.now() - t0) / 1000).toFixed(1)}s) -> ${join(out, "prepass.md")}`,
 );
+console.log(`prepass: stack ${stack.detected.length ? stack.detected.map(stackLabel).join("; ") : "not detected"}; profile ${stack.profiles.map((p) => `${p.id}${p.dedicated ? "" : " (general checklist)"}`).join(", ")}${stack.forced ? ` (forced by --stack ${stack.forced_as})` : ""}`);
+if (stack.warning) console.warn(`prepass: WARNING: ${stack.warning}`);
+if (incremental?.mode === "incremental") {
+  console.log(`prepass: INCREMENTAL since ${incremental.since.slice(0, 12)}: ${incremental.changed.length} changed files, re-audit ${incremental.reaudit.length} of ${incremental.total} targets; carried ${incremental.carry.filter((c) => c.kind === "finding").length} findings and ${incremental.carry.filter((c) => c.kind === "non-issue").length} non-issues from ${incremental.prevCommit.slice(0, 12)}, ${incremental.drop.length} to re-audit`);
+} else if (incremental) {
+  console.log(`prepass: FULL AUDIT instead of incremental: ${incremental.reason}`);
+}
+
+// ---------------------------------------------------------------- incremental (--since)
+
+function planRun() {
+  const full = (reason, extra = {}) => ({ mode: "full", reason, since: "", prevCommit: "", changed: [], reaudit: [], total: ranked.length, carry: [], drop: [], ...extra });
+  if (!isGit) return full("the project is not a git repository");
+  if (!previous?.ok) return full(previous?.reason ?? "no previous audit");
+  const prevCommit = resolveCommit(root, previous.commit);
+  if (!prevCommit) return full(`the previous audit's commit ${previous.commit} is not in this repository`);
+  const since = sinceArg === "last" ? prevCommit : resolveCommit(root, sinceArg);
+  if (!since) return full(`--since ${sinceArg} is not a commit in this repository`);
+  // Carried items were read at the previous audit's commit, so changes since then always count, even
+  // when the given commit is newer; files that were dirty during that audit count as changed too.
+  const prefix = run("git", ["-C", root, "rev-parse", "--show-prefix"]).stdout.trim();
+  const dirty = previous.dirtyAtAudit.filter((p) => p.startsWith(prefix) && !p.endsWith("/")).map((p) => p.slice(prefix.length));
+  const a = changedSince(root, since);
+  const b = since === prevCommit ? a : changedSince(root, prevCommit);
+  if (!a || !b) return full("git diff failed");
+  const changed = [...new Set([...a, ...b, ...dirty])].filter((p) => !p.startsWith(".security-audit/")).sort();
+  const plan = planIncremental({
+    targets: ranked, entries, files, changed, universe: trackedFiles(root),
+    items: loadItems(previous), aliases: readAliases(root),
+  });
+  const result = { ...plan, since, prevCommit, prevRun: basename(previous.dir) };
+  if (plan.mode === "incremental") writeCarried(previous.dir, out, plan, { commit: prevCommit, run: result.prevRun });
+  return result;
+}
+
+function incrementalSummary() {
+  const i = incremental;
+  return {
+    mode: i.mode, reason: i.reason, since: i.since, carried_from: i.prevCommit, carried_run: i.prevRun ?? "",
+    changed: i.changed, targets: i.reaudit.map((t) => ({ kind: t.kind, name: t.name, file: t.file, line: t.line })), total: i.total,
+    carried: i.carry.map((c) => c.name), reaudit_items: i.drop.map((d) => ({ name: d.name, why: d.why })),
+  };
+}
 
 // ---------------------------------------------------------------- dependencies
 
 function runDeps() {
-  for (const f of ["osv.json", "pnpm-audit.json", "npm-audit.json", "composer-audit.json"]) rmSync(join(toolsDir, f), { force: true });
+  for (const f of ["osv.json", "pnpm-audit.json", "npm-audit.json", "composer-audit.json", "pip-audit.json"]) rmSync(join(toolsDir, f), { force: true });
   if (!lockfiles.length) return { status: "no lockfile found", rows: [] };
   let res;
   let via;
@@ -194,14 +280,16 @@ function fallbackAudit() {
     ["pnpm-lock.yaml", "pnpm", ["audit", "--json"]],
     ["package-lock.json", "npm", ["audit", "--json"]],
     ["composer.lock", "composer", ["audit", "--locked", "--format=json"]],
+    // --no-deps --disable-pip: read the pinned requirements only, never resolve or install packages.
+    ["requirements.txt", "pip-audit", ["-r", "requirements.txt", "--no-deps", "--disable-pip", "--progress-spinner", "off", "--format", "json"]],
   ];
   const done = [];
   for (const [lock, cmd, argv] of tries) {
     if (!existsSync(join(depRoot, lock)) || !installed(cmd)) continue;
     const res = run(cmd, argv, { cwd: depRoot, timeout: 180_000 });
-    const file = `${cmd}-audit.json`;
+    const file = cmd.endsWith("-audit") ? `${cmd}.json` : `${cmd}-audit.json`;
     writeFileSync(join(toolsDir, file), res.stdout || res.stderr || "");
-    done.push(`${cmd} audit -> tools/${file}`);
+    done.push(`${cmd.replace(/-audit$/, "")} audit -> tools/${file}`);
   }
   return {
     status: done.length
@@ -256,6 +344,25 @@ function runSecrets() {
   return { status: `${via}: ${rows.length} hits, ${scope}`, rows };
 }
 
+// ---------------------------------------------------------------- semgrep, zizmor, hadolint, trivy
+
+function runCodeTools() {
+  for (const f of ["semgrep.json", "zizmor.sarif", "hadolint.json", "trivy.json", "bandit.json", "tool-candidates.json"]) rmSync(join(toolsDir, f), { force: true });
+  const inv = inventory(root);
+  const results = runTools({
+    root, inv, stack: rulesetStack(inv, stack),
+    runner: { installed, run, dockerOk, dockerDisabled: !allowDocker },
+    write: (name, text) => writeFileSync(join(toolsDir, name), text),
+  });
+  writeFileSync(join(toolsDir, "tool-candidates.json"), JSON.stringify(results.map(({ rows, all, ...r }) => ({ ...r, candidates: all ?? [] })), null, 2));
+  // A tool that applied but did not run, or a stack without a dedicated profile, is a coverage gap; record it
+  // so the report cannot stay silent.
+  const naPath = join(out, "not-assessed.md");
+  const merged = mergeNotAssessed(existsSync(naPath) ? readFileSync(naPath, "utf8") : "", results, stackGapRows(stack));
+  if (merged || existsSync(naPath)) writeFileSync(naPath, merged);
+  return results;
+}
+
 // ---------------------------------------------------------------- report
 
 function render() {
@@ -272,9 +379,35 @@ function render() {
   L.push(`- Scope scan: ${scope.tables.length} owner-scoped tables, ${scope.sites.length} query sites, ${cands.length} candidates`);
   L.push(`- Dependencies: ${deps.status}`);
   L.push(`- Secrets: ${secrets.status}`);
+  for (const t of toolResults) L.push(`- ${t.tool}: ${t.status}`);
+  if (phpTaint) L.push(`- PHP taint analysis (Psalm): ${phpTaint}`);
   L.push("");
   L.push(`Anything marked NOT RUN or FAILED is a coverage gap: report it under "Not assessed", never as secure.`);
   L.push("");
+  L.push(...stackMarkdown(stack));
+  L.push(`What the profile does not cover was not checked by this pre-pass: the agents cover it by reading the code, and what nobody checked goes to not-assessed.md.`);
+  L.push("");
+  if (incremental?.mode === "incremental") {
+    const i = incremental;
+    const carriedF = i.carry.filter((c) => c.kind === "finding").length;
+    L.push(`## Incremental audit since ${i.since.slice(0, 12)}`);
+    L.push("");
+    L.push(`${i.changed.length} files changed since ${i.since.slice(0, 12)}; ${i.reaudit.length} of ${i.total} targets (entry points and access-deciding config files) changed, import changed code, or are cited by a previous finding that is re-audited. Audit only these targets, the changed files themselves and the findings listed below for re-audit. ${carriedF} findings and ${i.carry.length - carriedF} non-issues of the previous audit (commit ${i.prevCommit.slice(0, 12)}) cite no changed or affected file and were copied into findings/ and non-issues/ with \`carried_from\`: never edit, overwrite or re-verify them; a new finding that repeats a carried one is rejected as \`duplicate_of_<carried id>\`. Number new files after the highest number already used in your range and never reuse an id listed for re-audit below (it meant something else in the previous run). The sections below still cover the whole repo; secret rows from commits after ${i.since.slice(0, 12)} and dependency rows when a lockfile changed are new work.`);
+    L.push("");
+    L.push(`Changed files: ${i.changed.map((p) => `\`${p}\``).join(", ") || "none"}.`);
+    L.push("");
+    L.push(i.reaudit.length ? table(["Kind", "Name", "Route", "File:line"], i.reaudit.map((e) => [e.kind, e.name, e.route, `${e.file}:${e.line}`])) : "No target changed: only the changed files and the findings below need a look.");
+    L.push("");
+    if (i.drop.length) {
+      L.push(`Previous findings and non-issues to re-audit (not carried): ${i.drop.map((d) => `${d.name.replace(/\.md$/, "")} (${d.why})`).join("; ")}.`);
+      L.push("");
+    }
+  } else if (incremental) {
+    L.push(`## Incremental audit not possible`);
+    L.push("");
+    L.push(`Full audit instead: ${incremental.reason}.`);
+    L.push("");
+  }
   if (scoped) {
     L.push(`## Scope: ${scoped.label}`);
     L.push("");
@@ -326,6 +459,7 @@ function render() {
   L.push("");
   L.push(secrets.rows.length ? table(["Rule", "File:line", "Commit", "Date", "File still present"], secrets.rows.map((r) => [r.rule, `${r.file}:${r.line}`, r.commit, r.date, r.present])) : "No rows.");
   L.push("");
+  L.push(renderTools(toolResults, table));
   return L.join("\n");
 }
 
@@ -337,15 +471,18 @@ function gitStatus() {
 }
 
 function archivePreviousRun() {
-  if (!existsSync(out)) return;
+  if (!existsSync(out)) return null;
   const items = readdirSync(out).filter((n) => n !== "history");
   const findings = join(out, "findings");
   const hadRun = (existsSync(findings) && readdirSync(findings).length) || existsSync(join(out, "recon.md")) || existsSync(join(out, "report.md"));
-  if (!hadRun) return;
+  if (!hadRun) return null;
   const report = join(out, "report.md");
   const when = (existsSync(report) ? statSync(report).mtime : new Date()).toISOString().replace(/[:.]/g, "-").slice(0, 19);
-  const dest = join(out, "history", when);
+  // Two runs archived within one second (back-to-back incremental runs) must not collide.
+  let dest = join(out, "history", when);
+  for (let n = 2; existsSync(dest); n++) dest = join(out, "history", `${when}-${n}`);
   mkdirSync(dest, { recursive: true });
   for (const n of items) renameSync(join(out, n), join(dest, n));
   console.log(`prepass: previous run archived to ${dest} (agents must not read history/)`);
+  return dest;
 }

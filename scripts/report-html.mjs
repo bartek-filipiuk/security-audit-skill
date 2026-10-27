@@ -12,11 +12,15 @@ import { existsSync, readFileSync, realpathSync, statSync, writeFileSync } from 
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadAudit, section, titleOf } from "./audit-state.mjs";
+import { notAssessedRows } from "./coverage.mjs";
+import { diffAudit, diffIntro } from "./diff.mjs";
+import { INTRO as PROD_INTRO, NO_COVERAGE, productionChecklist, rowLabel, SHOW_ROWS } from "./prod-checklist.mjs";
+import { profileHeadline } from "./stack.mjs";
 
 const SEVERITY = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
 const CATEGORY = {
   auth: "Authentication & authorization", injection: "Injection & SSRF", "rate-limit": "Rate limiting & abuse",
-  exposure: "Data exposure & secrets", config: "Headers, CORS & configuration", upload: "File upload & storage",
+  exposure: "Data exposure & secrets", config: "Headers, CORS, build & deploy configuration", upload: "File upload & storage",
   dependency: "Dependencies", crypto: "Cryptography", concurrency: "Concurrency & races",
   "docs-vs-reality": "Documentation vs reality", "business-logic": "Business logic", logging: "Logging & monitoring",
   "test-gap": "Test gaps", chain: "Chains",
@@ -67,14 +71,9 @@ function load(dir) {
   const summary = json("tools/summary.json");
   const hotspots = json("tools/hotspots.json") ?? [];
   // null = never recorded (audits older than the not-assessed rule), [] = recorded and empty.
-  let notAssessed = existsSync(join(dir, "not-assessed.md"))
-    ? readFileSync(join(dir, "not-assessed.md"), "utf8").split("\n")
-        .filter((l) => /^\|/.test(l) && !/^\|\s*-/.test(l) && !/^\|\s*category\s*\|/i.test(l))
-        .map((l) => l.split("|").slice(1, -1).map((c) => c.trim()))
-    : null;
-  for (const [label, block] of [["Dependencies", summary?.deps], ["Secrets", summary?.secrets]]) {
-    if (block && /NOT RUN|FAILED/.test(block.status)) (notAssessed ??= []).push([label.toLowerCase(), `${label} scan`, block.status]);
-  }
+  // Derived from the coverage ledger plus not-assessed.md and the pre-pass tool status (coverage.mjs).
+  const gapRows = notAssessedRows(dir);
+  const notAssessed = gapRows?.map((g) => [g.class, [g.check, g.target].filter(Boolean).join(" · "), g.why]) ?? null;
 
   const items = findings.filter((f) => f.data).map((f) => {
     const fm = f.data;
@@ -88,6 +87,7 @@ function load(dir) {
       title: titleOf(fm, f.body) || f.stem, loc: firstLoc(sec("Evidence") ?? f.body),
       evidence: sec("Evidence"), trace: sec("TRACE"), impact: sec("Impact"), proofText: sec("Regression Test"),
       chain: sec("Chained With"), fix: sec("Recommendation"), rejectionNote: sec("Rejection Note"),
+      carriedFrom: fm.carried_from ? String(fm.carried_from).slice(0, 12) : "", carriedRun: String(fm.carried_run ?? ""),
     };
   });
   const safe = nonIssues.filter((n) => n.data).map((n) => ({
@@ -100,6 +100,9 @@ function load(dir) {
     commit: summary?.commit ?? "",
     date: (existsSync(reportPath) ? statSync(reportPath).mtime : new Date()).toISOString().slice(0, 10),
     scope: summary?.scope ?? null,
+    incremental: json("tools/incremental.json"),
+    diff: diffAudit(dir),
+    prod: productionChecklist(gapRows),
     items, safe, notAssessed, hotspots, summary,
   };
 }
@@ -119,7 +122,7 @@ function findingRow(f) {
     : f.remediation === "cannot_verify" ? `<span class="chip chip-muted">Cannot verify</span>` : "";
   const block = (label, body) => (body ? `<section><h4>${label}</h4>${md(body)}</section>` : "");
   return `<details class="row sev-${f.severity.toLowerCase()}" id="${esc(f.id)}">
-<summary><span class="sev">${esc(f.severity.toLowerCase())}</span><span class="title">${inline(f.title)}</span>${proofChip(f)}${status}<span class="loc">${esc(f.loc)}</span></summary>
+<summary><span class="sev">${esc(f.severity.toLowerCase())}</span><span class="title">${inline(f.title)}</span>${proofChip(f)}${status}${f.carriedFrom ? `<span class="chip chip-muted">Carried over</span>` : ""}<span class="loc">${esc(f.loc)}</span></summary>
 <div class="body">
 ${block("How to fix", f.fix)}
 ${block("Evidence", f.evidence)}
@@ -127,7 +130,7 @@ ${block("Data flow", f.trace)}
 ${block("Impact", f.impact)}
 ${block("Regression test", f.proofText)}
 ${f.chain && !/^none\b/i.test(f.chain.trim()) ? block("Chained with", f.chain) : ""}
-<p class="meta">${esc(f.id)} · ${esc(CATEGORY[f.category] ?? f.category)}</p>
+<p class="meta">${esc(f.id)} · ${esc(CATEGORY[f.category] ?? f.category)}${f.carriedFrom ? ` · carried over from the audit of commit ${esc(f.carriedFrom)} (run ${esc(f.carriedRun)}); its files did not change` : ""}</p>
 </div></details>`;
 }
 
@@ -163,7 +166,10 @@ function render(d) {
   const safeByCat = Object.entries(d.safe.reduce((m, n) => ((m[n.category] ??= []).push(n), m), {}))
     .sort((a, b) => b[1].length - a[1].length);
   const nav = [
-    ["fix", "To fix", toFix.length], ["safe", "Verified safe", d.safe.length], ["gaps", "Not assessed", d.notAssessed ? gaps.length : "–"],
+    ["fix", "To fix", toFix.length],
+    ...(d.diff ? [["since", "Since last audit", d.diff.new.length + d.diff.regressed.length]] : []),
+    ["safe", "Verified safe", d.safe.length], ["gaps", "Not assessed", d.notAssessed ? gaps.length : "–"],
+    ["prod", "Production checklist", d.prod.flagged],
     ...(d.hotspots.length ? [["hotspots", "Hotspots", Math.min(20, d.hotspots.filter((h) => h.inScope !== false).length)]] : []),
     ...(d.summary ? [["deps", "Dependencies", d.summary.deps.rows.length], ["secrets", "Secrets", d.summary.secrets.rows.length]] : []),
     ["filtered", "Filtered out", rejected.length],
@@ -226,6 +232,7 @@ h1 { font: 600 clamp(2.4rem, 5vw, 3.6rem)/1.05 var(--display); letter-spacing: -
 .c-critical { background: var(--crit); } .c-high { background: var(--high); } .c-medium { background: var(--med); } .c-low { background: var(--low); }
 .c-fixed { background: var(--fixed); } .c-safe { background: var(--safe); } .c-gap { background: var(--gap); }
 .scope { margin: 18px 0 0; padding: 10px 14px; background: var(--tint-gap); border-radius: 10px; font-size: 0.92rem; }
+.profile p { margin: 0.25em 0; max-width: 90ch; }
 nav { position: sticky; top: 0; align-self: start; padding-top: 28px; }
 nav ol { list-style: none; margin: 0; padding: 0; }
 nav a { display: flex; justify-content: space-between; padding: 6px 0; text-decoration: none; color: var(--ink-2); border-bottom: 1px solid transparent; }
@@ -261,11 +268,16 @@ h3 { font: 600 0.8rem/1 var(--text); letter-spacing: 0.08em; text-transform: upp
 .body h4 { font: 600 0.78rem/1 var(--text); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); margin: 20px 0 6px; }
 .body p, .body li { margin: 0.3em 0; }
 .body .meta { color: var(--ink-2); font-size: 0.85rem; margin-top: 18px; }
+.diff { list-style: none; padding: 0; margin: 0; }
+.diff li { padding: 10px 0; border-top: 1px solid var(--rule); }
+.diff .why { color: var(--ink-2); font-size: 0.9rem; display: block; }
 .good, .gap { list-style: none; padding: 0; margin: 0; }
 .good li, .gap li { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 0 12px; padding: 12px 0; border-top: 1px solid var(--rule); }
 .good svg { color: var(--safe); margin-top: 3px; } .gap svg { color: var(--gap); margin-top: 3px; }
 .good .why, .gap .why { color: var(--ink-2); font-size: 0.94rem; display: block; max-width: 72ch; }
 .good code { font-size: 0.8rem; }
+.prod .how { display: block; margin-top: 4px; font-size: 0.94rem; max-width: 72ch; }
+.prod .chip { vertical-align: 1px; }
 details.cat > summary { cursor: pointer; padding: 10px 0; font-weight: 600; list-style: none; display: flex; justify-content: space-between; border-top: 1px solid var(--rule); }
 details.cat > summary::-webkit-details-marker { display: none; }
 details.cat > summary span { color: var(--safe); font-weight: 500; }
@@ -298,6 +310,8 @@ footer { grid-column: 1 / -1; border-top: 1px solid var(--rule); padding: 24px 0
 <p class="secondary">${esc(secondary)}${raw.length ? ` · <strong>${raw.length} finding(s) still unverified</strong>` : ""}</p>
 <div class="ledger" role="img" aria-label="${esc(bar.map(([, , l]) => l).join(", "))}">${bar.map(([k, n]) => `<span class="c-${k}" style="--n:${n}"></span>`).join("")}</div>
 <ul class="legend">${bar.map(([k, , l]) => `<li><i class="c-${k}"></i>${esc(l)}</li>`).join("")}</ul>
+${d.incremental ? `<p class="scope">${d.incremental.mode === "incremental" ? `<strong>Incremental audit.</strong> Re-audited ${d.incremental.targets.length} of ${d.incremental.total} entry points and config files changed since commit ${esc(d.incremental.since.slice(0, 12))}; ${d.items.filter((f) => f.carriedFrom).length} findings carried over from commit ${esc(d.incremental.carried_from.slice(0, 12))}.` : `<strong>Full audit</strong> instead of the requested incremental one: ${esc(d.incremental.reason)}.`}</p>` : ""}
+${d.summary?.stack?.profiles?.length ? `<div class="scope profile">${d.summary.stack.warning ? `<p><strong>Warning:</strong> ${esc(d.summary.stack.warning)}</p>` : ""}${d.summary.stack.profiles.map((p) => `<p><strong>Profile: ${esc(profileHeadline(p))}.</strong>${d.summary.stack.forced ? " Forced with --stack." : ""}</p><p>Covers: ${esc(p.covers.join("; "))}.</p><p>Does not cover: ${esc(p.gaps.join("; "))}.</p>`).join("")}</div>` : ""}
 ${d.scope ? `<p class="scope"><strong>Partial audit.</strong> Scope: ${esc(d.scope.label)} (${d.scope.entries} of ${d.scope.total} entry points and config files). Everything outside it was not assessed.</p>` : ""}
 </header>
 <nav aria-label="Sections"><ol>${nav.map(([id, label, n]) => `<li><a href="#${id}">${esc(label)} <b>${n}</b></a></li>`).join("")}</ol></nav>
@@ -310,6 +324,7 @@ ${bySev.map(([s, list]) => `<h3>${esc(s.toLowerCase())} · ${list.length}</h3>${
 ${fixed.length ? `<h3>Fixed · ${fixed.length}</h3><ul class="good">${fixed.map((f) => `<li>${ICON.check}<div><strong>${inline(f.title)}</strong><span class="why">${esc(f.severity.toLowerCase())} · fix in ${esc(f.fixEvidence.join(", ") || "code (no evidence recorded)")}</span></div></li>`).join("")}</ul>` : ""}
 ${accepted.length ? `<h3>Accepted risk · ${accepted.length}</h3><ul class="gap">${accepted.map((f) => `<li>${ICON.dash}<div><strong>${inline(f.title)}</strong><span class="why">${esc(f.severity.toLowerCase())}</span></div></li>`).join("")}</ul>` : ""}
 
+${d.diff ? renderDiff(d.diff) : ""}
 <h2 id="safe">Verified safe</h2>
 <p class="lede">Areas the audit examined and found protected, each with the control that protects it.</p>
 <div class="band-safe">${safeByCat.length ? safeByCat.map(([cat, list], i) => `<details class="cat"${i < 2 ? " open" : ""}><summary>${esc(CATEGORY[cat] ?? cat)} <span>${list.length}</span></summary><ul class="good">${list.map((n) => `<li>${ICON.check}<div>${inline(n.area)}<span class="why">${inline(n.why.split("\n")[0].slice(0, 320))}${n.loc ? ` · <code>${esc(n.loc)}</code>` : ""}</span></div></li>`).join("")}</ul></details>`).join("") : `<p class="empty">No verified-safe areas recorded.</p>`}</div>
@@ -317,6 +332,8 @@ ${accepted.length ? `<h3>Accepted risk · ${accepted.length}</h3><ul class="gap"
 <h2 id="gaps">Not assessed</h2>
 <p class="lede">Nobody checked these. They are unknown, not safe.</p>
 <div class="band-gap">${gaps.length ? `<ul class="gap">${gaps.map(([cat, check, why]) => `<li>${ICON.dash}<div><strong>${esc(check || cat)}</strong><span class="why">${esc(why ?? "")}${cat && check ? ` · ${esc(cat)}` : ""}</span></div></li>`).join("")}</ul>` : `<p class="empty">${d.notAssessed ? "No coverage gaps recorded." : "This audit predates coverage-gap tracking: unknown, not empty."}</p>`}</div>
+
+${renderProd(d.prod)}
 
 ${d.hotspots.length ? `<h2 id="hotspots">Hotspots</h2>
 <p class="lede">Where the audit started: entry points and configuration ranked by risk signals. A ranking, not a verdict.</p>
@@ -342,8 +359,33 @@ ${rejected.length ? `<div class="tablewrap"><table><thead><tr><th>Finding</th><t
 `;
 }
 
+// "Since last audit" (R12): computed by diff.mjs from history/, no model work.
+function renderDiff(diff) {
+  const item = (f, note) => `<li><span class="sev-${esc(f.severity.toLowerCase())}"><span class="sev">${esc(f.severity.toLowerCase())}</span></span> <strong>${inline(f.title)}</strong><span class="why">${esc(f.id)}${f.where ? ` · <code>${esc(f.where)}</code>` : ""}${note ? ` · ${esc(note)}` : ""}</span></li>`;
+  const group = (label, list, note) => (list.length ? `<h3>${esc(label)} · ${list.length}</h3><ul class="diff">${list.map((f) => item(f, note(f))).join("")}</ul>` : "");
+  return `<h2 id="since">Since last audit</h2>
+<p class="lede">${esc(diffIntro(diff))}</p>
+${group("New", diff.new, (f) => (f.fixed ? "already fixed" : ""))}
+${group("Regressed", diff.regressed, (f) => `was ${f.was.id}, ${f.how}`)}
+${group("Fixed", diff.fixed, (f) => `${f.how}${f.now ? ` as ${f.now.id}` : ""}`)}
+${group("Severity changed", diff.severity_changed, (f) => `${f.from.toLowerCase()} → ${f.to.toLowerCase()}`)}
+${group("Not re-checked", diff.not_rechecked, () => "outside this audit's scope")}
+${diff.unchanged.length ? `<p class="empty">Unchanged: ${esc(diff.unchanged.map((f) => f.id).join(", "))}.</p>` : ""}`;
+}
+
+// "Production checklist" (R14): deployment checks built from the Not Assessed rows by prod-checklist.mjs.
+function renderProd(c) {
+  const item = (it) => `<li>${ICON.box}<div><strong>${esc(it.title)}</strong> <span class="chip ${it.flagged ? "chip-warn" : "chip-muted"}">${it.flagged ? "From this audit" : "Baseline"}</span>${it.rows.slice(0, SHOW_ROWS).map((r) => `<span class="why">Not assessed: ${esc(rowLabel(r))}</span>`).join("")}${it.rows.length > SHOW_ROWS ? `<span class="why">and ${it.rows.length - SHOW_ROWS} more under Not assessed</span>` : ""}<span class="how">How to check: ${inline(it.how)}</span></div></li>`;
+  return `<h2 id="prod">Production checklist</h2>
+<p class="lede">${esc(PROD_INTRO)}</p>
+${c.recorded ? "" : `<p class="empty">${esc(NO_COVERAGE)}</p>`}
+<ul class="gap prod">${c.items.map(item).join("")}</ul>
+${c.unmatched ? `<p class="empty">${c.unmatched} other not-assessed row(s) are code checks rather than deployment checks; they stay under Not assessed.</p>` : ""}`;
+}
+
 const ICON = {
   check: `<svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="9" r="7.2"/><path d="M5.8 9.2l2.2 2.2 4.2-4.6"/></svg>`,
+  box: `<svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="2.5" y="2.5" width="13" height="13" rx="3"/></svg>`,
   dash: `<svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true" stroke-dasharray="2.2 2.4"><circle cx="9" cy="9" r="7.2"/></svg>`,
 };
 

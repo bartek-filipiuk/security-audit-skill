@@ -1,0 +1,39 @@
+helpdesk_portal.tickets:
+  path: '/portal/tickets'
+  defaults:
+    _controller: '\Drupal\helpdesk_portal\Controller\PortalController::tickets'
+    _title: 'My tickets'
+  requirements:
+    _permission: 'access helpdesk portal'
+
+helpdesk_portal.ticket_json:
+  path: '/portal/api/tickets/{ticket_id}'
+  defaults:
+    _controller: '\Drupal\helpdesk_portal\Controller\PortalController::ticketJson'
+  requirements:
+    _access: 'TRUE'
+    ticket_id: '\d+'
+
+helpdesk_portal.close:
+  path: '/portal/tickets/{ticket_id}/close'
+  defaults:
+    _controller: '\Drupal\helpdesk_portal\Controller\PortalController::close'
+  requirements:
+    _permission: 'access helpdesk portal'
+    ticket_id: '\d+'
+
+helpdesk_portal.reopen:
+  path: '/portal/tickets/{ticket_id}/reopen'
+  defaults:
+    _controller: '\Drupal\helpdesk_portal\Controller\PortalController::reopen'
+  requirements:
+    _permission: 'access helpdesk portal'
+    _csrf_token: 'TRUE'
+    ticket_id: '\d+'
+
+helpdesk_portal.status:
+  path: '/portal/status'
+  defaults:
+    _controller: '\Drupal\helpdesk_portal\Controller\PortalController::status'
+  requirements:
+    _access: 'TRUE'

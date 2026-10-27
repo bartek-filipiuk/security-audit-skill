@@ -1,0 +1,35 @@
+{
+  "version": 2,
+  "app": "real/npm/fast-jwt-6.3.1",
+  "module": "npm/fast-jwt",
+  "module_version": "6.3.1",
+  "note": "Negative control for answer-key-6.2.4.json: fast-jwt 6.3.1 fixes all three advisories scored there. `seeded` is empty; `decoys` are the fixed code at 6.3.1 lines (verified against the extracted tree with `node benchmark/real/fetch.mjs npm/fast-jwt 6.3.1 --check --dest <run>`), so `decoy false positives` counts verified findings that still report a fixed advisory. A verified finding that matches nothing is listed for review (README, findings outside the key). Same format and matching rules as benchmark/answer-key.json. By design, a caller that explicitly allows only HS algorithms still has its key used as a raw secret (detection is skipped); that is documented behaviour, not a decoy.",
+  "window": 2,
+  "seeded": [],
+  "decoys": [
+    {
+      "id": "GHSA-5hjw-83fp-phq9-fixed",
+      "locations": [
+        { "file": "src/decoder.js", "lines": [65, 67] }
+      ],
+      "why": "The decoder rejects array payloads (Array.isArray), so claim validators always see an object."
+    },
+    {
+      "id": "GHSA-g3jj-5cmm-3hxx-fixed",
+      "locations": [
+        { "file": "src/crypto.js", "lines": [85, 115] },
+        { "file": "src/crypto.js", "lines": [136, 140] },
+        { "file": "src/crypto.js", "lines": [211, 221] }
+      ],
+      "why": "A key without a PEM header that parses as an asymmetric JWK, a JWKS or an array of JWKs is refused before the raw-secret fallback."
+    },
+    {
+      "id": "GHSA-8wpc-h4q6-8fxv-fixed",
+      "locations": [
+        { "file": "src/verifier.js", "lines": [506, 538] }
+      ],
+      "why": "createVerifier() requires a usable key unless 'none' is the only allowed algorithm, and refuses a key when it is."
+    }
+  ],
+  "known_extras": []
+}

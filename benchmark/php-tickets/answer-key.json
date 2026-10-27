@@ -1,0 +1,235 @@
+{
+  "version": 2,
+  "app": "php-tickets",
+  "note": "Ground truth for benchmark/php-tickets/app (a Laravel helpdesk with a Symfony billing service in billing/ and a Drupal custom module in portal/). Never copy this file into the audited directory. Same format and matching rules as benchmark/answer-key.json: `locations` are files relative to app/ with 1-based inclusive line ranges of the vulnerable statement or of the code a fix changes; a finding matches by its primary location only (window, nearest entry wins). When a real finding is scored as unmatched, check the range against the code, then fix the key, not the finding.",
+  "window": 2,
+  "seeded": [
+    {
+      "id": "B01",
+      "class": "Laravel: Eloquent find by id not scoped to the user (IDOR)",
+      "severity": "HIGH",
+      "locations": [
+        { "file": "app/Http/Controllers/TicketController.php", "lines": [30, 35] },
+        { "file": "routes/web.php", "lines": [19, 19] }
+      ],
+      "detect": "llm+entrypoints",
+      "why": "GET /tickets/{id} loads Ticket::findOrFail($id) with comments and attachments for any signed-in user; no policy call and no user scope, unlike index, update and the API controller."
+    },
+    {
+      "id": "B02",
+      "class": "Laravel: whereRaw with interpolated request input (SQL injection)",
+      "severity": "HIGH",
+      "locations": [
+        { "file": "app/Http/Controllers/TicketController.php", "lines": [16, 16] }
+      ],
+      "detect": "llm+hotspot",
+      "why": "The search term q is interpolated into whereRaw(\"subject LIKE '%{$q}%'\"); the user scope does not help, the injected SQL can read other tables."
+    },
+    {
+      "id": "B03",
+      "class": "Laravel: mass assignment of $request->all() on a model with $guarded = []",
+      "severity": "CRITICAL",
+      "locations": [
+        { "file": "app/Http/Controllers/ProfileController.php", "lines": [21, 21] },
+        { "file": "app/Models/User.php", "lines": [13, 13] }
+      ],
+      "detect": "llm+hotspot",
+      "why": "Validation covers name and email, but update($request->all()) writes every field and User has no fillable list, so a user sets is_admin=1 on their own profile and passes the admin gate."
+    },
+    {
+      "id": "B04",
+      "class": "Laravel: API route outside the auth:sanctum group (missing auth middleware)",
+      "severity": "HIGH",
+      "locations": [
+        { "file": "routes/api.php", "lines": [12, 12] },
+        { "file": "app/Http/Controllers/ReportController.php", "lines": [23, 35] }
+      ],
+      "detect": "llm+entrypoints",
+      "why": "GET /api/reports/export has no middleware and returns a CSV of up to 5000 tickets with customer emails and subjects to anonymous callers."
+    },
+    {
+      "id": "B05",
+      "class": "Laravel: unescaped Blade output {!! !!} of user content (stored XSS)",
+      "severity": "HIGH",
+      "locations": [
+        { "file": "resources/views/tickets/show.blade.php", "lines": [20, 20] }
+      ],
+      "detect": "llm+hotspot",
+      "why": "Comment bodies are stored as typed (CommentController keeps HTML) and rendered with {!! $comment->body !!}, so a customer's comment runs script in the staff member's session."
+    },
+    {
+      "id": "B06",
+      "class": "Laravel: state-changing routes excluded from CSRF verification",
+      "severity": "MEDIUM",
+      "locations": [
+        { "file": "app/Http/Middleware/VerifyCsrfToken.php", "lines": [16, 16] }
+      ],
+      "detect": "llm",
+      "why": "'account/*' turns off CSRF for POST /account/profile and /account/avatar: another site can change a signed-in user's email (and, with the mass assignment, more) through a cross-site form."
+    },
+    {
+      "id": "B07",
+      "class": "Laravel: upload stored on the public disk under the client file name",
+      "severity": "HIGH",
+      "locations": [
+        { "file": "app/Http/Controllers/AttachmentController.php", "lines": [17, 17] }
+      ],
+      "detect": "llm+hotspot",
+      "why": "Any file type up to 10 MB is saved with getClientOriginalName() on the public disk: .html or .svg files are served from the app origin (stored XSS), names overwrite earlier attachments, and attachments of private tickets are reachable by guessable URL."
+    },
+    {
+      "id": "B08",
+      "class": "Symfony: Doctrine DQL built by string concatenation, not scoped to the customer",
+      "severity": "HIGH",
+      "locations": [
+        { "file": "billing/src/Repository/InvoiceRepository.php", "lines": [31, 37] },
+        { "file": "billing/src/Controller/InvoiceController.php", "lines": [27, 35] }
+      ],
+      "detect": "llm+hotspot",
+      "why": "searchByNumber() concatenates the number query parameter into DQL (DQL injection) and never filters by customer, so any customer lists every invoice."
+    },
+    {
+      "id": "B09",
+      "class": "Symfony: repository find() by id without an owner check or #[IsGranted] voter (IDOR)",
+      "severity": "HIGH",
+      "locations": [
+        { "file": "billing/src/Controller/InvoiceController.php", "lines": [37, 43] }
+      ],
+      "detect": "llm+entrypoints",
+      "why": "The class-level IsGranted('ROLE_USER') and access_control only require login; show() renders any invoice by id, while pdf() next to it asks the voter."
+    },
+    {
+      "id": "B10",
+      "class": "Drupal: route with _access: 'TRUE' serving private data",
+      "severity": "HIGH",
+      "locations": [
+        { "file": "portal/web/modules/custom/helpdesk_portal/helpdesk_portal.routing.yml", "lines": [9, 15] },
+        { "file": "portal/web/modules/custom/helpdesk_portal/src/Controller/PortalController.php", "lines": [38, 45] }
+      ],
+      "detect": "llm+entrypoints",
+      "why": "/portal/api/tickets/{ticket_id} is open to anonymous visitors and returns any ticket's subject, body and owner uid by id."
+    },
+    {
+      "id": "B11",
+      "class": "Drupal: database query built by concatenation (SQL injection)",
+      "severity": "HIGH",
+      "locations": [
+        { "file": "portal/web/modules/custom/helpdesk_portal/src/Controller/PortalController.php", "lines": [20, 23] }
+      ],
+      "detect": "llm+hotspot",
+      "why": "The cc query parameter is concatenated into \\Drupal::database()->query(); placeholders are used on the line above but not here, and the query is not limited to the current user either."
+    },
+    {
+      "id": "B12",
+      "class": "Drupal: state-changing GET route without _csrf_token",
+      "severity": "MEDIUM",
+      "locations": [
+        { "file": "portal/web/modules/custom/helpdesk_portal/helpdesk_portal.routing.yml", "lines": [17, 23] }
+      ],
+      "detect": "llm+entrypoints",
+      "why": "/portal/tickets/{id}/close changes a ticket on a plain GET with only a permission check, so an image tag on another site closes the visitor's tickets; reopen carries _csrf_token."
+    },
+    {
+      "id": "B13",
+      "class": "Drupal: Markup::create() on user content (XSS)",
+      "severity": "HIGH",
+      "locations": [
+        { "file": "portal/web/modules/custom/helpdesk_portal/src/Controller/PortalController.php", "lines": [31, 31] }
+      ],
+      "detect": "llm+hotspot",
+      "why": "Markup::create marks the last reply as safe, so render arrays skip Xss::filterAdmin and the reply's HTML (written by the customer or arriving by e-mail) runs in the portal."
+    }
+  ],
+  "decoys": [
+    {
+      "id": "D01",
+      "locations": [
+        { "file": "app/Http/Controllers/TicketController.php", "lines": [37, 48] },
+        { "file": "app/Policies/TicketPolicy.php", "lines": [10, 13] }
+      ],
+      "why": "update() calls the policy (owner or admin) and validates only subject and priority."
+    },
+    {
+      "id": "D02",
+      "locations": [{ "file": "app/Http/Controllers/ReportController.php", "lines": [14, 18] }],
+      "why": "selectRaw is a constant and whereRaw binds $from as a parameter; the route is behind can:admin."
+    },
+    {
+      "id": "D03",
+      "locations": [
+        { "file": "app/Http/Controllers/TicketController.php", "lines": [25, 25] },
+        { "file": "app/Models/Ticket.php", "lines": [11, 11] }
+      ],
+      "why": "Ticket::create gets the FormRequest's validated fields plus the user id from the session; user_id in $fillable is never taken from the request."
+    },
+    {
+      "id": "D04",
+      "locations": [
+        { "file": "routes/web.php", "lines": [14, 14] },
+        { "file": "app/Http/Controllers/MailWebhookController.php", "lines": [10, 16] },
+        { "file": "app/Http/Middleware/VerifyCsrfToken.php", "lines": [15, 15] }
+      ],
+      "why": "The mail webhook is public and CSRF-exempt by design; it verifies an HMAC-SHA256 of the raw body with hash_equals before any write."
+    },
+    {
+      "id": "D05",
+      "locations": [
+        { "file": "routes/web.php", "lines": [30, 34] },
+        { "file": "app/Http/Controllers/Admin/UserController.php", "lines": [15, 20] }
+      ],
+      "why": "Admin routes carry auth and can:admin (Gate on is_admin), so destroy and the reports need no check of their own."
+    },
+    {
+      "id": "D06",
+      "locations": [{ "file": "resources/views/tickets/show.blade.php", "lines": [8, 8] }],
+      "why": "{!! nl2br(e($ticket->body)) !!} escapes first and only adds <br> tags."
+    },
+    {
+      "id": "D07",
+      "locations": [{ "file": "app/Http/Controllers/ProfileController.php", "lines": [26, 36] }],
+      "why": "Avatars are validated as jpg/png/webp images up to 2 MB and stored under a generated name."
+    },
+    {
+      "id": "D08",
+      "locations": [{ "file": "billing/src/Repository/InvoiceRepository.php", "lines": [17, 28] }],
+      "why": "findForCustomer uses QueryBuilder parameters and filters by the signed-in customer."
+    },
+    {
+      "id": "D09",
+      "locations": [
+        { "file": "billing/src/Controller/InvoiceController.php", "lines": [45, 51] },
+        { "file": "billing/src/Security/InvoiceVoter.php", "lines": [16, 19] }
+      ],
+      "why": "pdf() calls denyAccessUnlessGranted('VIEW') and the voter compares the invoice's customer with the user."
+    },
+    {
+      "id": "D10",
+      "locations": [{ "file": "portal/web/modules/custom/helpdesk_portal/helpdesk_portal.routing.yml", "lines": [34, 39] }],
+      "why": "/portal/status is public on purpose and returns a constant status object."
+    },
+    {
+      "id": "D11",
+      "locations": [{ "file": "portal/web/modules/custom/helpdesk_portal/src/Controller/PortalController.php", "lines": [15, 18] }],
+      "why": "The own-tickets query uses a :uid placeholder bound to the current user."
+    },
+    {
+      "id": "D12",
+      "locations": [{ "file": "portal/web/modules/custom/helpdesk_portal/helpdesk_portal.routing.yml", "lines": [25, 32] }],
+      "why": "The reopen route requires _csrf_token: 'TRUE' and a permission, and setStatus is scoped to the current uid."
+    },
+    {
+      "id": "D13",
+      "locations": [{ "file": "portal/web/modules/custom/helpdesk_portal/src/Controller/PortalController.php", "lines": [27, 29] }],
+      "why": "#markup built with $this->t() and @ placeholders, which are escaped."
+    },
+    {
+      "id": "D14",
+      "locations": [
+        { "file": ".env.example", "lines": [4, 4] },
+        { "file": "config/app.php", "lines": [6, 6] }
+      ],
+      "why": "APP_DEBUG=true is only in the local .env.example; config/app.php defaults debug to false."
+    }
+  ],
+  "known_extras": []
+}

@@ -1,4 +1,4 @@
-// Run: node --test scripts/
+// Run: node --test scripts/*.test.mjs
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { buildRemediation, loadAudit, parseFrontmatter, validate } from "./audit-state.mjs";
 import { inScope, rankHotspots, scanEntryPoints, scanScope, walk } from "./surface.mjs";
 import { score } from "../benchmark/score.mjs";
+import { toolFreeEnv } from "./test-helpers.mjs";
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), "..");
 const { files } = walk(join(repo, "benchmark", "app"));
@@ -132,33 +133,10 @@ test("benchmark scoring separates found, dropped, decoy hits and unmatched", () 
   assert.deepEqual(r.unmatched.map((u) => u.id), ["config-009"]);
 });
 
-test("benchmark scoring works for PHP and Python apps and for findings written by other models", async () => {
-  const { citedPaths } = await import("../benchmark/score.mjs");
-  assert.deepEqual([...citedPaths("`tpl/page.phtml:3` and `lib/x.pyi`")], []); // not cut down to .php / .py
-  const otherKey = {
-    seeded: [
-      { id: "P1", class: "command injection", files: ["src/Runner.php"], keywords: ["command injection"] },
-      { id: "Y1", class: "sql injection", files: ["proxy/auth/keys.py"], keywords: ["sql injection"] },
-    ],
-  }; // no decoys, no known_extras
-  const dir = auditDir({
-    "php-001": `---\nid: php-001\ncategory: injection\nseverity: CRITICAL\nstatus: Verified\nproof: static\n---\n## Title\nFile name reaches exec(): command injection\n\`src/runner.php:55\`\n`,
-    "py-001": `---\nid: py-001\ncategory: injection\nseverity: HIGH\nstatus: rejected\nrejection_reason: defensive_failure - input is escaped\n---\n## Title\nSQL injection in key lookup\n\`proxy/auth/keys.py:12\`\n`,
-    "py-002": `---\nid: py-002\ncategory: injection\nseverity: HIGH\nstatus: confirmed\n---\n## Title\nSQL injection in key lookup\n\`proxy/auth/keys.py:12\`\n`,
-  });
-  const r = score(loadAudit(dir).findings, otherKey);
-  const [p1, y1] = r.seeded;
-  assert.equal(p1.result, "found"); // status case and path case do not matter
-  assert.deepEqual(p1.severity, ["CRITICAL"]);
-  assert.equal(y1.result, "dropped_by_verifier");
-  assert.deepEqual(y1.rejection, ["defensive_failure"]);
-  assert.equal(r.unparsed, 1); // `confirmed` is neither scored nor silently lost
-});
-
 test("hotspot ranking puts the seeded code-level bugs near the top", () => {
   const hot = rankHotspots(files, scanEntryPoints(files), scanScope(files));
   const code = key.seeded.filter((b) => !b.detect.startsWith("tool:"));
-  const within = (n) => code.filter((b) => hot.slice(0, n).some((h) => b.files.some((f) => h.file.endsWith(f) || h.reasons.some((r) => r.includes(f)))));
+  const within = (n) => code.filter((b) => hot.slice(0, n).some((h) => b.locations.map((l) => l.file).some((f) => h.file.endsWith(f) || h.reasons.some((r) => r.includes(f)))));
   const top10 = within(10).length;
   const top20 = within(20).length;
   console.log(`hotspots: ${top10}/${code.length} seeded bugs in top 10, ${top20}/${code.length} in top 20`);
@@ -168,6 +146,19 @@ test("hotspot ranking puts the seeded code-level bugs near the top", () => {
     assert.ok(!hot.slice(0, 10).some((h) => h.file.endsWith(decoy)), `decoy in the top 10: ${decoy}`);
   }
   assert.ok(!hot.some((h) => h.file.endsWith("api/trpc/[trpc]/route.ts") && h.reasons.includes("no auth check in the handler")));
+});
+
+test("LLM signals: unscoped agent tool, model output to raw HTML, request-controlled model and token budget", () => {
+  const { sites } = scanScope(files);
+  const site = (file, enclosing) => sites.find((s) => s.file.endsWith(file) && s.enclosing === enclosing);
+  assert.equal(site("ai/billing-tools.ts", "voidInvoice").status, "UNSCOPED");
+  assert.equal(site("ai/billing-tools.ts", "markInvoicePaid").status, "scoped");
+  const hot = rankHotspots(files, scanEntryPoints(files), scanScope(files));
+  const reasons = (file) => hot.filter((h) => h.file.endsWith(file)).flatMap((h) => h.reasons);
+  assert.ok(reasons("api/assistant/billing/route.ts").includes("LLM model or token budget taken from the request (cost)"));
+  assert.ok(reasons("invoices/[id]/summary/page.tsx").includes("LLM output may reach raw HTML"));
+  assert.ok(!reasons("invoices/[id]/summary/actions.ts").includes("LLM output may reach raw HTML"), "escaped email HTML is not a raw HTML sink");
+  assert.ok(!reasons("api/chat/route.ts").includes("LLM model or token budget taken from the request (cost)"), "a fixed model is not flagged");
 });
 
 test("report.html escapes everything that comes from findings", async () => {
@@ -220,6 +211,67 @@ test("briefs carry only the auditor's checklist sections and the project's langu
   assert.ok(patternsFor(["php"]).includes("PHP-Specific") && !patternsFor(["php"]).includes("| JS/TS |"));
 });
 
+test("resource exhaustion and spend: the auth brief carries the checklist items, every stack the patterns", async () => {
+  const { patternsFor, writeBriefs } = await import("./briefs.mjs");
+  const dir = auditDir({});
+  writeBriefs(dir, { auth: ["2.1", "2.3"] }, ["js"]);
+  const brief = (await import("node:fs")).readFileSync(join(dir, "briefs", "auth.md"), "utf8");
+  assert.match(brief, /### Resource exhaustion and spend \(category `rate-limit`\)/);
+  for (const item of [/denial of wallet/, /Unbounded list queries/, /Upload size and count/, /Queues and background jobs/, /Expensive operations per request/]) {
+    assert.match(brief, item);
+  }
+  for (const langs of [["js"], ["python"], ["php"]]) {
+    const p = patternsFor(langs);
+    assert.match(p, /## Resource Exhaustion and Spend/);
+    assert.match(p, /\| Paid outbound calls \(JS\/TS\) \|/);
+    assert.match(p, /\| Limiters present \|/);
+  }
+});
+
+test("data lifecycle: the injection brief carries the checklist items under 2.4, every stack the patterns", async () => {
+  const { DEFAULT_BRIEFS, patternsFor, writeBriefs } = await import("./briefs.mjs");
+  assert.ok(DEFAULT_BRIEFS.injection.includes("2.4"), "2.4 stays with the injection auditor");
+  const dir = auditDir({});
+  writeBriefs(dir, { auth: ["2.1", "2.3"], injection: ["2.2", "2.4"] }, ["js"]);
+  const { readFileSync } = await import("node:fs");
+  const brief = readFileSync(join(dir, "briefs", "injection.md"), "utf8");
+  assert.match(brief, /### Data lifecycle \(category `exposure`; a missing tenant filter `auth`\)/);
+  for (const item of [/Cache keys carry the tenant/, /Search is filtered by tenant/, /Exports and generated reports are scoped and private/, /Erasure is complete/, /Restores and imports respect deletion/, /Soft-delete is respected/]) {
+    assert.match(brief, item);
+  }
+  assert.doesNotMatch(readFileSync(join(dir, "briefs", "auth.md"), "utf8"), /### Data lifecycle/, "one owner per checklist subsection");
+  for (const langs of [["js"], ["python"], ["php"]]) {
+    const p = patternsFor(langs);
+    assert.match(p, /## Data Lifecycle/);
+    assert.match(p, /\| Cache keys \(JS\/TS\) \|/);
+    assert.match(p, /\| Erasure \(other stacks\) \|/);
+    assert.match(p, /\| Soft-delete \|/);
+  }
+});
+
+test("client-side code: the injection brief carries the checklist items under 2.2, every stack the patterns", async () => {
+  const { DEFAULT_BRIEFS, patternsFor, writeBriefs } = await import("./briefs.mjs");
+  assert.ok(DEFAULT_BRIEFS.injection.includes("2.2"), "2.2 stays with the injection auditor");
+  const dir = auditDir({});
+  writeBriefs(dir, { injection: ["2.2", "2.4"], infra: ["2.5", "2.7", "2.8", "2.12"] }, ["js"]);
+  const { readFileSync } = await import("node:fs");
+  const brief = readFileSync(join(dir, "briefs", "injection.md"), "utf8");
+  assert.match(brief, /### Client-side code \(category `injection`; missing frame protection `config`, secrets in browser storage `exposure`\)/);
+  for (const item of [/DOM sinks: untrusted data/, /`postMessage` receivers check the sender/, /`postMessage` senders name the target/, /Prototype pollution: deep merge/, /UI redress: pages that change state/, /Client-side redirects:/, /Browser storage:/]) {
+    assert.match(brief, item);
+  }
+  assert.doesNotMatch(readFileSync(join(dir, "briefs", "infra.md"), "utf8"), /### Client-side code/, "one owner per checklist subsection");
+  const section = brief.slice(brief.indexOf("### Client-side code"), brief.indexOf("## 2.4"));
+  assert.doesNotMatch(section, /<script|alert\(|onerror=|javascript:alert/i, "defensive wording: no payloads");
+  for (const langs of [["js"], ["python"], ["php"]]) {
+    const p = patternsFor(langs);
+    assert.match(p, /## Client-Side Code/);
+    assert.match(p, /\| postMessage receivers \|/);
+    assert.match(p, /\| Frame protection \|/);
+    assert.match(p, /\| Browser storage \|/);
+  }
+});
+
 test("report.md is assembled from summary.md and the finding files", async () => {
   const { renderReportMd } = await import("./report-md.mjs");
   const dir = auditDir(
@@ -245,7 +297,7 @@ test("prepass --new-run archives the previous run and workspace-check sees later
   mkdirSync(join(audit, "findings"), { recursive: true });
   writeFileSync(join(audit, "findings", "auth-001.md"), verifiedHigh);
   writeFileSync(join(audit, "report.md"), "# old\n");
-  const r = spawnSync(process.execPath, [join(repo, "scripts", "prepass.mjs"), "--root", proj, "--no-docker", "--new-run"], { encoding: "utf8" });
+  const r = spawnSync(process.execPath, [join(repo, "scripts", "prepass.mjs"), "--root", proj, "--no-docker", "--new-run"], { encoding: "utf8", env: toolFreeEnv() });
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /previous run archived/);
   const hist = fsm.readdirSync(join(audit, "history"));
@@ -258,4 +310,164 @@ test("prepass --new-run archives the previous run and workspace-check sees later
   const ws = workspaceCheck(audit);
   assert.ok(ws.ok);
   assert.deepEqual(ws.changed, ["generated.html"]);
+});
+
+// ---------------------------------------------------------------- incremental audit (--since)
+
+async function gitProject(files) {
+  const { execFileSync } = await import("node:child_process");
+  const proj = mkdtempSync(join(tmpdir(), "sa-inc-"));
+  const git = (...a) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@ledgerly.invalid", "-c", "commit.gpgsign=false", ...a], { cwd: proj, stdio: "pipe", encoding: "utf8" });
+  const write = (rel, text) => { mkdirSync(dirname(join(proj, rel)), { recursive: true }); writeFileSync(join(proj, rel), text); };
+  for (const [rel, text] of Object.entries(files)) write(rel, text);
+  git("init", "-q", "-b", "main");
+  git("add", "-A");
+  git("commit", "-q", "-m", "init");
+  return { proj, git, write, head: () => git("rev-parse", "HEAD").trim() };
+}
+
+const ledgerlyMini = {
+  "tsconfig.json": '{ "compilerOptions": { "paths": { "@/*": ["./src/*"] } } }\n',
+  ".gitignore": ".security-audit/\n",
+  "src/lib/money.ts": "export const cents = (n) => Math.round(n * 100);\n",
+  "src/lib/session.ts": "export async function requireUser() { return { id: 'u1' }; }\n",
+  "src/app/api/invoices/route.ts": 'import { cents } from "@/lib/money";\nimport { requireUser } from "../../../lib/session";\nexport async function GET() {\n  await requireUser();\n  return Response.json({ total: cents(1) });\n}\n',
+  "src/app/api/export/route.ts": 'export async function GET(req) {\n  const org = new URL(req.url).searchParams.get("orgId");\n  return Response.json({ org });\n}\n',
+};
+
+const finding = (id, file, status = "verified") => `---\nid: ${id}\ncategory: auth\nseverity: MEDIUM\nstatus: ${status}\n${status === "rejected" ? "rejection_reason: best_practice\n" : ""}---\n## Title\n${id} title\n## Evidence\n- **File**: \`${file}:2\`\n## Impact\nA member of another organization reads data.\n`;
+
+async function previousAudit(p) {
+  const { spawnSync } = await import("node:child_process");
+  const env = toolFreeEnv();
+  const prepass = (...a) => spawnSync(process.execPath, [join(repo, "scripts", "prepass.mjs"), "--root", p.proj, "--no-docker", ...a], { encoding: "utf8", env });
+  assert.equal(prepass("--new-run").status, 0);
+  const audit = join(p.proj, ".security-audit");
+  writeFileSync(join(audit, "findings", "auth-101.md"), finding("auth-101", "src/app/api/export/route.ts"));
+  writeFileSync(join(audit, "findings", "auth-102.md"), finding("auth-102", "src/app/api/invoices/route.ts"));
+  writeFileSync(join(audit, "findings", "auth-103.md"), finding("auth-103", "src/app/api/export/route.ts", "rejected"));
+  writeFileSync(join(audit, "non-issues", "non-auth-101.md"), `---\nid: non-auth-101\ncategory: auth\n---\n## Area Examined\nsession helper\n## Evidence\n\`src/lib/session.ts:1\`\n`);
+  writeFileSync(join(audit, "recon.md"), "# Recon Summary\n");
+  writeFileSync(join(audit, "not-assessed.md"), "| Category | Check | Why not assessed |\n|---|---|---|\n| auth | src/lib/money.ts rounding | no tests |\n| config | headers | no deploy config |\n");
+  writeFileSync(join(audit, "report.md"), "# report\n");
+  return { audit, prepass };
+}
+
+test("--since carries findings whose files did not change and re-audits importers of a changed file", async () => {
+  const fsm = await import("node:fs");
+  const p = await gitProject(ledgerlyMini);
+  const { audit, prepass } = await previousAudit(p);
+  const base = p.head();
+  // A change in a shared helper reached through the "@/" alias must re-audit the route that imports it.
+  p.write("src/lib/money.ts", "export const cents = (n) => Math.round(n * 100) | 0;\n");
+  p.git("commit", "-qam", "fix rounding");
+  const r = prepass("--since", "last");
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /INCREMENTAL since/);
+  const inc = JSON.parse(fsm.readFileSync(join(audit, "tools", "incremental.json"), "utf8"));
+  assert.equal(inc.mode, "incremental");
+  assert.equal(inc.since, base);
+  assert.deepEqual(inc.changed, ["src/lib/money.ts"]);
+  assert.deepEqual(inc.targets.map((t) => t.file), ["src/app/api/invoices/route.ts"]);
+  assert.deepEqual(inc.carried.sort(), ["auth-101.md", "auth-103.md", "non-auth-101.md"]);
+  assert.deepEqual(inc.reaudit_items.map((x) => x.name), ["auth-102.md"]);
+  assert.deepEqual(fsm.readdirSync(join(audit, "findings")).sort(), ["auth-101.md", "auth-103.md"]);
+  const carried = loadAudit(audit);
+  assert.equal(carried.findings[0].data.carried_from, base);
+  assert.match(String(carried.findings[0].data.carried_run), /^\d{4}-/);
+  assert.deepEqual(validate(carried, { final: true }), []);
+  assert.match(fsm.readFileSync(join(audit, "recon.md"), "utf8"), /^> Carried over from the audit of commit/);
+  const na = fsm.readFileSync(join(audit, "not-assessed.md"), "utf8");
+  assert.ok(!na.includes("money.ts") && na.includes("headers"), "gap rows about changed files are dropped, the rest carried");
+  const md = fsm.readFileSync(join(audit, "prepass.md"), "utf8");
+  assert.match(md, /## Incremental audit since/);
+  assert.match(md, /auth-102 \(cites src\/app\/api\/invoices\/route\.ts\)/);
+  // The previous run stays archived, untouched.
+  const hist = fsm.readdirSync(join(audit, "history"));
+  assert.equal(hist.length, 1);
+  assert.ok(!fsm.readFileSync(join(audit, "history", hist[0], "findings", "auth-101.md"), "utf8").includes("carried_from"));
+  // A second incremental run keeps the commit where the carried code was last read.
+  writeFileSync(join(audit, "report.md"), "# report 2\n");
+  p.write("src/app/api/invoices/route.ts", fsm.readFileSync(join(p.proj, "src/app/api/invoices/route.ts"), "utf8") + "// v2\n");
+  p.git("commit", "-qam", "v2");
+  assert.equal(prepass("--since").status, 0);
+  assert.equal(loadAudit(audit).findings.find((f) => f.stem === "auth-101").data.carried_from, base);
+});
+
+test("--since falls back to a full audit when it cannot carry safely", async () => {
+  const fsm = await import("node:fs");
+  const { spawnSync } = await import("node:child_process");
+  const p = await gitProject(ledgerlyMini);
+  const env = toolFreeEnv();
+  const prepass = (...a) => spawnSync(process.execPath, [join(repo, "scripts", "prepass.mjs"), "--root", p.proj, "--no-docker", ...a], { encoding: "utf8", env });
+  const inc = () => JSON.parse(fsm.readFileSync(join(p.proj, ".security-audit", "tools", "incremental.json"), "utf8"));
+  // No previous audit at all.
+  let r = prepass("--since", "HEAD");
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /FULL AUDIT instead of incremental: no previous audit/);
+  assert.match(fsm.readFileSync(join(p.proj, ".security-audit", "prepass.md"), "utf8"), /## Incremental audit not possible/);
+  // A change to tsconfig decides module resolution for every route.
+  const { audit } = await previousAudit(p);
+  p.write("tsconfig.json", '{ "compilerOptions": { "paths": { "@/*": ["./lib/*"] } } }\n');
+  r = prepass("--since", "last");
+  assert.match(r.stdout, /FULL AUDIT.*tsconfig\.json changed/);
+  assert.equal(inc().mode, "full");
+  assert.deepEqual(fsm.readdirSync(join(audit, "findings")), [], "nothing carried into a full run");
+  // An unknown commit.
+  await previousAudit(p);
+  assert.match(prepass("--since", "deadbeef").stdout, /FULL AUDIT.*not a commit/);
+  // Scope and since together make no sense.
+  assert.equal(prepass("--since", "--scope", "auth").status, 2);
+});
+
+test("planIncremental rejects a carry when most targets changed, and audit-state checks carried fields", async () => {
+  const { planIncremental } = await import("./incremental.mjs");
+  const targets = [{ file: "a.ts", line: 1 }, { file: "b.ts", line: 1 }, { file: "c.ts", line: 1 }];
+  const files = targets.map((t) => ({ path: t.file, text: "" }));
+  const plan = planIncremental({ targets, entries: [], files, changed: ["a.ts", "b.ts"], universe: ["a.ts", "b.ts", "c.ts"], items: [] });
+  assert.equal(plan.mode, "full");
+  assert.match(plan.reason, /2 of 3 targets/);
+  const dir = auditDir({ "auth-001": verifiedHigh.replace("---\n", '---\ncarried_from: "zz"\n') });
+  assert.ok(validate(loadAudit(dir)).some((e) => e.includes("carried_from must be a git commit")));
+  assert.ok(validate(loadAudit(dir)).some((e) => e.includes("carried_run is required")));
+});
+
+test("report.md, report.html and the scorer mark carried findings", async () => {
+  const { renderReportMd } = await import("./report-md.mjs");
+  const { renderReport } = await import("./report-html.mjs");
+  const carriedHigh = verifiedHigh.replace("  status: fixed", "  status: open").replace("  public_safe: true\n", "").replace("---\n", '---\ncarried_from: "abc1234def"\ncarried_run: "2026-10-04T10-00-00"\n');
+  const dir = auditDir({ "auth-001": carriedHigh });
+  mkdirSync(join(dir, "tools"));
+  writeFileSync(join(dir, "tools", "incremental.json"), JSON.stringify({ mode: "incremental", since: "abc1234def", carried_from: "abc1234def", carried_run: "2026-10-04T10-00-00", changed: ["src/x.ts"], targets: [{ file: "src/x.ts" }], total: 40 }));
+  const md = renderReportMd(dir);
+  assert.match(md, /## Incremental Audit\n\nRe-audited 1 of 40 targets/);
+  assert.match(md, /\*\*Carried over\*\* from the audit of commit abc1234def \(run 2026-10-04T10-00-00\)/);
+  const html = renderReport(dir);
+  assert.match(html, /<strong>Incremental audit\.<\/strong> Re-audited 1 of 40/);
+  assert.match(html, /chip-muted">Carried over</);
+  const r = score(loadAudit(dir).findings, key);
+  assert.equal(r.seeded.find((s) => s.id === "B01").carried, true);
+  assert.equal(r.carried, 1);
+});
+
+test("planIncremental: ambiguous file names, dangling duplicates and chains, re-audit of a dropped finding's other files", async () => {
+  const { planIncremental, citedFiles } = await import("./incremental.mjs");
+  const universe = ["src/app/api/a/route.ts", "src/app/api/b/route.ts", "src/app/api/c/route.ts", "src/app/api/d/route.ts", "src/lib/x.ts"];
+  assert.deepEqual([...citedFiles("see `route.ts:4` and `src/lib/x.ts:1`", universe)], ["src/lib/x.ts"]);
+  const targets = universe.slice(0, 4).map((file) => ({ file, line: 1, kind: "route-handler" }));
+  const files = universe.map((path) => ({ path, text: "" }));
+  const fm = (id, extra = "") => `---\nid: ${id}\ncategory: ${id.split("-")[0]}\nseverity: HIGH\nstatus: ${extra ? "rejected" : "verified"}\n${extra}---\n`;
+  const items = [
+    { kind: "finding", name: "auth-101.md", text: fm("auth-101") + "`src/app/api/a/route.ts:3` and `src/app/api/b/route.ts:9`" },
+    { kind: "finding", name: "auth-102.md", text: fm("auth-102") + "`src/app/api/c/route.ts:2`, also every `route.ts`" },
+    { kind: "finding", name: "auth-103.md", text: fm("auth-103", "rejection_reason: duplicate_of_auth-101\n") + "`src/lib/x.ts:1`" },
+    { kind: "finding", name: "chain-901.md", text: fm("chain-901") + "auth-101 then auth-102 via `src/app/api/c/route.ts:2`" },
+  ];
+  const plan = planIncremental({ targets, entries: [], files, changed: ["src/app/api/a/route.ts"], universe, items });
+  assert.equal(plan.mode, "incremental");
+  assert.deepEqual(plan.carry.map((c) => c.name), ["auth-102.md"], "a bare route.ts does not tie auth-102 to the changed route");
+  assert.deepEqual(plan.drop.map((d) => d.name).sort(), ["auth-101.md", "auth-103.md", "chain-901.md"]);
+  assert.match(plan.drop.find((d) => d.name === "auth-103.md").why, /duplicate of re-audited auth-101/);
+  assert.match(plan.drop.find((d) => d.name === "chain-901.md").why, /chain built on re-audited auth-101/);
+  assert.deepEqual(plan.reaudit.map((t) => t.file), ["src/app/api/a/route.ts", "src/app/api/b/route.ts"], "b is re-audited because dropped auth-101 cited it; the dropped chain adds nothing");
 });

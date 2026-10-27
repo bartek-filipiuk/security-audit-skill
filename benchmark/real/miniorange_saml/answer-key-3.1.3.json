@@ -1,0 +1,179 @@
+{
+  "version": 2,
+  "app": "real/miniorange_saml-3.1.3",
+  "module": "miniorange_saml",
+  "module_version": "3.1.3",
+  "note": "Ground truth for the public release miniorange_saml 3.1.3 (Drupal contrib, fetched by benchmark/real/fetch.mjs; manifest.json pins the tarball sha256). Never copy this file into the audited directory. One entry per published drupal.org advisory whose fix changes locatable code; `locations` are files relative to the module root (the run's app/) with 1-based inclusive line ranges of the code the published fix changes, verified against the extracted 3.1.3 tree (`node benchmark/real/fetch.mjs miniorange_saml 3.1.3 --check --dest <run>`). Same format and matching rules as benchmark/answer-key.json. Advisories whose fix is spread too thin to pin to a line (SA-CONTRIB-2026-146) and hardening that came with the fixes but has no advisory of its own are known extras: valid, not scored. There are no decoys here: the 3.2.0 key is the false-positive control. When a real finding is scored as unmatched, check the range against the code and the fix diff, then fix the key, not the finding.",
+  "window": 2,
+  "seeded": [
+    {
+      "id": "SA-2026-031",
+      "class": "SA-CONTRIB-2026-031 (CVE-2026-5343): SAML signature checks that report a failure but do not stop processing (authentication bypass)",
+      "severity": "CRITICAL",
+      "advisory_url": "https://www.drupal.org/sa-contrib-2026-031",
+      "locations": [
+        { "file": "src/Utilities.php", "lines": [541, 544] },
+        { "file": "src/Utilities.php", "lines": [600, 613] },
+        { "file": "src/Utilities.php", "lines": [619, 625] },
+        { "file": "src/Utilities.php", "lines": [646, 654] },
+        { "file": "src/Utilities.php", "lines": [680, 685] },
+        { "file": "src/Utilities.php", "lines": [723, 727] },
+        { "file": "src/MiniOrangeSamlAcs.php", "lines": [80, 94] },
+        { "file": "src/Controller/MiniorangeSamlController.php", "lines": [98, 100] }
+      ],
+      "detect": "llm+entrypoints",
+      "why": "On the public ACS route, validateSignature() only echoes a message when the signature method is missing or the XML signature does not verify (the exit calls are commented out), castKey() and the Destination check in processResponse() do the same, and checkSign() returns TRUE after validateSignature() returns, so processSamlResponse() treats an unverified response as valid and the controller logs in or creates the user it names. A second Signature element in the root is likewise only reported (fixed in 3.2.0). Fixed in 3.1.4 (commit 50adfaea) and 3.2.0."
+    },
+    {
+      "id": "SA-2026-145",
+      "class": "SA-CONTRIB-2026-145 (CVE-2026-87947): signature algorithm taken from the SAML response instead of being tied to the configured key",
+      "severity": "HIGH",
+      "advisory_url": "https://www.drupal.org/sa-contrib-2026-145",
+      "locations": [
+        { "file": "src/Utilities.php", "lines": [614, 618] },
+        { "file": "src/Utilities.php", "lines": [656, 657] },
+        { "file": "src/Utilities.php", "lines": [720, 721] }
+      ],
+      "detect": "llm+hotspot",
+      "why": "validateSignature() reads the Algorithm attribute from the incoming SignatureMethod and casts the IdP key to it with no allow-list, and castKey() builds a key of whatever algorithm it is given from the public key material, so the response chooses how its own signature is checked. 3.2.0 restricts it to the RSA-SHA family."
+    },
+    {
+      "id": "SA-2026-141",
+      "class": "SA-CONTRIB-2026-141 (CVE-2026-87943): routes with `_access: 'TRUE'` that reach admin functionality and write configuration",
+      "severity": "HIGH",
+      "advisory_url": "https://www.drupal.org/sa-contrib-2026-141",
+      "locations": [
+        { "file": "miniorange_saml.routing.yml", "lines": [130, 136] },
+        { "file": "miniorange_saml.routing.yml", "lines": [138, 143] },
+        { "file": "src/Controller/MiniorangeSamlController.php", "lines": [228, 251] }
+      ],
+      "detect": "llm+entrypoints",
+      "why": "/payment_page_visited/{plan_name} (GET and POST, no permission, no CSRF token) saves module configuration for any anonymous caller, and the admin route add_new_idp has `_access: 'TRUE'`. 3.2.0 removes the first route and its controller and gives the second `administer site configuration`."
+    },
+    {
+      "id": "SA-2026-143",
+      "class": "SA-CONTRIB-2026-143 (CVE-2026-87945): RelayState used as the post-login redirect without a same-site check (open redirect)",
+      "severity": "MEDIUM",
+      "advisory_url": "https://www.drupal.org/sa-contrib-2026-143",
+      "locations": [
+        { "file": "src/Controller/MiniorangeSamlController.php", "lines": [57, 68] },
+        { "file": "src/Controller/MiniorangeSamlController.php", "lines": [138, 149] },
+        { "file": "src/MiniOrangeSamlAcs.php", "lines": [27, 31] },
+        { "file": "src/MiniOrangeSamlAcs.php", "lines": [150, 159] }
+      ],
+      "detect": "llm+entrypoints",
+      "why": "samlLogin() takes the relay state from the route or the Referer header, processSamlResponse() copies the posted RelayState into the response, and samlResponse() redirects the freshly logged-in user to it with a plain RedirectResponse, so a login link can send the user to any external site. 3.2.0 adds Utilities::isRelayStateLocal() at each step."
+    },
+    {
+      "id": "SA-2026-142",
+      "class": "SA-CONTRIB-2026-142 (CVE-2026-87944): outbound HTTPS client with TLS certificate verification disabled",
+      "severity": "MEDIUM",
+      "advisory_url": "https://www.drupal.org/sa-contrib-2026-142",
+      "locations": [
+        { "file": "src/Api/MoAuthApi.php", "lines": [71, 78] }
+      ],
+      "detect": "llm+hotspot",
+      "why": "postHttpCall() sends every request to the vendor API through Drupal's HTTP client with `'verify' => false`, so anyone who can intercept the site's traffic can impersonate that service. 3.2.0 removes the option."
+    },
+    {
+      "id": "SA-2026-148",
+      "class": "SA-CONTRIB-2026-148 (CVE-2026-87950): vendor API credentials embedded in the module source",
+      "severity": "MEDIUM",
+      "advisory_url": "https://www.drupal.org/sa-contrib-2026-148",
+      "locations": [
+        { "file": "src/MiniorangeSamlConstant.php", "lines": [14, 15] },
+        { "file": "src/Api/MoAuthApi.php", "lines": [10, 17] },
+        { "file": "src/Api/MoAuthApi.php", "lines": [51, 52] },
+        { "file": "src/Form/MiniorangeTrial.php", "lines": [295, 299] }
+      ],
+      "detect": "llm+hotspot",
+      "why": "MiniorangeSamlConstant defines a shared default customer id and API key (DEFAULT_CUSTOMER_ID, DEFAULT_API_KEY) that MoAuthApi uses by default to sign requests to the vendor API, and the trial form falls back to the shared customer id; every installation ships the same credentials. 3.2.0 removes the constants and their users. The literal value is deliberately not reproduced in this repo."
+    },
+    {
+      "id": "SA-2026-147",
+      "class": "SA-CONTRIB-2026-147 (CVE-2026-87949): SAML NameID and attributes echoed into HTML without escaping (XSS)",
+      "severity": "MEDIUM",
+      "advisory_url": "https://www.drupal.org/sa-contrib-2026-147",
+      "locations": [
+        { "file": "src/MiniOrangeSamlAcs.php", "lines": [262, 265] },
+        { "file": "src/MiniOrangeSamlAcs.php", "lines": [309, 320] }
+      ],
+      "detect": "llm+hotspot",
+      "why": "showTestResults() (RelayState testValidate) echoes the username, attribute names and attribute values from the SAML assertion straight into the page, so a crafted assertion runs script in the viewer's session. 3.1.4 adds Xss::filter, 3.2.0 Html::escape."
+    },
+    {
+      "id": "SA-2026-150",
+      "class": "SA-CONTRIB-2026-150 (CVE-2026-87952): no replay protection for accepted SAML responses and assertions",
+      "severity": "MEDIUM",
+      "advisory_url": "https://www.drupal.org/sa-contrib-2026-150",
+      "locations": [
+        { "file": "src/MiniOrangeSamlAcs.php", "lines": [96, 123] }
+      ],
+      "detect": "llm",
+      "why": "processSamlResponse() checks only the assertion's validity window, issuer and audience; it never records the Response or Assertion ID, so a captured response can be posted again within its validity period to log in again. 3.2.0 adds an expirable key-value store of used IDs after these checks."
+    },
+    {
+      "id": "SA-2026-151",
+      "class": "SA-CONTRIB-2026-151 (CVE-2026-87953): IdP metadata URL fetched with file_get_contents and no scheme or address check (SSRF)",
+      "severity": "LOW",
+      "advisory_url": "https://www.drupal.org/sa-contrib-2026-151",
+      "locations": [
+        { "file": "src/Form/MiniorangeSpInfo.php", "lines": [540, 545] }
+      ],
+      "detect": "llm+hotspot",
+      "why": "miniorangeSamlFetchMetadata() passes the admin-supplied metadata URL to file_get_contents(), which accepts any stream wrapper and any internal address. Admin-only, which the advisory names as the mitigation. 3.2.0 adds fetchMetadataFromUrl() (http/https only, private and reserved ranges blocked)."
+    },
+    {
+      "id": "SA-2026-144",
+      "class": "SA-CONTRIB-2026-144 (CVE-2026-87946): non-constant-time HMAC comparison and predictable request IDs",
+      "severity": "LOW",
+      "advisory_url": "https://www.drupal.org/sa-contrib-2026-144",
+      "locations": [
+        { "file": "src/XMLSecurityKey.php", "lines": [739, 741] },
+        { "file": "src/XMLSecurityKey.php", "lines": [1010, 1011] }
+      ],
+      "detect": "llm+hotspot",
+      "why": "verifySignature() compares HMAC values with strcmp() instead of hash_equals(), and generateGUID() derives IDs from md5(uniqid(mt_rand())), which is not a CSPRNG. 3.2.0 switches to hash_equals() and random_bytes()."
+    },
+    {
+      "id": "SA-2026-149",
+      "class": "SA-CONTRIB-2026-149 (CVE-2026-87951): vendor account password stored in plain text in module configuration",
+      "severity": "LOW",
+      "advisory_url": "https://www.drupal.org/sa-contrib-2026-149",
+      "locations": [
+        { "file": "src/Utilities.php", "lines": [976, 978] },
+        { "file": "config/install/miniorange_saml.settings.yml", "lines": [41, 41] },
+        { "file": "config/schema/miniorange_saml.schema.yml", "lines": [87, 88] }
+      ],
+      "detect": "llm",
+      "why": "customerSetupSubmit() saves the vendor account password into miniorange_saml.settings, where config export and anyone with config or database access can read it. Mitigated, per the advisory, by needing that access first. 3.2.0 drops the setting and clears it in an update hook."
+    }
+  ],
+  "decoys": [],
+  "known_extras": [
+    {
+      "id": "X01",
+      "locations": [
+        { "file": "src/MiniOrangeSamlAcs.php", "lines": [33, 36] },
+        { "file": "src/Form/MiniorangeSpInfo.php", "lines": [574, 579] }
+      ],
+      "why": "XML parsing hardening (no LIBXML_NONET, no entity loader override) on the SAML response and on IdP metadata; added by the 031 commit and in 3.2.0, but no advisory of its own. Valid, not scored."
+    },
+    {
+      "id": "X02",
+      "locations": [
+        { "file": "src/Utilities.php", "lines": [239, 245] },
+        { "file": "src/Utilities.php", "lines": [765, 770] },
+        { "file": "src/Utilities.php", "lines": [785, 790] }
+      ],
+      "why": "SA-CONTRIB-2026-146 (CVE-2026-87948, XSS in generated HTML): the fix swaps Xss::filter for Html::escape and escapes error, message and entity id values across Utilities and the ACS class, with no single fixed location. Valid, not scored."
+    },
+    {
+      "id": "X03",
+      "locations": [
+        { "file": "src/Utilities.php", "lines": [470, 473] }
+      ],
+      "why": "xsDateTimeToTimestamp() reports an invalid SAML timestamp and carries on (exit restored in 3.2.0); fail-open parsing with no advisory of its own. Valid, not scored."
+    }
+  ]
+}

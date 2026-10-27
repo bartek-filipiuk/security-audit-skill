@@ -1,0 +1,27 @@
+{
+  "version": 2,
+  "app": "real/wordpress/flamingo-2.6.2",
+  "module": "wordpress/flamingo",
+  "module_version": "2.6.2",
+  "note": "Ground truth for the public release flamingo 2.6.2 (WordPress plugin, fetched by benchmark/real/fetch.mjs; manifest.json pins the zip sha256). Never copy this file into the audited directory. One entry per published advisory; `locations` are files relative to the plugin root (the run's app/) with 1-based inclusive line ranges of the code the fix changes, verified against the extracted 2.6.2 tree (`node benchmark/real/fetch.mjs wordpress/flamingo 2.6.2 --check --dest <run>`). Same format and matching rules as benchmark/answer-key.json. The 2.6.3 key is the false-positive control.",
+  "window": 2,
+  "seeded": [
+    {
+      "id": "CVE-2026-12853",
+      "class": "CVE-2026-12853: the plugin's post types and taxonomies are registered without capabilities, so its admin-only data is governed by WordPress core defaults (missing authorization)",
+      "severity": "MEDIUM",
+      "advisory_url": "https://www.cve.org/CVERecord?id=CVE-2026-12853",
+      "locations": [
+        { "file": "includes/class-contact.php", "lines": [27, 35] },
+        { "file": "includes/class-inbound-message.php", "lines": [46, 55] },
+        { "file": "includes/class-contact.php", "lines": [18, 25] },
+        { "file": "includes/class-inbound-message.php", "lines": [29, 36] },
+        { "file": "includes/capabilities.php", "lines": [6, 16] }
+      ],
+      "detect": "llm",
+      "why": "flamingo_map_meta_cap() restricts the plugin's own screens to users who can edit users, but register_taxonomy() for the contact tag and inbound channel taxonomies (and register_post_type() for contacts and messages) passes no capabilities, so core falls back to the default term and post capabilities. Any contributor can then list contact tag names, channel names derived from form titles and per-channel message counts through core term APIs (XML-RPC term listing, the tag-search AJAX action). Fixed in 2.6.3 by mapping every post and term capability to the plugin's own meta capabilities."
+    }
+  ],
+  "decoys": [],
+  "known_extras": []
+}

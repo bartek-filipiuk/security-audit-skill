@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { subscriptions } from "@/db/schema";
 import { requireOrg } from "@/lib/session";
+import { PaymentMethodFrame } from "@/components/payment-method-frame";
 import { startCheckout } from "./actions";
 
 export default async function BillingPage() {
@@ -18,6 +19,7 @@ export default async function BillingPage() {
       <form action={startCheckout.bind(null, "team")}>
         <button type="submit">Upgrade to Team</button>
       </form>
+      {sub && <PaymentMethodFrame customerRef={sub.stripeCustomerId} />}
     </section>
   );
 }
