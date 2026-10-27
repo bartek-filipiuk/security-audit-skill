@@ -196,7 +196,7 @@ Dockerfiles, `docker-compose*.yml`, Kubernetes manifests and Helm values, Terraf
 
 ## 2.8 Cryptography
 
-Skip if no crypto code found in recon.
+Skip only if recon found no crypto, signing, token or hashing code. Never skip when recon marks the project crypto-heavy.
 
 - [ ] No broken algorithms: MD5, SHA1 for security purposes, DES, RC4, ECB mode
 - [ ] Proper key sizes: RSA >= 2048, AES >= 128, ECDSA >= 256
@@ -210,6 +210,20 @@ Skip if no crypto code found in recon.
 - [ ] JWT algorithm confusion: if RSA signing used, verify server rejects HMAC tokens signed with the public key. Public key exposed in source + HS256 accepted = forged token
 - [ ] JWT public key exposure: if RSA keys used, check whether public key is accessible (source code, /.well-known/, API endpoint). Accessible key + missing algorithm restriction = forgery
 - [ ] Sensitive secrets (TOTP, MFA, recovery codes) stored encrypted at rest, not plaintext in DB columns
+
+### Token, signature and key APIs (category `crypto`; a claim check skipped on some input `auth`)
+
+Applies wherever the code signs, verifies, encrypts or decodes tokens, MACs or signatures, in an app or in a library. Library mode: when the project itself is a crypto, auth or token library, its exported API is the attack surface. Treat every exported sign/verify/decode/encrypt function and each of its options as an entry point, and judge the defaults a caller gets without passing that option. Each item: what to check, the safe control, the regression test.
+
+- [ ] Key type decides the algorithm family: find where the code tells a symmetric secret from an asymmetric key (string vs key object, PEM detection, JWK parsing). A public key, certificate or JWK in any serialisation (PEM, DER, JSON string, parsed object, buffer) is never usable as an HMAC secret; "anything that is not a PEM private key is a secret" is the finding. Safe control: the key is parsed into a typed key object first and an asymmetric key is refused for HMAC algorithms. Regression test: verifying an HMAC-signed token with a public key or JWK given as text, buffer or object throws
+- [ ] Algorithm pinned or derived from the key: the algorithm used to verify comes from configuration or from the key type, never from the token header (`alg`, `kid`-selected algorithm) alone; an allow-list mixing HMAC and asymmetric algorithms for one key is the finding. Safe control: the verifier is built from the configured algorithm and the header value is only compared against it. Regression test: a token whose header names an algorithm outside the allow-list, or of another family than the key, is rejected
+- [ ] Empty or missing key fails closed: an empty string, `null`, `undefined`, zero-length buffer or a key callback that resolves to nothing throws at configuration or verify time; it never means "no signature required" and never selects the `none` algorithm. Safe control: an explicit length/type check before any verification path. Regression test: verify with each empty key value throws, with and without an explicit algorithm list
+- [ ] `none` and unsigned tokens: accepted only through an explicit, separately named opt-in, and never when a key or an algorithm allow-list is also given. Safe control: the cited branch that rejects an empty signature segment. Regression test: an unsigned token is rejected by every default configuration and by one that passes a key or an algorithm list
+- [ ] Claim validation on every payload shape: `exp`, `nbf`, `iat`, `aud`, `iss`, `sub`, `jti`, nonce and max-age checks run whatever the decoded payload is. A payload that is an array, string, number, `null` or other non-object JSON is rejected before the validators, which otherwise skip silently because the claim lookups return nothing. Safe control: an `is plain object` check right after decoding. Regression test: an array or string payload with a valid signature is rejected, and an expired object payload is rejected
+- [ ] Constant-time comparison: MAC, signature, digest, API key, reset token and webhook signature comparisons use a constant-time function (`timingSafeEqual`, `hmac.compare_digest`, `hash_equals`, `subtle.ConstantTimeCompare`) on equal-length buffers, not `==`/`===`/`strcmp`/`startsWith`. Safe control: the cited compare call. Regression test: the compare helper is called (spy) and a value differing only in the last byte is rejected
+- [ ] IV and nonce handling: a fresh random IV/nonce per encryption (no constant, no counter that restarts per process or per key load), AEAD tags verified before any plaintext is used (a decrypt that ignores or truncates the tag is the finding), and CBC/CTR only with a MAC checked first (encrypt-then-MAC). Safe control: the cited IV source and tag check. Regression test: two encryptions of the same plaintext differ, and a ciphertext with one flipped tag or body byte fails to decrypt
+- [ ] Verification caches: a cache of verified tokens or decoded keys is keyed on the full token and the key/options that verified it, and `exp`, `nbf` and max-age are rechecked against the current time on every cache hit. Safe control: the time check after the cache lookup. Regression test: a token verified once is rejected after its expiry while still in the cache, and a cached result for one key is not returned for another
+- [ ] Library defaults fail closed: every exported verify/decode option has a safe default (algorithm required or derived, claims checked, unsigned rejected, decode without verify clearly named), and invalid option combinations throw instead of being ignored. Safe control: the cited option validation. Regression test: calling the exported verify with only a token and a key rejects forged, unsigned and expired tokens
 
 ## 2.9 Concurrency & Race Conditions
 

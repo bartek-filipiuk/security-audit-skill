@@ -374,6 +374,14 @@ export function label(d) {
   return `${PROFILES[d.id].name}${d.frameworks.length ? ` (${d.frameworks.join(", ")})` : ""}${where}`;
 }
 
+// Rows for not-assessed.md: one per applied profile without a dedicated pre-pass profile (R04).
+export function stackGapRows(stack) {
+  return (stack?.profiles ?? []).filter((p) => !p.dedicated).map((p) => {
+    const what = p.id === "generic" ? (stack.forced ? "generic profile forced by --stack" : "unknown stack") : `${p.name}${p.frameworks.length ? ` (${p.frameworks.join(", ")})` : ""}${p.dirs.length && !(p.dirs.length === 1 && p.dirs[0] === ".") ? ` in ${p.dirs.join(", ")}` : ""}`;
+    return `| Stack profile | ${what.replace(/\|/g, "\\|")} | no dedicated profile: entry points and hotspots were not pre-mapped; the general checklist applies (prepass) |`;
+  });
+}
+
 // One line per profile for reports: "Profile: X. Covers ... Does not cover ...".
 export function profileHeadline(p) {
   return p.dedicated

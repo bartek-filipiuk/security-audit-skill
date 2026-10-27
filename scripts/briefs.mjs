@@ -2,8 +2,9 @@
 // Writes one brief per Phase 2 auditor: only its checklist sections plus the stack patterns for the
 // languages the project actually contains. The coordinator passes the brief's path instead of pasting
 // the checklist into every prompt, which keeps the coordinator's context small on big projects.
-//   node briefs.mjs [--dir .security-audit] [--brief name=2.1,2.3 ...]
+//   node briefs.mjs [--dir .security-audit] [--brief name=2.1,2.3 ...] [--crypto-heavy]
 // Without --brief it writes the default five: auth, injection, infra, concurrency, upload.
+// --crypto-heavy (recon marked the project crypto-heavy) moves 2.8 Cryptography to the brief that owns 2.1.
 // Stack profiles found in the repo (Supabase, Firebase, Laravel, Symfony, Drupal, Django, FastAPI, Flask, and
 // Go by its files) add their checklist section to the brief that owns 2.1 and their pattern sections to every brief.
 
@@ -20,6 +21,16 @@ export const DEFAULT_BRIEFS = {
   concurrency: ["2.9"],
   upload: ["2.6"],
 };
+
+// Crypto-heavy projects (a crypto, auth or token library, or hand-rolled token, signature or encryption code):
+// 2.8 goes to the auditor that owns 2.1, so token verification is read next to the auth flow, not after CI and headers.
+export function cryptoHeavy(briefs) {
+  const owner = Object.keys(briefs).find((n) => briefs[n].includes("2.1"));
+  if (!owner) return briefs;
+  const out = Object.fromEntries(Object.entries(briefs).map(([n, s]) => [n, s.filter((x) => x !== "2.8")]));
+  out[owner] = [...out[owner].slice(0, 1), "2.8", ...out[owner].slice(1)];
+  return out;
+}
 
 // First-column labels in stack-patterns.md, per language family.
 const LANG_ROWS = {
@@ -107,7 +118,8 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const args = process.argv.slice(2);
   const dir = resolve(args.indexOf("--dir") >= 0 ? args[args.indexOf("--dir") + 1] : ".security-audit");
   const custom = args.flatMap((a, i) => (args[i - 1] === "--brief" ? [a] : []));
-  const briefs = custom.length ? Object.fromEntries(custom.map((c) => { const [n, s] = c.split("="); return [n, s.split(",")]; })) : DEFAULT_BRIEFS;
+  const chosen = custom.length ? Object.fromEntries(custom.map((c) => { const [n, s] = c.split("="); return [n, s.split(",")]; })) : DEFAULT_BRIEFS;
+  const briefs = args.includes("--crypto-heavy") ? cryptoHeavy(chosen) : chosen;
   const sizes = writeBriefs(dir, briefs);
   console.log(`briefs: ${Object.entries(sizes).map(([n, b]) => `${n} (${Math.round(b / 1000)}k chars)`).join(", ")} -> ${join(dir, "briefs")}`);
 }

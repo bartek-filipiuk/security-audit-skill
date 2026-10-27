@@ -18,6 +18,9 @@ Rules that apply to every item:
   non-object payloads, timing-unsafe compares, weak randomness for tokens, IV/nonce reuse; applies to apps
   and to libraries. Done when: fast-jwt 6.2.4 scores 3/3 on two runs, the 6.3.1 control stays at 0 decoy FP,
   and Ledgerly recall does not drop.
+  Status (2026-10-26): code merged on branch, waiting for benchmark. Checklist 2.8 subsection "Token, signature
+  and key APIs" (apps and library mode), crypto red-flag patterns, recon `Crypto-heavy` flag with
+  `briefs.mjs --crypto-heavy` moving 2.8 to the Auth Auditor, verifier rule 6c for crypto and token defaults.
 
 - **R05 PHP profile: Laravel, Symfony, Drupal.** Priority (2026-10-19): first in line for a scored run.
   Route-based entry points, unscoped Eloquent/Doctrine queries, `composer audit`, Psalm taint. Done when: its benchmark app scores.
@@ -178,6 +181,8 @@ Rules that apply to every item:
   and `prepass.md`, `report.md` and `report.html` name the applied profile, what it covers and what it does not;
   stacks without a dedicated profile say "general checklist". `--stack` forces a profile and warns on a
   conflict. Ledgerly, a Laravel fixture and Django/FastAPI fixtures are detected correctly (`scripts/stack.test.mjs`).
+  A stack that is not detected (`generic`) or has no dedicated profile also gets a `Stack profile` row in
+  `not-assessed.md` from the pre-pass, replaced on re-run (`scripts/stack.test.mjs`).
   Benchmark 2026-10-08 (batch #12, Ledgerly x1): recall 20/23, 0 decoy false positives.
 
 - **R03 Exact benchmark scoring** (2026-10-05): findings match the answer key by the file and line of their

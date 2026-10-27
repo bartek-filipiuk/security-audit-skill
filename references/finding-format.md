@@ -134,6 +134,7 @@ The machine-readable record of what was looked at, so "not found" can be told ap
 - Databases: [list]
 - External services: [list]
 - Deployment: [method]
+- Crypto-heavy: [yes/no, one line of evidence] (yes → `briefs.mjs --crypto-heavy`, 2.8 never skipped)
 
 ## Entry Points
 | # | Kind | Route/Handler | File:line | Method |

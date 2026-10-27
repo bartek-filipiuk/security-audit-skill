@@ -6,7 +6,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { detectStack, resolveStack } from "./stack.mjs";
+import { detectStack, resolveStack, stackGapRows } from "./stack.mjs";
+import { mergeNotAssessed } from "./tools.mjs";
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), "..");
 const fixture = (name) => join(repo, "scripts", "fixtures", "stack", name);
@@ -160,4 +161,38 @@ test("one detector: framework profiles, briefs languages and semgrep rulesets al
   const tags = rulesetStack(inventory(py), detectStack(py));
   for (const t of ["python", "django", "fastapi", "flask"]) assert.ok(tags.includes(t), t);
   assert.ok(rulesetStack(inventory(join(repo, "benchmark", "app"))).includes("react"), "React from the stack's libraries");
+});
+
+test("not-assessed: generic and non-dedicated profiles get a stack row, dedicated profiles none, re-runs replace it", () => {
+  const tmp = mkdtempSync(join(tmpdir(), "sa-stack-gap-"));
+  const empty = join(tmp, "empty");
+  mkdirSync(empty);
+  writeFileSync(join(empty, "notes.txt"), "x\n");
+  const generic = stackGapRows(detectStack(empty));
+  assert.deepEqual(generic, ["| Stack profile | unknown stack | no dedicated profile: entry points and hotspots were not pre-mapped; the general checklist applies (prepass) |"]);
+  const ruby = join(tmp, "ruby");
+  mkdirSync(ruby);
+  writeFileSync(join(ruby, "Gemfile"), 'source "https://rubygems.org"\ngem "rails"\n');
+  const rubyRows = stackGapRows(detectStack(ruby));
+  assert.equal(rubyRows.length, 1);
+  assert.match(rubyRows[0], /^\| Stack profile \| Ruby/);
+  for (const dir of [join(repo, "benchmark", "app"), fixture("laravel"), fixture("django"), fixture("fastapi")]) assert.deepEqual(stackGapRows(detectStack(dir)), [], dir);
+  assert.equal(stackGapRows(detectStack(fixture("django"), { force: "php" })).length, 1, "PHP without a supported framework is not dedicated");
+
+  const first = mergeNotAssessed("", [], generic);
+  const agent = `${first}| auth | login rate limit | no tests |\n`;
+  const again = mergeNotAssessed(agent, [], generic);
+  assert.equal(again.match(/Stack profile/g).length, 1, "idempotent");
+  assert.ok(again.includes("login rate limit"));
+  const dedicated = mergeNotAssessed(agent, [], []);
+  assert.ok(!dedicated.includes("Stack profile") && dedicated.includes("login rate limit"), "a later dedicated run drops the row");
+});
+
+test("prepass on a project without a known stack writes the stack row once, also on a re-run", () => {
+  const proj = join(mkdtempSync(join(tmpdir(), "sa-stack-")), "plain");
+  mkdirSync(proj);
+  writeFileSync(join(proj, "README.txt"), "nothing here\n");
+  for (let i = 0; i < 2; i++) assert.equal(prepass(proj).status, 0);
+  const na = readFileSync(join(proj, ".security-audit", "not-assessed.md"), "utf8");
+  assert.equal(na.match(/\| Stack profile \| unknown stack \|/g).length, 1);
 });
