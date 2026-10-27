@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 // Scores one benchmark run against answer-key.json and appends a line to results.jsonl.
-//   node benchmark/score.mjs <run-dir> [--label "what changed"] [--tool security-audit|claude-security] [--no-save]
-// <run-dir> is what setup.mjs printed: it holds meta.json and app/.security-audit/.
+//   node benchmark/score.mjs <run-dir> [--label "what changed"] [--tool security-audit|claude-security]
+//                            [--key answer-key.json] [--results results.jsonl] [--no-save]
+// <run-dir> is what setup.mjs printed: it holds meta.json and app/.security-audit/. --key and --results
+// score another app with its own key (same schema); every field of meta.json goes into the saved line.
 // Matching: a finding counts for a key entry when it cites one of the entry's files (path suffix)
 // and its text contains one of the entry's keywords. ponytail: keyword matching, not semantic
 // judgment; read the "unmatched" list by hand after each run.
@@ -9,28 +11,32 @@
 import { appendFileSync, existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadAudit, titleOf } from "../scripts/audit-state.mjs";
+import { parseArgs } from "node:util";
+import { loadAudit, STATUSES, titleOf } from "../scripts/audit-state.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
 export function citedPaths(text) {
   const out = new Set();
-  for (const m of text.matchAll(/([\w.()[\]@-]+(?:\/[\w.()[\]@-]+)*\.(?:[cm]?[jt]sx?|json|ya?ml|md|example))(?::\d+)?/g)) {
+  for (const m of text.matchAll(/([\w.()[\]@-]+(?:\/[\w.()[\]@-]+)*\.(?:[cm]?[jt]sx?|json|ya?ml|md|example|php|py|module|inc|install|theme)(?!\w))(?::\d+)?/g)) {
     out.add(m[1].replace(/^\.\//, "").replace(/^app\//, ""));
   }
   if (/(^|[\s`'"(/])\.env(?![.\w])/.test(text)) out.add(".env");
   return out;
 }
 
-const cites = (finding, files) => files.some((f) => [...finding.paths].some((p) => p === f || p.endsWith("/" + f) || f.endsWith("/" + p)));
+const cites = (finding, files) =>
+  files.map((f) => f.toLowerCase()).some((f) => [...finding.paths].map((p) => p.toLowerCase()).some((p) => p === f || p.endsWith("/" + f) || f.endsWith("/" + p)));
 const mentions = (finding, keywords) => keywords.some((k) => finding.lower.includes(k.toLowerCase()));
 const matches = (finding, entry) => cites(finding, entry.files) && mentions(finding, entry.keywords);
 
 export function score(findings, key) {
+  // Models outside Claude write `Verified` or `confirmed`: normalise case, count the rest as unparsed.
   const fs = findings.map((f) => ({
     id: f.data?.id ?? f.stem,
-    status: f.data?.status === "fixed" ? "verified" : f.data?.status,
+    status: String(f.data?.status ?? "").trim().toLowerCase().replace(/^fixed$/, "verified"),
     severity: f.data?.severity,
+    reason: String(f.data?.rejection_reason ?? "").match(/^[\w-]+/)?.[0],
     proof: f.data?.proof,
     title: titleOf(f.data ?? {}, f.body),
     paths: citedPaths(f.text),
@@ -46,13 +52,15 @@ export function score(findings, key) {
       id: e.id, class: e.class, detect: e.detect,
       result: hit.length ? "found" : dropped.length ? "dropped_by_verifier" : "missed",
       by: (hit.length ? hit : dropped).map((f) => f.id),
+      severity: hit.map((f) => f.severity).filter(Boolean),
       proof: hit.map((f) => f.proof).filter(Boolean),
+      rejection: hit.length ? [] : dropped.map((f) => f.reason).filter(Boolean),
     };
   });
   const claimed = new Set(seeded.flatMap((s) => (s.result === "found" ? s.by : [])));
-  const decoyFp = key.decoys.flatMap((d) => verified.filter((f) => !claimed.has(f.id) && matches(f, d)).map((f) => ({ decoy: d.id, finding: f.id, title: f.title })));
+  const decoyFp = (key.decoys ?? []).flatMap((d) => verified.filter((f) => !claimed.has(f.id) && matches(f, d)).map((f) => ({ decoy: d.id, finding: f.id, title: f.title })));
   const fpIds = new Set(decoyFp.map((d) => d.finding));
-  const extras = verified.filter((f) => !claimed.has(f.id) && !fpIds.has(f.id) && key.known_extras.some((x) => matches(f, x)));
+  const extras = verified.filter((f) => !claimed.has(f.id) && !fpIds.has(f.id) && (key.known_extras ?? []).some((x) => matches(f, x)));
   const extraIds = new Set(extras.map((f) => f.id));
   const unmatched = verified.filter((f) => !claimed.has(f.id) && !fpIds.has(f.id) && !extraIds.has(f.id));
   const found = seeded.filter((s) => s.result === "found").length;
@@ -66,6 +74,7 @@ export function score(findings, key) {
     verified_total: verified.length,
     rejected_total: rejected.length,
     raw_left: fs.filter((f) => f.status === "raw").length,
+    unparsed: fs.filter((f) => !STATUSES.includes(f.status)).length,
     seeded, decoyFp,
     extras: extras.map((f) => f.id),
     unmatched: unmatched.map((f) => ({ id: f.id, severity: f.severity, title: f.title })),
@@ -94,11 +103,14 @@ export function loadClaudeSecurity(appDir) {
 
 // realpath on both sides: the skill is usually run through a symlink (~/.claude/skills/...).
 if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
-  const args = process.argv.slice(2);
-  const runDir = resolve(args.find((a) => !a.startsWith("--") && !["--label", "--tool"].includes(args[args.indexOf(a) - 1])) ?? ".");
-  const label = args.indexOf("--label") >= 0 ? args[args.indexOf("--label") + 1] : "";
+  const { values: opt, positionals } = parseArgs({
+    allowPositionals: true,
+    options: { label: { type: "string", default: "" }, tool: { type: "string", default: "security-audit" }, key: { type: "string" }, results: { type: "string" }, "no-save": { type: "boolean" } },
+  });
+  const runDir = resolve(positionals[0] ?? ".");
+  const { label, tool } = opt;
+  const resultsFile = resolve(opt.results ?? join(here, "results.jsonl"));
   const auditDir = join(runDir, "app", ".security-audit");
-  const tool = args.includes("--tool") ? args[args.indexOf("--tool") + 1] : "security-audit";
   let findings, report;
   if (tool === "claude-security") {
     const cs = loadClaudeSecurity(join(runDir, "app"));
@@ -112,7 +124,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     findings = loadAudit(auditDir).findings;
     report = join(auditDir, "report.md");
   }
-  const key = JSON.parse(readFileSync(join(here, "answer-key.json"), "utf8"));
+  const key = JSON.parse(readFileSync(resolve(opt.key ?? join(here, "answer-key.json")), "utf8"));
   const meta = existsSync(join(runDir, "meta.json")) ? JSON.parse(readFileSync(join(runDir, "meta.json"), "utf8")) : {};
   const r = score(findings, key);
 
@@ -122,7 +134,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
 
   console.log(`Recall ${r.found}/${r.seeded.length} (${Math.round(r.recall * 100)}%) · dropped by verifier ${r.dropped_by_verifier} · missed ${r.missed} · decoy false positives ${r.decoy_fp} · duration ${minutes ?? "?"} min`);
   console.log("");
-  for (const s of r.seeded) console.log(`  ${s.id} ${s.result.padEnd(19)} ${s.by.join(", ").padEnd(24)} ${s.proof.join(",").padEnd(8)} ${s.class}`);
+  for (const s of r.seeded) console.log(`  ${s.id} ${s.result.padEnd(19)} ${s.by.join(", ").padEnd(24)} ${[...s.severity, ...s.proof, ...s.rejection].join(",").padEnd(16)} ${s.class}`);
   if (r.decoyFp.length) {
     console.log("\nDecoy false positives:");
     for (const d of r.decoyFp) console.log(`  ${d.decoy} <- ${d.finding}: ${d.title}`);
@@ -133,13 +145,17 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     for (const u of r.unmatched) console.log(`  ${u.id} [${u.severity}] ${u.title}`);
   }
   if (r.raw_left) console.log(`\nWARNING: ${r.raw_left} findings still raw.`);
+  if (r.unparsed) console.log(`\nWARNING: ${r.unparsed} findings have no readable status (broken frontmatter or an unknown status); they are not scored.`);
 
-  if (!args.includes("--no-save")) {
+  if (!opt["no-save"]) {
     const { seeded, decoyFp, ...summary } = r;
     appendFileSync(
-      join(here, "results.jsonl"),
-      JSON.stringify({ date: new Date().toISOString(), tool, label, skill_sha: meta.skill_sha, skill_dirty: meta.skill_dirty, minutes, ...summary, per_bug: Object.fromEntries(seeded.map((s) => [s.id, s.result])) }) + "\n",
+      resultsFile,
+      JSON.stringify({
+        date: new Date().toISOString(), tool, label, ...meta, minutes, ...summary,
+        per_bug: Object.fromEntries(seeded.map((s) => [s.id, { result: s.result, severity: s.severity, proof: s.proof, rejection: s.rejection }])),
+      }) + "\n",
     );
-    console.log(`\nSaved to ${join(here, "results.jsonl")}`);
+    console.log(`\nSaved to ${resultsFile}`);
   }
 }

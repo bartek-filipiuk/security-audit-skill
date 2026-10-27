@@ -132,6 +132,29 @@ test("benchmark scoring separates found, dropped, decoy hits and unmatched", () 
   assert.deepEqual(r.unmatched.map((u) => u.id), ["config-009"]);
 });
 
+test("benchmark scoring works for PHP and Python apps and for findings written by other models", async () => {
+  const { citedPaths } = await import("../benchmark/score.mjs");
+  assert.deepEqual([...citedPaths("`tpl/page.phtml:3` and `lib/x.pyi`")], []); // not cut down to .php / .py
+  const otherKey = {
+    seeded: [
+      { id: "P1", class: "command injection", files: ["src/Runner.php"], keywords: ["command injection"] },
+      { id: "Y1", class: "sql injection", files: ["proxy/auth/keys.py"], keywords: ["sql injection"] },
+    ],
+  }; // no decoys, no known_extras
+  const dir = auditDir({
+    "php-001": `---\nid: php-001\ncategory: injection\nseverity: CRITICAL\nstatus: Verified\nproof: static\n---\n## Title\nFile name reaches exec(): command injection\n\`src/runner.php:55\`\n`,
+    "py-001": `---\nid: py-001\ncategory: injection\nseverity: HIGH\nstatus: rejected\nrejection_reason: defensive_failure - input is escaped\n---\n## Title\nSQL injection in key lookup\n\`proxy/auth/keys.py:12\`\n`,
+    "py-002": `---\nid: py-002\ncategory: injection\nseverity: HIGH\nstatus: confirmed\n---\n## Title\nSQL injection in key lookup\n\`proxy/auth/keys.py:12\`\n`,
+  });
+  const r = score(loadAudit(dir).findings, otherKey);
+  const [p1, y1] = r.seeded;
+  assert.equal(p1.result, "found"); // status case and path case do not matter
+  assert.deepEqual(p1.severity, ["CRITICAL"]);
+  assert.equal(y1.result, "dropped_by_verifier");
+  assert.deepEqual(y1.rejection, ["defensive_failure"]);
+  assert.equal(r.unparsed, 1); // `confirmed` is neither scored nor silently lost
+});
+
 test("hotspot ranking puts the seeded code-level bugs near the top", () => {
   const hot = rankHotspots(files, scanEntryPoints(files), scanScope(files));
   const code = key.seeded.filter((b) => !b.detect.startsWith("tool:"));

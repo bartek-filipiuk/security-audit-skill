@@ -27,8 +27,16 @@ contains it). The audit only ever sees `<run>/app`.
 
 `score.mjs` prints recall, findings the verifier wrongly rejected (`dropped_by_verifier`), decoy false
 positives, known extras (real advisories in the pinned dependencies), verified findings that matched
-nothing (read those by hand), the proof label of each found bug, and the run time. It appends one
+nothing (read those by hand), the severity and proof label of each found bug, the rejection reason of
+each dropped one, findings with no readable status (`unparsed`), and the run time. It appends one
 line to `results.jsonl`.
+
+To score another app (a real project with a patched CVE, say), write a key with the same schema:
+`seeded[]` with `id`, `class`, `files` (any of them, path suffix) and `keywords`; `decoys` and
+`known_extras` are optional. Put `meta.json` with at least `started_at` in the run directory (every
+field goes into the saved line), then `node benchmark/score.mjs <run> --key <key.json> --results
+<file>`. Paths are recognised in JS/TS, JSON, YAML, Markdown, PHP (`.php`, `.module`, `.inc`,
+`.install`, `.theme`) and Python files.
 
 ## Rules
 
