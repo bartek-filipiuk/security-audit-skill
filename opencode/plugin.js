@@ -35,7 +35,8 @@ export function checkShell(command, root) {
   // project or the skill directory, so an audit never sees another project, another run or its answer key.
   for (const token of command.split(/[\s;&|<>()]+/)) {
     const path = token.replace(/^[^=]*=(?=[/~.$])/, "").replace(/^["']|["']$/g, "");
-    if (!/^(\/|~|\$\{?HOME|\.\.(\/|$))|\/\.\.(\/|$)/.test(path) || path === "/dev/null") continue;
+    // A path starts with `/<name>`, `~`, `$HOME` or `..`; `/\n...` or `/^...` is a regex in a script argument.
+    if (!/^(\/[\w.~@+-]|~|\$\{?HOME|\.\.(\/|$))|\/\.\.(\/|$)/.test(path) || path === "/dev/null") continue;
     const abs = /^[~$]/.test(path) ? null : resolve(root, path);
     const inside = (dir) => abs !== null && !relative(dir, abs).startsWith("..") && !isAbsolute(relative(dir, abs));
     if (!inside(root) && !inside(SKILL_DIR)) return `path outside the project (${path})`;

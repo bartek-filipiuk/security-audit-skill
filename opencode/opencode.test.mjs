@@ -39,6 +39,7 @@ test("guard: shell arguments may not read outside the project", () => {
   assert.equal(checkShell("ls /work/app/src && git diff HEAD~1 -- src/a.ts 2>/dev/null", root), null);
   assert.equal(checkShell("cd /work/app && node x.mjs --dir /work/app/.security-audit 2>&1", root), null);
   assert.equal(checkShell("git log --format=%H -n 3 && git show HEAD:src/a.ts", root), null);
+  assert.equal(checkShell("node x.mjs --pattern '/\\ncarried_from:/' --re /^id:/", root), null); // regexes, not paths
 });
 
 test("guard: only sa-* agents, only the shell tool", async () => {
