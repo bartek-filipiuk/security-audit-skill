@@ -1,0 +1,44 @@
+{
+  "project": "litellm",
+  "ecosystem": "pypi",
+  "name": "LiteLLM (Python SDK and proxy server)",
+  "homepage": "https://github.com/BerriAI/litellm",
+  "license": "MIT (enterprise/ under its own license)",
+  "loc": "Python, 1855 files in the sdist; the advisories sit in litellm/proxy (about 390 files)",
+  "note": "Public releases fetched by benchmark/real/fetch.mjs from PyPI (sdists, immutable), never vendored. 1.83.3 is the vulnerable target, 1.83.7 the fixed control. The sdist holds litellm/, enterprise/ and the packaging files, no docs/, ui/, tests/ or lockfile; litellm/proxy is identical to the git tag v1.83.3-stable. Run with `/security-audit --scope litellm/proxy`: both advisories are there, and a whole-repo run mostly measures the SDK.",
+  "archive": "tar.gz",
+  "versions": {
+    "1.83.3": {
+      "url": "https://files.pythonhosted.org/packages/3b/9d/da5583536348e942f6c8cadeab1047ff2c389293802f956e3bfa98cc8819/litellm-1.83.3.tar.gz",
+      "sha256": "38a452f708f9bb682fdfc3607aa44d68cfe936bf4a18683b0cdc5fb476424a6f",
+      "tag": "v1.83.3-stable",
+      "released": "2026-04-05",
+      "key": "answer-key-1.83.3.json"
+    },
+    "1.83.7": {
+      "url": "https://files.pythonhosted.org/packages/77/2b/b58bf6bbcbc3d0e55d0a84fdf9128e5b1436517f46fce89b1cd8948ebb81/litellm-1.83.7.tar.gz",
+      "sha256": "e2f2cb99df2e2b2eab63f1354faa45c88dd7c8d40c18eb648afb1b349c689633",
+      "tag": "v1.83.7-stable",
+      "released": "2026-04-13",
+      "key": "answer-key-1.83.7.json"
+    }
+  },
+  "advisories": [
+    {
+      "id": "GHSA-r75f-5x8p-qvmc",
+      "cve": "CVE-2026-42208",
+      "risk": "Critical",
+      "type": "SQL injection in the proxy's API key lookup, reachable without authentication",
+      "fixed_in": "1.83.7",
+      "url": "https://github.com/BerriAI/litellm/security/advisories/GHSA-r75f-5x8p-qvmc"
+    },
+    {
+      "id": "GHSA-v4p8-mg3p-g94g",
+      "cve": "CVE-2026-42271",
+      "risk": "High",
+      "type": "MCP server test endpoints start a stdio command for any API key holder (missing admin role check)",
+      "fixed_in": "1.83.7",
+      "url": "https://github.com/BerriAI/litellm/security/advisories/GHSA-v4p8-mg3p-g94g"
+    }
+  ]
+}

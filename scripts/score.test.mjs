@@ -440,4 +440,13 @@ test("--key and meta.key pick the answer key; a key with no seeded bugs is a con
   assert.equal(viaFlag.status, 0, viaFlag.stderr);
   assert.match(viaFlag.stdout, /^App real\/demo-2\.0\.0$/m);
   assert.match(viaFlag.stdout, /Recall 0\/0 \(no seeded bugs: control run\).*decoy false positives 1/);
+
+  // --results writes elsewhere, and meta.run (written by a model-comparison driver) goes into the line.
+  writeFileSync(join(run, "meta.json"), JSON.stringify({ key: keyFile, run: { config: "C1", model: "a/b", cost_usd: 0.5 } }));
+  const results = join(dir, "out", "results.jsonl");
+  mkdirSync(join(dir, "out"));
+  const saved = spawnSync(process.execPath, [join(repo, "benchmark", "score.mjs"), "--results", results, run, "--label", "x"], { encoding: "utf8" });
+  assert.equal(saved.status, 0, saved.stderr);
+  const line = JSON.parse(readFileSync(results, "utf8").trim());
+  assert.deepEqual([line.found, line.label, line.run], [1, "x", { config: "C1", model: "a/b", cost_usd: 0.5 }]);
 });

@@ -1,0 +1,36 @@
+{
+  "project": "ffmpeg_image_toolkit",
+  "ecosystem": "drupal",
+  "name": "FFmpeg Image Toolkit (Drupal contrib)",
+  "homepage": "https://www.drupal.org/project/ffmpeg_image_toolkit",
+  "license": "GPL-2.0-or-later",
+  "loc": "PHP, 19 files; no routes (an image toolkit plugin), so the skill runs Standard Mode",
+  "note": "Public releases fetched by benchmark/real/fetch.mjs, never vendored. 1.0.2 is the vulnerable target, 1.0.3 the fixed control. The fix (git diff 1.0.2 1.0.3) changes one file, src/Ffmpeg.php: the input path goes through escapeshellarg() instead of double quotes, and output_file is escaped too. The drupal.org tarball differs from the git tag only by the packaging lines in the .info.yml and LICENSE.txt.",
+  "archive": "tar.gz",
+  "versions": {
+    "1.0.2": {
+      "url": "https://ftp.drupal.org/files/projects/ffmpeg_image_toolkit-1.0.2.tar.gz",
+      "sha256": "b62729241d9c08f9da096b853ed564a3ddbbc6de08fc8c389bb1f5af2102a00a",
+      "tag": "1.0.2",
+      "released": "2026-03-11",
+      "key": "answer-key-1.0.2.json"
+    },
+    "1.0.3": {
+      "url": "https://ftp.drupal.org/files/projects/ffmpeg_image_toolkit-1.0.3.tar.gz",
+      "sha256": "00ade131fb0ecf60cabe950bd22132ba440b4bd7fbca8d57fcda2b203daddd91",
+      "tag": "1.0.3",
+      "released": "2026-08-18",
+      "key": "answer-key-1.0.3.json"
+    }
+  },
+  "advisories": [
+    {
+      "sa": "SA-CONTRIB-2026-220",
+      "cve": "CVE-2026-114523",
+      "risk": "Highly critical 20/25",
+      "type": "Remote code execution (file names passed to the ffmpeg command line without shell escaping)",
+      "fixed_in": "1.0.3",
+      "url": "https://www.drupal.org/sa-contrib-2026-220"
+    }
+  ]
+}

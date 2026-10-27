@@ -1,0 +1,60 @@
+{
+  "version": 2,
+  "app": "real/pypi/litellm-1.83.3",
+  "module": "pypi/litellm",
+  "module_version": "1.83.3",
+  "note": "Ground truth for the public release litellm 1.83.3 (PyPI sdist, fetched by benchmark/real/fetch.mjs; manifest.json pins the sha256), audited with `--scope litellm/proxy`. Never copy this file into the audited directory. `locations` are files relative to the sdist root (the run's app/) with 1-based inclusive line ranges, verified with `node benchmark/real/fetch.mjs pypi/litellm 1.83.3 --check`. Same format and matching rules as benchmark/answer-key.json. The 1.83.7 key is the false-positive control.",
+  "window": 2,
+  "seeded": [
+    {
+      "id": "GHSA-r75f-5x8p-qvmc",
+      "class": "GHSA-r75f-5x8p-qvmc (CVE-2026-42208): the caller's API key value is interpolated into the SQL text of the key lookup, reachable without authentication",
+      "severity": "CRITICAL",
+      "advisory_url": "https://github.com/BerriAI/litellm/security/advisories/GHSA-r75f-5x8p-qvmc",
+      "locations": [
+        {
+          "file": "litellm/proxy/utils.py",
+          "lines": [
+            2981,
+            3023
+          ]
+        }
+      ],
+      "detect": "llm",
+      "why": "PrismaClient.get_data(table_name='combined_view') builds the key lookup as an f-string, `WHERE v.token = '{token}'` (line 3018), and runs it with no parameters (lines 3021-3023). _hash_token_if_needed() (line 4649) hashes only values starting with 'sk-', so any other Authorization value reaches the query as typed. On a failed request _ProxyDBLogger in proxy/hooks/proxy_track_cost_callback.py (line 313) calls get_key_object() in proxy/auth/auth_checks.py with the caller's key, so the query runs without authentication unless disable_error_logs is set. A verifier that assumes the token is always hashed is wrong. Fixed in 1.83.7 by passing the hashed token as $1."
+    },
+    {
+      "id": "GHSA-v4p8-mg3p-g94g",
+      "class": "GHSA-v4p8-mg3p-g94g (CVE-2026-42271): the MCP server test endpoints accept a stdio server configuration from any API key holder and start its command on the host",
+      "severity": "HIGH",
+      "advisory_url": "https://github.com/BerriAI/litellm/security/advisories/GHSA-v4p8-mg3p-g94g",
+      "locations": [
+        {
+          "file": "litellm/proxy/_experimental/mcp_server/rest_endpoints.py",
+          "lines": [
+            1021,
+            1030
+          ]
+        },
+        {
+          "file": "litellm/proxy/_experimental/mcp_server/rest_endpoints.py",
+          "lines": [
+            1044,
+            1053
+          ]
+        },
+        {
+          "file": "litellm/experimental_mcp_client/client.py",
+          "lines": [
+            240,
+            248
+          ]
+        }
+      ],
+      "detect": "llm+entrypoints",
+      "why": "POST /mcp-rest/test/connection (line 1021) and /mcp-rest/test/tools/list (line 1044) take a full NewMCPServerRequest, including command, args and env, and connect with it through _execute_with_mcp_client(); for the stdio transport client.py lines 240-248 build StdioServerParameters and start the process. The endpoints only require a valid key, with no PROXY_ADMIN check, unlike the endpoint that saves a server. A verifier that treats 'requires an API key' as authorization is wrong. Fixed in 1.83.7 with a PROXY_ADMIN role check on both."
+    }
+  ],
+  "decoys": [],
+  "known_extras": []
+}
