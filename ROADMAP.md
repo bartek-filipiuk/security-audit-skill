@@ -18,6 +18,9 @@ Rules that apply to every item:
   non-object payloads, timing-unsafe compares, weak randomness for tokens, IV/nonce reuse; applies to apps
   and to libraries. Done when: fast-jwt 6.2.4 scores 3/3 on two runs, the 6.3.1 control stays at 0 decoy FP,
   and Ledgerly recall does not drop.
+  Status (2026-10-26): code merged on branch, waiting for benchmark. Checklist 2.8 subsection "Token, signature
+  and key APIs" (apps and library mode), crypto red-flag patterns, recon `Crypto-heavy` flag with
+  `briefs.mjs --crypto-heavy` moving 2.8 to the Auth Auditor, verifier rule 6c for crypto and token defaults.
 
 - **R05 PHP profile: Laravel, Symfony, Drupal.** Priority (2026-10-19): first in line for a scored run.
   Route-based entry points, unscoped Eloquent/Doctrine queries, `composer audit`, Psalm taint. Done when: its benchmark app scores.
