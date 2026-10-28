@@ -45,8 +45,10 @@ In your project, in Claude Code:
 
 The pre-pass detects the stack from the manifests (package.json, composer.json, pyproject.toml or
 requirements.txt, go.mod, Cargo.toml, Gemfile, pom.xml, ...) and the report names the applied profile, what it
-covers and what it does not. Only JavaScript/TypeScript (Node) has a dedicated profile today; PHP, Python and
-the rest run on the general checklist, and the report says so. In a monorepo every detected stack gets its own
+covers and what it does not. Dedicated profiles: JavaScript/TypeScript (Node), PHP with Laravel, Symfony or
+Drupal, Python with Django, FastAPI or Flask, and Supabase/Firebase (the PHP, Python and Supabase profiles are
+merged but not yet scored on their benchmark apps, see ROADMAP). Other stacks run on the general checklist, and
+the report and not-assessed.md say so. In a monorepo every detected stack gets its own
 profile line, with the directories it was found in. `--stack` applies one profile instead and warns when it
 does not match the code.
 
