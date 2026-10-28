@@ -138,7 +138,8 @@ test("runTools: native first, then docker pinned by digest, else NOT RUN; FAILED
 
   const off = runTools({ root, inv, stack, runner: { installed: () => false, run: () => assert.fail("must not run"), dockerOk: false, dockerDisabled: true } });
   assert.equal(off.find((r) => r.tool === "bandit").status, "skipped: no Python source outside tests");
-  assert.ok(off.filter((r) => r.tool !== "bandit").every((r) => r.state === "not-run"));
+  for (const t of ["gosec", "govulncheck"]) assert.equal(off.find((r) => r.tool === t).status, "skipped: no Go source outside tests");
+  assert.ok(off.filter((r) => !["bandit", "gosec", "govulncheck"].includes(r.tool)).every((r) => r.state === "not-run"));
   assert.match(off[0].status, /docker disabled by --no-docker/);
 });
 
