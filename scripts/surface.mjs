@@ -2,7 +2,8 @@
 // 1. Entry points by framework convention (Next.js App/Pages Router, server actions, proxy/middleware,
 //    tRPC, Hono/Express, pg-boss/BullMQ/cron, AI SDK / MCP tools, Drupal routing.yml, Supabase Edge
 //    Functions, Firebase Cloud Functions, Laravel routes/*.php, Symfony #[Route] attributes and
-//    config/routes*.yaml, Django urls.py, FastAPI and Flask route decorators).
+//    config/routes*.yaml, Django urls.py, FastAPI and Flask route decorators, Go net/http, chi, gin, echo,
+//    gorilla/mux and fiber routes).
 // 2. Drizzle scope scan: query sites on tables that carry an owner/tenant column but whose statement
 //    never references that column.
 // 3. Policy scan (roadmap R02): Supabase migrations (RLS, policies, SECURITY DEFINER functions, storage
@@ -28,6 +29,8 @@ const SYMFONY_CFG_RE = /(^|\/)config\/(?:routes(?:\/[^/]+)?|packages\/security)\
 // Python profile (roadmap R06): Python sources and Django/Jinja templates under a templates/ directory.
 const PY_RE = /\.py$/;
 const PY_TEMPLATE_RE = /(^|\/)templates\/.+\.html?$/;
+// Go profile (roadmap R09): Go sources (`_test.go` and testdata/ are NON_RUNTIME).
+const GO_RE = /\.go$/;
 // Read for the policy scan only, never scanned as code.
 const POLICY_RE = /(^|\/)supabase\/(?:migrations\/[^/]+\.sql|config\.toml)$|(^|\/)(?:firestore|storage)\.rules$/;
 export const LOCKFILES = new Set([
@@ -47,7 +50,7 @@ export function walk(root) {
       if (st.isDirectory()) { rec(p); continue; }
       const rel = relative(root, p).split(sep).join("/");
       if (LOCKFILES.has(name)) lockfiles.push(rel);
-      if ((CODE_RE.test(name) || DRUPAL_RE.test(name) || POLICY_RE.test(rel) || PHP_RE.test(name) || TWIG_RE.test(name) || SYMFONY_CFG_RE.test(rel) || PY_RE.test(name) || PY_TEMPLATE_RE.test(rel)) && st.size < 1_000_000) {
+      if ((CODE_RE.test(name) || DRUPAL_RE.test(name) || POLICY_RE.test(rel) || PHP_RE.test(name) || TWIG_RE.test(name) || SYMFONY_CFG_RE.test(rel) || PY_RE.test(name) || PY_TEMPLATE_RE.test(rel) || GO_RE.test(name)) && st.size < 1_000_000) {
         files.push({ path: rel, text: readFileSync(p, "utf8") });
       }
     }
@@ -149,6 +152,10 @@ export function scanEntryPoints(files) {
     if (PY_TEMPLATE_RE.test(path)) continue;
     if (PY_RE.test(path)) {
       for (const e of pyEntryPoints(f, files)) out.push(e);
+      continue;
+    }
+    if (GO_RE.test(path)) {
+      for (const e of scanGoRoutes(files).filter((x) => x.file === path)) out.push(e);
       continue;
     }
 
@@ -810,6 +817,361 @@ function pyModelFields(files, name, depth = 0) {
   return [];
 }
 
+// ---------------------------------------------------------------- Go entry points (roadmap R09)
+
+// net/http (ServeMux HandleFunc/Handle, Go 1.22 "METHOD /path" patterns), chi, gin, echo, gorilla/mux and
+// fiber routes, each with the middleware visible for it: handler wrappers (`requireAuth(h)`), group and
+// router middleware (`Group("/api", auth)`, `.Use(auth)` before the route), chi `With`/`Route`/`Group`
+// closures and `Mount`, gorilla subrouters, a wrapped server handler (`ListenAndServe(addr, auth(mux))`)
+// and a router passed to a function in another file (`routes.Register(api)`). Only middleware whose name
+// looks like an auth check goes to the guard column; every name stays in `middleware`.
+// ponytail: regex and brace matching over source text, not go/ast. Routes registered in loops or from
+// tables, routers kept in struct fields and passed through several layers, and wrappers such as alice
+// chains are invisible; a function that is mounted from several places gets the first mount (functions
+// are matched by name, not by package). Each row is a candidate, never a verdict.
+export const GO_KINDS = new Set(["nethttp-route", "chi-route", "gin-route", "echo-route", "gorilla-route", "fiber-route"]);
+const GO_IMPORTS = {
+  chi: /"github\.com\/go-chi\/chi(?:\/v\d+)?"/, gin: /"github\.com\/gin-gonic\/gin"/, echo: /"github\.com\/labstack\/echo(?:\/v\d+)?"/,
+  gorilla: /"github\.com\/gorilla\/mux"/, fiber: /"github\.com\/gofiber\/fiber(?:\/v\d+)?"/, nethttp: /"net\/http"/,
+};
+const GO_CTOR = { "chi.NewRouter": "chi", "chi.NewMux": "chi", "http.NewServeMux": "nethttp", "gin.Default": "gin", "gin.New": "gin", "echo.New": "echo", "mux.NewRouter": "gorilla", "fiber.New": "fiber" };
+// Router types in function parameters: `r chi.Router`, `rg *gin.RouterGroup`, `e *echo.Echo`, ...
+const GO_PARAM_TYPE = /(\w+)\s+\*?(chi|gin|echo|mux|fiber|http)\.(Router|Mux|Engine|RouterGroup|IRouter|IRoutes|Echo|Group|App|ServeMux)\b/g;
+const GO_PARAM_KIND = { chi: "chi", gin: "gin", echo: "echo", mux: "gorilla", fiber: "fiber", http: "nethttp" };
+const GO_VERBS = "Get|Post|Put|Patch|Delete|Head|Options|Connect|Trace|All|GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|CONNECT|TRACE|Any|Handle|HandleFunc|Method|MethodFunc";
+const GO_RECV = "[A-Za-z_]\\w*(?:\\.\\w+)*?";
+const GO_ROUTE_RE = new RegExp(`(?<![\\w.])(${GO_RECV})((?:\\.With\\((?:[^()]|\\([^()]*\\))*\\))*)\\.(${GO_VERBS})\\(`, "g");
+const GO_UPPER = /^(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|CONNECT|TRACE|Any)$/;
+const GO_TITLE = /^(?:Get|Post|Put|Patch|Delete|Head|Options|Connect|Trace|All)$/;
+const GO_VERB_OK = {
+  chi: (v) => GO_TITLE.test(v) && v !== "All" || /^(?:Handle|HandleFunc|Method|MethodFunc)$/.test(v),
+  fiber: (v) => GO_TITLE.test(v) && !/^(?:Connect|Trace)$/.test(v),
+  gin: (v) => GO_UPPER.test(v) && !/^(?:CONNECT|TRACE)$/.test(v) || v === "Handle",
+  echo: (v) => GO_UPPER.test(v),
+  gorilla: (v) => /^(?:Handle|HandleFunc)$/.test(v),
+  nethttp: (v) => /^(?:Handle|HandleFunc)$/.test(v),
+};
+// Callee names that look like middleware when the project does not define them (external packages).
+const GO_WRAPPER = /auth|login|session|jwt|token|require|protect|admin|role|perm|acl|guard|verif|signed|api_?key|bearer|middleware|^with|logger|logging|recover|cors|csrf|limit|throttle|gzip|compress|cache|secure|metric|trace|instrument|only$|^must/i;
+// Middleware whose name says it checks the caller; session loaders and CSRF middleware do not.
+const GO_AUTH_MW = /auth|login|session|jwt|token|require|protect|admin|role|perm|acl|guard|verif|signed|api_?key|bearer|casbin|oidc|oauth|only$|^must|user|member|tenant/i;
+const GO_NOT_AUTH_MW = /LoadAndSave|sessions\.Sessions|csrf|xsrf|logger|logging/i;
+const GO_VIEW_CHECK = /\b(?:http\.|fiber\.)?Status(?:Unauthorized|Forbidden)\b|\bErr(?:Unauthorized|Forbidden)\b|AbortWithStatus\w*\(\s*40[13]\b/;
+const GO_NOT_MOUNT = new Set(["Use", "Group", "Route", "With", "Mount", "PathPrefix", "Subrouter", "Handler", "ListenAndServe", "ListenAndServeTLS", "Serve", "Run", "Start", "Listen", "StripPrefix", "HandlerFunc", ...GO_VERBS.split("|")]);
+
+const goStr = (s) => {
+  const m = String(s ?? "").trim().match(/^"((?:[^"\\\n]|\\.)*)"$|^`([^`]*)`$/);
+  return m ? (m[1] ?? m[2]) : null;
+};
+const goMwName = (s) => s.trim().replace(/^&/, "").replace(/\s*\([\s\S]*$/, "").replace(/\s+/g, "");
+
+// Top-level arguments of the call whose `(` is at `open`, with their offsets.
+function goArgs(text, open) {
+  const close = matchClose(text, open);
+  const spans = [];
+  let last = open + 1;
+  scan(text, open + 1, (c, depth, i) => {
+    if (i >= close) return i;
+    if (c === "," && depth === 0) { spans.push([last, i]); last = i + 1; }
+  });
+  spans.push([last, close]);
+  const parts = spans.map(([a, b]) => {
+    const raw = text.slice(a, b);
+    return { s: raw.trim(), at: a + raw.length - raw.trimStart().length };
+  }).filter((p) => p.s);
+  return { close, parts };
+}
+
+// `func ...(params) ... {` at `at`: the parameter text and the body's braces.
+function goFuncBody(text, at) {
+  const m = text.slice(at, at + 400).match(/^func\s*(?:\([^)]*\)\s*)?(?:\w+\s*)?(?:\[[^\]]*\])?\(/);
+  if (!m) return null;
+  const po = at + m[0].length - 1;
+  const pc = matchClose(text, po);
+  for (let i = pc + 1; i < text.length && i < pc + 400; i++) {
+    if (text[i] === "{" && !/(?:interface|struct)\s*$/.test(text.slice(Math.max(0, i - 12), i))) {
+      return { params: text.slice(po + 1, pc), open: i, close: matchClose(text, i) };
+    }
+  }
+  return null;
+}
+
+// Every function and method of the Go files, by name; ServeHTTP methods by receiver type.
+const goIndexCache = new WeakMap();
+function goIndex(files) {
+  if (goIndexCache.has(files)) return goIndexCache.get(files);
+  const funcs = new Map();
+  const serve = new Map();
+  for (const f of files) {
+    if (!GO_RE.test(f.path) || NON_RUNTIME.test(f.path)) continue;
+    const lineAt = lineIndex(f.text);
+    for (const m of f.text.matchAll(/^func\s*(?:\(\s*\w*\s*\*?\s*([\w.]+)(?:\[[^\]]*\])?\s*\)\s*)?(\w+)\s*(?:\[[^\]]*\])?\(/gm)) {
+      const b = goFuncBody(f.text, m.index);
+      const def = { file: f.path, line: lineAt(m.index), at: m.index, name: m[2], params: b?.params ?? "" };
+      funcs.set(m[2], [...(funcs.get(m[2]) ?? []), def]);
+      if (m[2] === "ServeHTTP" && m[1]) serve.set(m[1].split(".").pop(), def);
+    }
+  }
+  const out = { funcs, serve };
+  goIndexCache.set(files, out);
+  return out;
+}
+
+function goFindFunc(index, name, near) {
+  const defs = index.funcs.get(name) ?? [];
+  const dirOf = (p) => (p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "");
+  return defs.find((d) => d.file === near) ?? defs.find((d) => dirOf(d.file) === dirOf(near)) ?? defs[0] ?? null;
+}
+
+// Peels handler wrappers off an expression: `requireAuth(h)`, `http.HandlerFunc(h)`, `http.StripPrefix(p, h)`,
+// curried `requireRole("admin")(h)`. A call to a function of the project counts as a wrapper only when that
+// function takes a handler; otherwise it is a handler factory (`handlers.List(db)`) and stays the handler.
+function goUnwrap(expr, index, near) {
+  const wrappers = [];
+  let e = expr.trim();
+  let strip = false;
+  for (let k = 0; k < 6; k++) {
+    const m = e.match(/^([A-Za-z_][\w.]*)\s*\(/);
+    if (!m) break;
+    const open = m[0].length - 1;
+    const close = matchClose(e, open);
+    const callee = m[1];
+    if (callee === "http.HandlerFunc" || callee === "http.Handler") { e = splitTopLevel(e.slice(open + 1, close))[0] ?? ""; continue; }
+    if (/^http\.(?:TimeoutHandler|MaxBytesHandler|AllowQuerySemicolons)$/.test(callee)) { e = splitTopLevel(e.slice(open + 1, close))[0] ?? ""; continue; }
+    if (callee === "http.StripPrefix") { strip = true; e = splitTopLevel(e.slice(open + 1, close))[1] ?? ""; continue; }
+    const def = goFindFunc(index, callee.split(".").pop(), near);
+    const takesHandler = def ? /http\.Handler(?:Func)?\b|\bfunc\s*\(|gin\.HandlerFunc|echo\.HandlerFunc|fiber\.Handler/.test(def.params) : GO_WRAPPER.test(callee.split(".").pop()) || GO_WRAPPER.test(callee);
+    if (!takesHandler) break;
+    if (close < e.length - 1 && e[close + 1] === "(" && matchClose(e, close + 1) === e.length - 1) {
+      wrappers.push(callee);
+      e = e.slice(close + 2, e.length - 1).trim();
+      continue;
+    }
+    if (close !== e.length - 1) break;
+    const args = splitTopLevel(e.slice(open + 1, close)).filter((a) => !/^["`]/.test(a));
+    if (!args.length) break;
+    wrappers.push(callee);
+    e = args[args.length - 1];
+  }
+  return { wrappers, inner: e, strip };
+}
+
+// The function a handler expression points at: { file, line, name } or null.
+function goHandlerOf(index, f, expr, at, lineAt) {
+  if (/^func\s*\(/.test(expr)) return { file: f.path, line: lineAt(at), name: "func literal" };
+  const t = expr.match(/^&?([\w.]+)\s*\{/);
+  if (t) {
+    const d = index.serve.get(t[1].split(".").pop());
+    return d ? { file: d.file, line: d.line, name: `${t[1].split(".").pop()}.ServeHTTP` } : null;
+  }
+  const n = expr.match(/^([\w.]+)\s*(?:\(|$)/);
+  if (!n) return null;
+  const name = n[1].split(".").pop();
+  const d = goFindFunc(index, name, f.path);
+  return d ? { file: d.file, line: d.line, name } : null;
+}
+
+export function goBlockAt(files, h) {
+  const f = files.find((x) => x.path === h.file);
+  if (!f) return null;
+  let start = 0;
+  for (let n = 1; n < h.line && start >= 0; n++) start = f.text.indexOf("\n", start) + 1;
+  const at = f.text.indexOf("func", start);
+  const b = at < 0 ? null : goFuncBody(f.text, at);
+  return b ? { file: f.path, line: h.line, body: f.text.slice(at, Math.min(b.close + 1, at + 8000)) } : null;
+}
+
+// One Go file: routers, groups, middleware and routes. `mounts` maps a function name to the prefix and
+// middleware of the router passed to it (from the previous pass over all files).
+function goAnalyze(f, mounts, index) {
+  const { text } = f;
+  const lineAt = lineIndex(text);
+  const imports = Object.keys(GO_IMPORTS).filter((k) => GO_IMPORTS[k].test(text));
+  const funcs = [];
+  for (const m of text.matchAll(/^func\s*(?:\([^)]*\)\s*)?(\w+)\s*(?:\[[^\]]*\])?\(/gm)) {
+    const b = goFuncBody(text, m.index);
+    if (b) funcs.push({ name: m[1], ...b });
+  }
+  const ranges = funcs.map((fn) => [fn.open, fn.close]);
+  const scopeAt = (i) => ranges.filter(([a, b]) => a <= i && i <= b).sort((x, y) => x[1] - x[0] - (y[1] - y[0]))[0] ?? [0, text.length];
+  const fnAt = (i) => funcs.find((fn) => fn.open <= i && i <= fn.close);
+  const defs = [];
+  const uses = [];
+  const DEFAULT = { name: "http", kind: "nethttp", parent: null, ownPrefix: "", ownMw: [], at: 0, scope: [0, text.length] };
+  const lookup = (name, i) => (name === "http" || name === "http.DefaultServeMux" ? DEFAULT : defs
+    .filter((d) => d.name === name && d.scope[0] <= i && i <= d.scope[1] && d.at <= i)
+    .sort((a, b) => a.scope[1] - a.scope[0] - (b.scope[1] - b.scope[0]) || b.at - a.at)[0] ?? null);
+  const base = (d, depth) => {
+    if (d.mountedBy && depth < 8) return { prefix: joinPath(prefixOf(d.mountedBy.parent, depth + 1), d.mountedBy.prefix), mw: [...effMw(d.mountedBy.parent, d.mountedBy.at, depth + 1), ...d.mountedBy.mw] };
+    return { prefix: d.rootPrefix ?? "", mw: [...(d.serverMw ?? []), ...(d.rootMw ?? [])] };
+  };
+  const prefixOf = (d, depth = 0) => joinPath(d.parent && depth < 8 ? prefixOf(d.parent, depth + 1) : base(d, depth).prefix, d.ownPrefix);
+  const effMw = (d, i, depth = 0) => [
+    ...(d.parent && depth < 8 ? effMw(d.parent, d.at, depth + 1) : base(d, depth).mw),
+    ...d.ownMw,
+    ...uses.filter((u) => u.def === d && (u.at < i || (d.kind === "echo" && !d.parent))).flatMap((u) => u.names),
+  ];
+  const mwNames = (parts) => parts.map((p) => goMwName(p.s ?? p)).filter(Boolean);
+  const inferKind = (verb) => {
+    const has = (k) => imports.includes(k);
+    if (verb === "Group") return has("gin") ? "gin" : has("echo") ? "echo" : has("fiber") ? "fiber" : null;
+    if (GO_UPPER.test(verb)) return has("gin") ? "gin" : has("echo") ? "echo" : null;
+    if (/^Method(?:Func)?$/.test(verb)) return has("chi") ? "chi" : null;
+    if (/^Handle(?:Func)?$/.test(verb)) return has("gorilla") ? "gorilla" : has("chi") ? "chi" : has("gin") && verb === "Handle" ? "gin" : has("nethttp") ? "nethttp" : null;
+    return has("chi") ? "chi" : has("fiber") ? "fiber" : null;
+  };
+  const parentOr = (name, i, verb) => lookup(name, i) ?? (inferKind(verb) ? { name, kind: inferKind(verb), parent: null, ownPrefix: "", ownMw: [], at: 0, scope: [0, text.length] } : null);
+
+  // Events in source order: routers, groups, closures, parameters, Use.
+  const ev = [];
+  for (const m of text.matchAll(/(\w+)\s*:?=\s*&?(chi\.NewRouter|chi\.NewMux|http\.NewServeMux|gin\.Default|gin\.New|echo\.New|mux\.NewRouter|fiber\.New)\(/g)) ev.push({ at: m.index, run: () => {
+    const fn = fnAt(m.index);
+    const mount = fn && mounts.get(fn.name);
+    const first = mount && !defs.some((d) => d.ctorIn === fn.name);
+    defs.push({ name: m[1], kind: GO_CTOR[m[2]], parent: null, ownPrefix: "", ownMw: [], at: m.index, scope: scopeAt(m.index), ctorIn: fn?.name, ...(first ? { rootPrefix: mount.prefix, rootMw: mount.mw } : {}) });
+  } });
+  for (const m of text.matchAll(new RegExp(`(\\w+)\\s*:?=\\s*(${GO_RECV})\\.(Group|With)\\(`, "g"))) ev.push({ at: m.index, run: () => {
+    const p = parentOr(m[2], m.index, m[3] === "With" ? "Get" : "Group");
+    if (!p) return;
+    const { parts } = goArgs(text, m.index + m[0].length - 1);
+    const grp = m[3] === "Group" && goStr(parts[0]?.s) != null;
+    if (m[3] === "Group" && !grp) return;
+    defs.push({ name: m[1], kind: p.kind, parent: p, ownPrefix: grp ? goStr(parts[0].s) : "", ownMw: mwNames(grp ? parts.slice(1) : parts), at: m.index, scope: scopeAt(m.index) });
+  } });
+  for (const m of text.matchAll(new RegExp(`(\\w+)\\s*:?=\\s*(${GO_RECV})\\.(?:PathPrefix\\(\\s*("[^"]*")\\s*\\)|Host\\([^)]*\\))\\.Subrouter\\(\\)`, "g"))) ev.push({ at: m.index, run: () => {
+    const p = parentOr(m[2], m.index, "HandleFunc");
+    if (p) defs.push({ name: m[1], kind: p.kind, parent: p, ownPrefix: goStr(m[3]) ?? "", ownMw: [], at: m.index, scope: scopeAt(m.index) });
+  } });
+  for (const m of text.matchAll(new RegExp(`(${GO_RECV})\\.(Route|Group)\\(\\s*(?:("[^"]*")\\s*,\\s*)?func\\s*\\(\\s*(\\w+)\\s+\\*?(?:chi|fiber)\\.Router\\s*\\)\\s*\\{`, "g"))) ev.push({ at: m.index, run: () => {
+    const p = parentOr(m[1], m.index, "Get");
+    const open = m.index + m[0].length - 1;
+    if (p) defs.push({ name: m[4], kind: p.kind, parent: p, ownPrefix: goStr(m[3]) ?? "", ownMw: [], at: open, scope: [open, matchClose(text, open)] });
+  } });
+  for (const fn of funcs) {
+    for (const m of fn.params.matchAll(GO_PARAM_TYPE)) {
+      const kind = GO_PARAM_KIND[m[2]];
+      if (m[2] === "http" && m[3] !== "ServeMux") continue;
+      ev.push({ at: fn.open, run: () => {
+        const mount = mounts.get(fn.name);
+        defs.push({ name: m[1], kind, parent: null, ownPrefix: "", ownMw: [], at: fn.open, scope: [fn.open, fn.close], ...(mount ? { rootPrefix: mount.prefix, rootMw: mount.mw } : {}) });
+      } });
+    }
+  }
+  for (const m of text.matchAll(new RegExp(`(?<![\\w.])(${GO_RECV})\\.Use\\(`, "g"))) ev.push({ at: m.index, run: () => {
+    const d = lookup(m[1], m.index);
+    if (d) uses.push({ def: d, at: m.index, names: mwNames(goArgs(text, m.index + m[0].length - 1).parts) });
+  } });
+  ev.sort((a, b) => a.at - b.at).forEach((x) => x.run());
+
+  // Mounts inside the file: chi/fiber Mount, gorilla PathPrefix(...).Handler(x), a wrapped server handler.
+  const out = { routes: [], mounts: [] };
+  const mountTo = (parent, at, prefix, mw, expr) => {
+    const u = goUnwrap(expr, index, f.path);
+    const target = /^\w+$/.test(u.inner) ? lookup(u.inner, at) : null;
+    if (target && target !== parent) { target.mountedBy = { parent, at, prefix, mw: [...mw, ...u.wrappers] }; return true; }
+    const call = u.inner.match(/^([\w.]+)\s*\(/);
+    if (call) out.mounts.push({ fn: call[1].split(".").pop(), lazy: () => ({ prefix: joinPath(prefixOf(parent), prefix), mw: [...effMw(parent, at), ...mw, ...u.wrappers] }) });
+    return Boolean(call);
+  };
+  for (const m of text.matchAll(new RegExp(`(?<![\\w.])(${GO_RECV})\\.Mount\\(`, "g"))) {
+    const p = lookup(m[1], m.index);
+    const { parts } = goArgs(text, m.index + m[0].length - 1);
+    if (p && parts.length === 2 && goStr(parts[0].s) != null) mountTo(p, m.index, goStr(parts[0].s), [], parts[1].s);
+  }
+  for (const m of text.matchAll(new RegExp(`(?<![\\w.])(${GO_RECV})\\.PathPrefix\\(\\s*("[^"]*")\\s*\\)\\.Handler\\(`, "g"))) {
+    const p = lookup(m[1], m.index);
+    const { parts } = goArgs(text, m.index + m[0].length - 1);
+    if (p && parts[0]) mountTo(p, m.index, goStr(m[2]), [], parts[0].s);
+  }
+  const serverWrap = (expr, at) => {
+    const u = goUnwrap(expr, index, f.path);
+    const d = u.inner === "nil" ? DEFAULT : /^[\w.]+$/.test(u.inner) ? lookup(u.inner, at) : null;
+    if (d && u.wrappers.length) d.serverMw = [...(d.serverMw ?? []), ...u.wrappers];
+  };
+  for (const m of text.matchAll(/\b(?:http\.)?ListenAndServe(?:TLS)?\(/g)) {
+    const { parts } = goArgs(text, m.index + m[0].length - 1);
+    if (parts.length >= 2) serverWrap(parts[parts.length - 1].s, m.index);
+  }
+  for (const m of text.matchAll(/\bHandler\s*:\s*/g)) {
+    const from = m.index + m[0].length;
+    serverWrap(text.slice(from, scan(text, from, (c, depth, i) => (depth < 0 || (depth === 0 && (c === "," || c === "\n")) ? i : undefined))), m.index);
+  }
+
+  // Routes.
+  for (const m of text.matchAll(GO_ROUTE_RE)) {
+    const [, recv, withChain, verb] = m;
+    if (recv === "http" && !/^Handle(?:Func)?$/.test(verb)) continue;
+    const d = lookup(recv, m.index);
+    const kind = d?.kind ?? inferKind(verb);
+    if (!kind || !GO_VERB_OK[kind](verb)) continue;
+    const { close, parts } = goArgs(text, m.index + m[0].length - 1);
+    let method = null;
+    let i0 = 0;
+    if (/^(?:Handle|Method|MethodFunc)$/.test(verb) && parts.length >= 3 && /^[A-Z]+$/.test(goStr(parts[0].s) ?? "")) { method = goStr(parts[0].s); i0 = 1; }
+    let route = goStr(parts[i0]?.s);
+    if (route == null) continue;
+    const mm = route.match(/^([A-Z]+)\s+(\S+)$/);
+    if (mm) { method = mm[1]; route = mm[2]; }
+    if (!route.startsWith("/") && !/^[\w.-]+\//.test(route)) continue;
+    const rest = parts.slice(i0 + 1);
+    if (!rest.length) continue;
+    const [h, inline] = kind === "echo" ? [rest[0], rest.slice(1)] : [rest[rest.length - 1], rest.slice(0, -1)];
+    const u = goUnwrap(h.s, index, f.path);
+    if (d && /^Handle(?:Func)?$/.test(verb) && (/^\w+$/.test(u.inner) && lookup(u.inner, m.index) && lookup(u.inner, m.index) !== d || u.strip && /^[\w.]+\s*\(/.test(u.inner))) {
+      mountTo(d, m.index, u.strip ? route : "", [], h.s);
+      continue;
+    }
+    const withMw = [...withChain.matchAll(/\.With\(((?:[^()]|\([^()]*\))*)\)/g)].flatMap((w) => mwNames(splitTopLevel(w[1])));
+    const chained = text.slice(close + 1, close + 300).match(/^(?:\s*\.\s*\w+\((?:[^()]|\([^()]*\))*\))*?\s*\.\s*Methods\(([^)]*)\)/);
+    const name = method ?? (chained ? quoted(chained[1]).map((x) => x.toUpperCase()).join(",") : /^(?:All|Any|Handle|HandleFunc)$/.test(verb) ? "ANY" : verb.toUpperCase());
+    const innerAt = h.at + h.s.lastIndexOf(u.inner);
+    out.routes.push({
+      kind, name, routeLazy: () => joinPath(d ? prefixOf(d) : "", route), file: f.path, line: lineAt(m.index),
+      mwLazy: () => [...(d ? effMw(d, m.index) : []), ...withMw, ...mwNames(inline), ...u.wrappers],
+      goHandler: goHandlerOf(index, f, u.inner, innerAt, lineAt),
+    });
+  }
+
+  // A router passed to another function (`routes.Register(api)`): that function's router parameter gets
+  // this router's prefix and middleware.
+  for (const m of text.matchAll(/(?<![\w.])([A-Za-z_]\w*(?:\.\w+)*)\s*\(/g)) {
+    const fn = m[1].split(".").pop();
+    if (GO_NOT_MOUNT.has(fn) || /^(?:func|if|for|switch|return|go|defer|make|len|append|panic)$/.test(m[1])) continue;
+    const { parts } = goArgs(text, m.index + m[0].length - 1);
+    for (const p of parts) {
+      const d = /^\w+$/.test(p.s) ? lookup(p.s, m.index) : null;
+      if (d && d !== DEFAULT) { out.mounts.push({ fn, lazy: () => ({ prefix: prefixOf(d), mw: effMw(d, m.index) }) }); break; }
+    }
+  }
+  return out;
+}
+
+const goRoutesCache = new WeakMap();
+// Every Go route of the project, with its middleware and handler.
+export function scanGoRoutes(files) {
+  if (goRoutesCache.has(files)) return goRoutesCache.get(files);
+  const index = goIndex(files);
+  const go = files.filter((f) => GO_RE.test(f.path) && !NON_RUNTIME.test(f.path) && Object.values(GO_IMPORTS).some((re) => re.test(f.text)));
+  let mounts = new Map();
+  let res = [];
+  // Three passes: a router can be handed down through two functions before routes are added to it.
+  for (let pass = 0; pass < 3; pass++) {
+    res = go.map((f) => goAnalyze(f, mounts, index));
+    const next = new Map();
+    for (const r of res) for (const m of r.mounts) if (!next.has(m.fn)) next.set(m.fn, m.lazy());
+    mounts = next;
+  }
+  const out = res.flatMap((r) => r.routes).map(({ kind, name, routeLazy, mwLazy, goHandler, ...e }) => {
+    const middleware = [...new Set(mwLazy())];
+    const auth = middleware.filter((n) => GO_AUTH_MW.test(n) && !GO_NOT_AUTH_MW.test(n));
+    const body = goHandler ? goBlockAt(files, goHandler)?.body ?? "" : "";
+    const guard = [auth.length ? `middleware: ${auth.join(", ")}` : "", GO_VIEW_CHECK.test(body) ? "401/403 check in the handler" : ""].filter(Boolean).join("; ");
+    return { kind: `${kind}-route`, name, route: routeLazy(), ...e, guard, ...(middleware.length ? { middleware } : {}), goHandler };
+  });
+  goRoutesCache.set(files, out);
+  return out;
+}
+
 // ---------------------------------------------------------------- Drizzle scope scan
 
 // Access-scope columns are checked on every verb. Authorship columns only on update/delete: editing
@@ -818,7 +1180,7 @@ function pyModelFields(files, name, depth = 0) {
 const OWNER_RE = /^(?:user|owner|org|organization|workspace|tenant|team|account)(?:_?id)?$/i;
 const AUTHOR_RE = /^(?:(?:author|creator)(?:_?id)?|(?:created|uploaded|owned)_?by)$/i;
 const TABLE_RE = /(?:export\s+)?const\s+(\w+)\s*=\s*(\w*[Tt]able)\s*\(\s*["'`]([\w.-]+)["'`]\s*,\s*(?:\(\s*\w*\s*\)\s*=>\s*\(\s*)?\{/g;
-export const NON_RUNTIME = /(^|\/)(__tests__|tests?|e2e|migrations?|drizzle|seeds?|fixtures)\/|\.(test|spec)\.[cm]?[jt]sx?$|(^|\/)seed[^/]*$|(^|\/)(?:test_[^/]*|[^/]*_test|conftest)\.py$/;
+export const NON_RUNTIME = /(^|\/)(__tests__|tests?|e2e|migrations?|drizzle|seeds?|fixtures)\/|\.(test|spec)\.[cm]?[jt]sx?$|(^|\/)seed[^/]*$|(^|\/)(?:test_[^/]*|[^/]*_test|conftest)\.py$|_test\.go$|(^|\/)testdata\//;
 
 // `schemaSource` lets a monorepo package audit read table definitions from the workspace root.
 export function scanScope(files, schemaSource = files) {
@@ -930,7 +1292,7 @@ export const AREAS = {
   ai: /(chat|assistant|\bai\b|llm|agent|completion|prompt|\btools?\b|\bmcp\b)/i,
 };
 const AREA_WEIGHT = { auth: 3, admin: 3, webhooks: 3, payments: 2, files: 2, ai: 2, jobs: 1, api: 0 };
-const KIND_WEIGHT = { "server-action": [2, "callable directly as a POST"], webhook: [2, "public by design"], "ai-tool": [2, "arguments chosen by the model"], job: [1, "trusts its payload"], cron: [1, ""], "route-handler": [1, ""], "api-route": [1, ""], "http-route": [1, ""], "http-path": [1, ""], "http-prefix": [1, ""], trpc: [1, ""], "edge-function": [2, "public HTTPS endpoint"], "cloud-function": [2, "callable by any client of the project"], "laravel-route": [1, ""], "symfony-route": [1, ""], "drupal-route": [1, ""], "django-route": [1, ""], "fastapi-route": [1, ""], "flask-route": [1, ""] };
+const KIND_WEIGHT = { "server-action": [2, "callable directly as a POST"], webhook: [2, "public by design"], "ai-tool": [2, "arguments chosen by the model"], job: [1, "trusts its payload"], cron: [1, ""], "route-handler": [1, ""], "api-route": [1, ""], "http-route": [1, ""], "http-path": [1, ""], "http-prefix": [1, ""], trpc: [1, ""], "edge-function": [2, "public HTTPS endpoint"], "cloud-function": [2, "callable by any client of the project"], "laravel-route": [1, ""], "symfony-route": [1, ""], "drupal-route": [1, ""], "django-route": [1, ""], "fastapi-route": [1, ""], "flask-route": [1, ""], ...Object.fromEntries([...GO_KINDS].map((k) => [k, [1, ""]])) };
 const SINKS = [
   [/\b(?:fetch|axios(?:\.\w+)?|got|ky)\(\s*(?!["'`](?:https?:\/\/[\w.-]+[\/"'`?:]|\/))[^)\s]/, 3, "outbound request to a non-constant URL (SSRF)"],
   [/\{[^}]*\b(?:userId|user_id|ownerId|owner_id|orgId|org_id|tenantId|tenant_id)\b[^}]*\}\s*=\s*(?:await\s+)?(?:req|request|c\.req)\.json\(\)/, 3, "tenant/user id taken from the request body"],
@@ -965,6 +1327,12 @@ const SINKS = [
   [/\b(?:requests|httpx)\.(?:get|post|put|patch|delete|head|request|stream)\(\s*(?!["']https?:\/\/)(?:\w+\.)*\w*(?:url|uri|callback|webhook|target|endpoint)\w*/i, 3, "outbound request to a URL from the request (SSRF)"],
   [/\*\*request\.(?:data|POST|GET|json|form|args)\b|\*\*request\.get_json\(\)/, 3, "request data unpacked into a model (mass assignment)"],
   [/\bsubprocess\.\w+\([^)\n]*shell\s*=\s*True|\bos\.(?:system|popen)\(/, 3, "shell/process execution"],
+  // Go (roadmap R09)
+  [/^(?![\s\S]*(?:strings\.HasPrefix\(|filepath\.Rel\(|filepath\.IsLocal\(|\.OpenInRoot\(|os\.OpenRoot\())[\s\S]*filepath\.Join\([^)\n]*(?:\.URL\.|\.FormValue\(|\.PathValue\(|URLParam\(|\.Param\(|\.Params\(|\.Query\(|mux\.Vars\(|\.Filename\b|\b(?:name|filename|file|path|p)\b)/, 3, "file path joined from request data with no prefix check after Clean (path traversal)"],
+  [/\bhttp\.ServeFile\(\s*\w+\s*,\s*\w+\s*,\s*(?!["`])/, 2, "http.ServeFile with a computed path (it checks r.URL.Path for .., not this argument)"],
+  [/\bexec\.Command(?:Context)?\(/, 3, "process execution (os/exec)"],
+  [/fmt\.Sprintf\(\s*["`](?:SELECT|INSERT|UPDATE|DELETE|WITH|select|insert|update|delete|with)\b[^"`]*%[sv]|\.(?:Query|QueryRow|Exec|QueryContext|QueryRowContext|ExecContext|Raw|Where|Order|Select|Get)\(\s*(?:ctx\s*,\s*)?(?:"[^"\n]*"\s*\+|fmt\.Sprintf\()/, 3, "SQL built with fmt.Sprintf or + (database/sql, sqlx, GORM Raw/Where)"],
+  [/^(?![\s\S]*MaxBytesReader)[\s\S]*\b(?:ioutil|io)\.ReadAll\(\s*[\w.]*Body\b/, 2, "request body read whole without http.MaxBytesReader (memory)"],
 ];
 // A record loaded by id, and nothing in the handler that ties it to the caller.
 const PHP_ID_LOAD = /::(?:find|findOrFail)\(\s*\$|->(?:find|findOrFail)\(\s*\$|\bWHERE\s+id\s*=\s*:id\b/i;
@@ -974,6 +1342,10 @@ const PHP_OWNER = /authorize\(|Gate::|->user\(\)|currentUser\(\)|abort_unless|ab
 const PY_ID_LOAD = /get_object_or_404\((?:[^()]|\([^()]*\))*\b(?:pk|id)\s*=|\.objects(?:\.\w+\((?:[^()]|\([^()]*\))*\))*\.get\(\s*(?:pk|id)\s*=|\bget_or_404\(|\.query\.get\(|\b(?:db|session|self\.db|db\.session)\.get\(\s*[A-Z]\w*\s*,|\.where\(\s*[A-Z]\w*\.id\s*==|\.filter(?:_by)?\(\s*(?:[A-Z]\w*\.)?id\s*==?/;
 const PY_OWNER = /\brequest\.user\b|\bcurrent_user\b|\buser\.(?:id|pk|\w+_id)\b|\b(?:owner|patient|user|author|customer|account|tenant)(?:_id)?\s*=\s*(?:self\.)?(?:request\.user|user\b|current_user)|\.(?:user|owner|patient|customer|tenant|account|author)_id\s*==|\bhas_perm\(|has_object_permission|check_object_permissions/;
 const PY_MODEL_USE = /\b([A-Z]\w*)\.objects\b|get_object_or_404\(\s*([A-Z]\w*)\b|\bselect\(\s*([A-Z]\w*)\b|\.get(?:_or_404)?\(\s*([A-Z]\w*)\s*,|\.query\(\s*([A-Z]\w*)\b|\b([A-Z]\w*)\.query\./g;
+// Go routes (roadmap R09): an id taken from the path or query and a record load, with no owner in the handler.
+const GO_ID_PARAM = /(?:URLParam\(\s*\w+\s*,|\.Param\(|\.Params\(|mux\.Vars\(\s*\w+\s*\)\[|\.PathValue\(|\.Query\(\)\.Get\(|\.Query\(|\.FormValue\()\s*"(?:id|\w*_id|\w*ID|\w*Id)"/;
+const GO_LOAD = /\.(?:First|Find|Take|Get|GetByID|FindByID|FindOne|QueryRow(?:Context)?|Query(?:Context)?)\(/;
+const GO_OWNER = /\b(?:[Uu]ser|[Oo]wner|[Tt]enant|[Aa]ccount|[Oo]rg|[Cc]ustomer|[Aa]uthor)_?(?:ID|Id|id)\b|\bcurrent_?[Uu]ser\b|\bCurrentUser\b|\bclaims\.\w+|\b\w*[Uu]serFrom\w*\(|\b[Aa]uthorize\w*\(|\b[Cc]an\w*\(/;
 const SENSITIVE_FIELD = /password|passwd|secret|token|hash|totp|otp|api_?key|private|ssn/i;
 const PUBLIC_PAGE = /\b(?:log-?in|log-?out|sign-?in|sign-?up|register|password[-_]reset|forgot)\b/i;
 const PY_NO_AUTH = {
@@ -1004,6 +1376,18 @@ function pyRouteSignals(e, body, files) {
   }
   return out;
 }
+// [points, reason] pairs for one Go route; 0 points means a note without weight.
+function goRouteSignals(e, body) {
+  const out = [];
+  const signed = SIGNATURE.test(body) || /\bhmac\.Equal\(|subtle\.ConstantTimeCompare\(/.test(body);
+  if (!e.guard) {
+    if (signed) out.push([0, "no auth middleware on the route; signature check seen in the handler"]);
+    else if (PUBLIC_PAGE.test(`${e.route} ${e.goHandler?.name ?? ""}`)) out.push([0, "sign-in page: public by design"]);
+    else out.push([3, "no auth middleware on the route, its group or its router, and no 401/403 check in the handler"]);
+  }
+  if (!signed && GO_ID_PARAM.test(body) && GO_LOAD.test(body) && !GO_OWNER.test(body)) out.push([3, "record loaded by an id from the request without an ownership check"]);
+  return out;
+}
 const STATE_CHANGE_PATH = /\/(?:delete|remove|close|cancel|approve|reject|publish|unpublish|toggle|reopen|enable|disable|block|unblock|confirm|archive)\b/;
 const DISPATCH = /\b(?:handle|toNextJsHandler|fetchRequestHandler|createRouteHandler|createNextRouteHandler)\(/;
 const SIGNATURE = /constructEvent|\.verify\(|svix|signature|timingSafeEqual|createHmac|verifyWebhook/i;
@@ -1012,7 +1396,7 @@ const PUBLIC_BY_DESIGN = /PUBLISHABLE|POSTHOG|SENTRY|ANALYTICS|_GA_|GTM|MAPBOX|A
 const PRIVILEGED_CLIENT = /SERVICE_ROLE_KEY|service_role|from\s+["'`]firebase-admin|require\(\s*["'`]firebase-admin/;
 
 export function areasOf(e) {
-  const hay = `${e.route} ${e.name} ${e.file}${e.phpHandler ? ` ${e.phpHandler.cls} ${e.phpHandler.method}` : ""}${e.pyHandler ? ` ${e.pyHandler.name}` : ""}`;
+  const hay = `${e.route} ${e.name} ${e.file}${e.phpHandler ? ` ${e.phpHandler.cls} ${e.phpHandler.method}` : ""}${e.pyHandler ? ` ${e.pyHandler.name}` : ""}${e.goHandler ? ` ${e.goHandler.name}` : ""}`;
   const areas = Object.keys(AREAS).filter((a) => AREAS[a].test(hay));
   if (e.kind === "ai-tool") areas.push("ai");
   if (e.kind === "job" || e.kind === "cron") areas.push("jobs");
@@ -1076,6 +1460,9 @@ export function rankHotspots(files, entries, scope = { sites: [] }) {
     // Python routes: rank the view function or class the route resolves to.
     const py = e.pyHandler ? pyBlockAt(files, e.pyHandler) : null;
     if (py) body = py.body;
+    // Go routes: rank the handler function (or func literal) the route registers.
+    const go = e.goHandler ? goBlockAt(files, e.goHandler) : null;
+    if (go) body = go.body;
     let score = 0;
     const reasons = [];
     const add = (n, why) => { if (n) { score += n; if (why) reasons.push(why); } };
@@ -1113,6 +1500,8 @@ export function rankHotspots(files, entries, scope = { sites: [] }) {
       if (PHP_ID_LOAD.test(body) && !PHP_OWNER.test(body)) add(3, "record loaded by id without an ownership or policy check");
     } else if (PY_KINDS.has(e.kind)) {
       for (const [n, why] of pyRouteSignals(e, body, files)) if (n) add(n, why); else reasons.push(why);
+    } else if (GO_KINDS.has(e.kind)) {
+      for (const [n, why] of goRouteSignals(e, body)) if (n) add(n, why); else reasons.push(why);
     } else if (["server-action", "route-handler", "api-route"].includes(e.kind) && !e.guard) {
       add(3, "no auth check in the handler");
     } else if (["http-route", "http-path", "http-prefix"].includes(e.kind) && !e.guard) {
@@ -1130,6 +1519,7 @@ export function rankHotspots(files, entries, scope = { sites: [] }) {
     if (job) reasons.push(`handler: ${job.file}:${job.line}`);
     if (php) reasons.push(`handler: ${php.file}:${php.line}`);
     if (py && py.file !== e.file) reasons.push(`handler: ${py.file}:${py.line}`);
+    if (go && go.file !== e.file) reasons.push(`handler: ${go.file}:${go.line}`);
     out.push({ score, kind: e.kind, name: e.name, route: e.route, file: e.file, line: e.line, areas: uniq, reasons });
   }
 
@@ -1170,6 +1560,7 @@ export function rankHotspots(files, entries, scope = { sites: [] }) {
   }
   for (const r of scanPhpFiles(files)) out.push(r);
   for (const r of scanPyFiles(files)) out.push(r);
+  for (const r of scanGoFiles(files)) out.push(r);
   for (const p of scanPolicies(files)) {
     out.push({ score: p.score, kind: "policy", name: p.name, route: "", file: p.file, line: p.line, areas: ["auth", "config"], reasons: p.reasons });
   }
@@ -1286,6 +1677,78 @@ export function scanPyFiles(files) {
 export function pythonToolStatus(files) {
   if (!files.some((f) => PY_RE.test(f.path) && !NON_RUNTIME.test(f.path))) return null;
   return "NOT RUN: the pre-pass has no bandit runner yet (roadmap R07). bandit only parses the code, it never imports or runs it, so it is safe to run: `pipx run bandit -r . -f json -o .security-audit/tools/bandit.json -x ./.venv,./node_modules,./tests`; B608 (SQL built from strings), B201 (Flask debug), B301/B506 (pickle, yaml.load), B602/B605 (shell), B105/B106 (hardcoded secrets), B310 (urlopen) and B703/B308 (mark_safe) results are candidates for the auditors";
+}
+
+// ---------------------------------------------------------------- Go file signals (roadmap R09)
+
+// Lines that decide TLS, randomness, timeouts, escaping, CORS and token checks for everything behind them:
+// InsecureSkipVerify, math/rand next to tokens or secrets, servers without timeouts, text/template for
+// HTML, template.HTML casts on dynamic content, a FileServer on the working directory, archive entry names
+// joined into paths, package-level maps written without a lock, CORS that allows any origin with
+// credentials, jwt.Parse without an algorithm check and errors of security checks thrown away.
+// ponytail: regex per line or per file. Each row is a candidate to verify.
+const GO_TOKENISH = /\b\w*(?:[Tt]oken|[Ss]ecret|[Nn]once|[Oo]tp|OTP|[Pp]assword|[Ss]alt|[Ss]ession|[Aa]pi[Kk]ey|[Rr]eset|[Cc]ode)\w*\b/;
+export function scanGoFiles(files) {
+  const rows = [];
+  const row = (f, line, kind, score, why) => rows.push({ score, kind, name: basename(f.path), route: "", file: f.path, line, areas: ["config"], reasons: [why] });
+  for (const f of files) {
+    if (!GO_RE.test(f.path) || NON_RUNTIME.test(f.path)) continue;
+    const t = f.text;
+    const lineAt = lineIndex(t);
+    const lines = t.split("\n");
+    const httpFile = /"net\/http"|"github\.com\/(?:go-chi|gin-gonic|labstack|gorilla|gofiber)\//.test(t);
+    const randAlias = t.match(/^\s*(?:import\s+)?(\w+\s+)?"math\/rand(?:\/v2)?"/m);
+    const rand = randAlias ? (randAlias[1]?.trim() || "rand") : null;
+    const guarded = /strings\.HasPrefix\(|filepath\.Rel\(|filepath\.IsLocal\(|\.OpenInRoot\(|os\.OpenRoot\(/.test(t);
+    lines.forEach((l, i) => {
+      if (/^\s*\/\//.test(l)) return;
+      if (/\bInsecureSkipVerify\s*:\s*true\b/.test(l)) row(f, i + 1, "config", 4, "TLS certificate verification turned off (InsecureSkipVerify: true)");
+      if (rand && new RegExp(`\\b${rand}\\.(?:Int\\w*|Uint\\w*|Read|N|Perm|Shuffle|Float\\w*)\\(`).test(l) && GO_TOKENISH.test(lines.slice(Math.max(0, i - 3), i + 4).join("\n"))) {
+        row(f, i + 1, "code", 3, "math/rand used for a token, code or secret (predictable; crypto/rand is not)");
+      }
+      if (/\bhttp\.ListenAndServe(?:TLS)?\(/.test(l)) row(f, i + 1, "config", 2, "http.ListenAndServe runs a server without read or write timeouts (slow clients hold connections)");
+      if (/\btemplate\.(?:HTML|JS|URL|HTMLAttr|CSS)\(\s*(?!["`][^"`]*["`]\s*\))/.test(l)) row(f, i + 1, "template", 3, "template.HTML (or JS/URL) on dynamic content skips html/template escaping");
+      if (/\bhttp\.FileServer\(\s*http\.Dir\(\s*"\.?\/?"\s*\)/.test(l)) row(f, i + 1, "config", 3, "FileServer serves the working directory (source, config and .env files)");
+      if (/^\s*(?:\w+\s*,\s*)?_\s*:?=\s*(?:[\w.]+\.)?(?:jwt\.Parse(?:WithClaims)?|ParseSigned|Verify\w*|Validate\w*|CompareHashAndPassword|CheckPassword\w*|Authenticate\w*|Authorize\w*)\(/.test(l)
+        || /^\s*(?:[\w.]+\.)?(?:CompareHashAndPassword|Verify\w*|Validate\w*)\([^\n]*\)\s*$/.test(l)) {
+        row(f, i + 1, "code", 3, "error of a security check thrown away: the code goes on whatever it returns");
+      }
+    });
+    for (const m of t.matchAll(/(?:&|\b)http\.Server\s*\{/g)) {
+      const open = m.index + m[0].length - 1;
+      if (!/\bRead(?:Header)?Timeout\s*:/.test(t.slice(open, matchClose(t, open)))) row(f, lineAt(m.index), "config", 2, "http.Server without ReadHeaderTimeout/ReadTimeout (slow clients hold connections)");
+    }
+    if (/"text\/template"/.test(t) && !/"html\/template"/.test(t) && (httpFile || /\.Execute(?:Template)?\(\s*w\b/.test(t))) {
+      row(f, lineAt(t.indexOf('"text/template"')), "template", 3, "text/template renders HTML without escaping (html/template escapes)");
+    }
+    if (/"archive\/(?:zip|tar)"/.test(t) && !guarded) {
+      for (const m of t.matchAll(/filepath\.Join\([^)\n]*\.Name\b/g)) row(f, lineAt(m.index), "code", 3, "archive entry name joined into a path without a prefix check (zip slip)");
+    }
+    // Package-level maps written from code that runs concurrently (handlers, goroutines), with no lock.
+    if ((httpFile || /\bgo\s+(?:func\b|\w)/.test(t)) && !/sync\.(?:Mutex|RWMutex|Map)\b|\.Lock\(\)/.test(t)) {
+      const names = [...t.matchAll(/^var\s+(\w+)\s*(?:=\s*(?:make\()?|\s)map\[/gm)].map((m) => m[1]);
+      for (const block of t.matchAll(/^var\s*\(\n([\s\S]*?)^\)/gm)) names.push(...[...block[1].matchAll(/^\s+(\w+)\s*(?:=\s*(?:make\()?|\s+)map\[/gm)].map((m) => m[1]));
+      for (const n of names) {
+        const w = t.match(new RegExp(`\\b${n}\\[[^\\]\\n]+\\]\\s*(?:=|\\+\\+|--|\\+=|-=)(?!=)|\\bdelete\\(\\s*${n}\\s*,`));
+        if (w) row(f, lineAt(w.index), "code", 3, `package-level map ${n} written without a lock (handlers run concurrently: data race, fatal concurrent map writes)`);
+      }
+    }
+    // CORS that allows any origin with credentials (rs/cors, gin-contrib/cors, echo, fiber), or a hand-rolled echo of Origin.
+    for (const m of t.matchAll(/\b(?:cors\.(?:Options|Config)|CORSConfig)\s*\{/g)) {
+      const open = m.index + m[0].length - 1;
+      const block = t.slice(open, matchClose(t, open));
+      const any = /AllowedOrigins\s*:\s*\[\]string\{\s*"\*"|AllowOrigins\s*:\s*(?:\[\]string\{\s*)?"\*"|AllowAllOrigins\s*:\s*true|AllowOriginFunc\s*:\s*func\([^)]*\)\s*\(?bool[^{]*\{\s*return\s+true\b/.test(block);
+      if (any && /AllowCredentials\s*:\s*true/.test(block)) row(f, lineAt(m.index), "config", 6, "CORS allows any origin with credentials");
+    }
+    const echoOrigin = t.match(/"Access-Control-Allow-Origin"\s*,\s*[\w.]+\.(?:Header\.Get|Get)\(\s*"Origin"\s*\)/);
+    if (echoOrigin && /"Access-Control-Allow-Credentials"\s*,\s*"true"/.test(t)) row(f, lineAt(echoOrigin.index), "config", 6, "CORS echoes the request Origin with credentials");
+    // jwt.Parse whose key function never looks at the algorithm.
+    const parse = t.match(/\bjwt\.Parse(?:WithClaims)?\(/);
+    if (parse && !/\.Method\.\(\s*\*?jwt\.SigningMethod|\.Method\.Alg\(\)|\.Method\s*[!=]=|WithValidMethods\(|\.Header\["alg"\]/.test(t)) {
+      row(f, lineAt(parse.index), "code", 3, "jwt.Parse without an algorithm check (token.Method or jwt.WithValidMethods)");
+    }
+  }
+  return rows;
 }
 
 // ---------------------------------------------------------------- policy scan (Supabase, Firebase)

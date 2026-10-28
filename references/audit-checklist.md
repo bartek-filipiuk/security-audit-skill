@@ -371,3 +371,20 @@ Applies when `flask` is in `requirements*.txt` or `pyproject.toml`. Entry points
 - [ ] Debug (category `config`): `app.run(debug=True)`, `FLASK_DEBUG=1` and `app.config["DEBUG"] = True` never reach production; the Werkzeug debugger executes code
 - [ ] CSRF (category `config`): forms that change state use Flask-WTF `CSRFProtect` (or `SameSite=Lax/Strict` session cookies with no state change on GET)
 - [ ] Deserialization and YAML (category `injection`): `pickle.loads` of cookies or uploads, `yaml.load` without `SafeLoader`
+
+## Stack profile: Go
+
+Applies when the repo has `.go` files. Entry points are net/http `ServeMux` patterns (`HandleFunc`, `Handle`, Go 1.22 `"METHOD /path"`), chi, gin, echo, gorilla/mux and fiber routes; the pre-pass lists each with the middleware of the route, its group, its router and a wrapped server handler, and the handler it calls. Category `auth` unless noted.
+
+- [ ] Every non-public route sits behind an auth middleware (`r.Use(auth)` before the route, `Group("/api", auth)`, chi `With(auth)`, a wrapper such as `requireAuth(h)`) or checks the caller in the handler; `Use` placed after a route does not cover it, and a route added to the root router instead of the protected group is public
+- [ ] Object access: ids from `chi.URLParam`, `c.Param`, `mux.Vars`, `r.PathValue` or the query load records through a query that also filters on the caller's user or tenant id, or the handler compares the owner before returning or changing the record
+- [ ] Paths (category `upload`): `filepath.Join(base, userInput)` is followed by a check that the result stays under `base` (`filepath.IsLocal`, `filepath.Rel`, `strings.HasPrefix` after `filepath.Clean`, or `os.OpenRoot`); `http.ServeFile` gets such a checked path; archive extraction checks each entry name the same way (zip slip); no `http.FileServer(http.Dir("."))`
+- [ ] Commands and SQL (category `injection`): `exec.Command` takes a fixed program and arguments that cannot start with `-`, never `sh -c` with request data; SQL uses placeholders (`$1`, `?`), never `fmt.Sprintf` or `+` with request data; column and order names come from an allow-list
+- [ ] Templates (category `xss`): HTML is rendered with `html/template`, not `text/template`; `template.HTML`, `template.JS` and `template.URL` only wrap content the app built or sanitized
+- [ ] Errors: the error of every security check is handled and stops the request (`jwt.Parse`, signature and password checks, `Validate`); `x, _ :=` or `_ =` on such a call, or `if err != nil { log... }` without `return`, lets the request through
+- [ ] Tokens (category `crypto`): `jwt.Parse` checks the algorithm (`token.Method` type assertion or `jwt.WithValidMethods`) and reads claims only when `token.Valid`; tokens, reset codes, session ids and nonces come from `crypto/rand`, never `math/rand`
+- [ ] TLS and outbound calls (category `config`): no `InsecureSkipVerify: true` outside tests; URLs from the request passed to `http.Get` or a client are restricted to an allow-list (category `injection`)
+- [ ] Concurrency (category `concurrency`): package-level maps and shared struct fields written from handlers or goroutines are guarded by `sync.Mutex`/`sync.Map`; a check-then-act on balances or counts runs in one transaction or under a lock
+- [ ] Limits (category `rate-limit`): servers set `ReadHeaderTimeout` (or `ReadTimeout`) and `WriteTimeout` instead of bare `http.ListenAndServe`; request bodies are capped with `http.MaxBytesReader` before `io.ReadAll` or JSON decoding
+- [ ] CORS (category `config`): credentials are allowed only for an explicit origin list; no `"*"`, `AllowAllOrigins` or an echoed `Origin` header together with `AllowCredentials: true`
+- [ ] Dependencies (category `dependency`): `go.sum` scanned (osv-scanner); `govulncheck` shows which vulnerable symbols are actually called; a missing run is a coverage gap

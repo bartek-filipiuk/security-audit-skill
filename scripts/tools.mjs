@@ -5,6 +5,12 @@
 //   trivy     `trivy config`: misconfigurations in Dockerfiles, compose, Terraform, Kubernetes, Helm
 //   bandit    Python source outside tests (R06). Native only: it parses the code and never imports or runs
 //             it. No docker fallback, because there is no official image pinned here.
+//   gosec       Go source outside tests (R09). Native only, like bandit: it parses and type-checks the code
+//             and never runs it.
+//   govulncheck Go module dependencies with call reachability (R09). Native only. It reads the Go
+//             vulnerability database over the network, like osv-scanner.
+// Both Go tools load packages with the local toolchain: GOTOOLCHAIN=local, GOFLAGS=-mod=readonly and
+// GOPROXY=off keep them from downloading a toolchain or modules; missing modules make them fail, not fetch.
 // Psalm (PHP taint analysis) is deliberately not here: it loads the project's autoloader and plugins,
 // which executes the audited code (surface.mjs phpTaintStatus reports it NOT RUN with how to run it).
 // Each tool first decides whether it applies (no workflows = skipped, with the reason), then runs
@@ -36,6 +42,8 @@ const INSTALL = {
   hadolint: "`brew install hadolint` or the binary from its GitHub releases",
   trivy: "`brew install trivy` or the binary from its GitHub releases",
   bandit: "`pipx install bandit` (it only parses the code, it never imports or runs it)",
+  gosec: "`go install github.com/securego/gosec/v2/cmd/gosec@latest` or `brew install gosec` (it type-checks the code, it never runs it; needs the Go toolchain and the module cache)",
+  govulncheck: "`go install golang.org/x/vuln/cmd/govulncheck@latest` (needs the Go toolchain and the module cache)",
 };
 
 // ---------------------------------------------------------------- inventory and stack
@@ -46,7 +54,7 @@ const COMPOSE_RE = /^(?:docker-)?compose(?:\.[\w-]+)?\.ya?ml$/i;
 // One walk over the project for what the tools need: language counts (LANG_EXT from stack.mjs), Python
 // runtime files, workflows, infra files.
 export function inventory(root) {
-  const inv = { root, langs: {}, python: 0, workflows: [], dockerfiles: [], iac: [] };
+  const inv = { root, langs: {}, python: 0, go: 0, gomods: [], workflows: [], dockerfiles: [], iac: [] };
   (function rec(dir) {
     let names;
     try { names = readdirSync(dir); } catch { return; }
@@ -59,12 +67,15 @@ export function inventory(root) {
       const rel = relative(root, p).split(sep).join("/");
       for (const [lang, re] of Object.entries(LANG_EXT)) if (re.test(name)) inv.langs[lang] = (inv.langs[lang] ?? 0) + 1;
       if (LANG_EXT.python.test(name) && !NON_RUNTIME.test(rel)) inv.python++;
+      if (LANG_EXT.go.test(name) && !NON_RUNTIME.test(rel)) inv.go++;
+      if (name === "go.mod") inv.gomods.push(rel);
       if (/^\.github\/workflows\/[^/]+\.ya?ml$/.test(rel)) inv.workflows.push(rel);
       if (DOCKERFILE_RE.test(name)) inv.dockerfiles.push(rel);
       if (COMPOSE_RE.test(name) || /\.tf$/.test(name) || name === "Chart.yaml" || /^kustomization\.ya?ml$/.test(name)) inv.iac.push(rel);
     }
   })(root);
   for (const k of ["workflows", "dockerfiles", "iac"]) inv[k].sort();
+  inv.gomods.sort((a, b) => a.split("/").length - b.split("/").length || a.localeCompare(b));
   return inv;
 }
 
@@ -130,6 +141,50 @@ export function parseBandit(stdout, root) {
   }));
 }
 
+// gosec -fmt=json: { Issues: [{ rule_id, details, file, line: "12" | "12-14", severity, cwe }] }.
+export function parseGosec(stdout, root) {
+  const data = JSON.parse(stdout);
+  if (!Array.isArray(data.Issues)) throw new Error("no Issues array");
+  return data.Issues.map((r) => ({
+    file: normPath(r.file, root), line: parseInt(String(r.line ?? "0"), 10) || 0, rule: [r.rule_id, r.cwe?.id ? `CWE-${r.cwe.id}` : ""].filter(Boolean).join(" "),
+    severity: sev(r.severity), note: note(`${r.details ?? ""}${r.confidence ? ` (confidence ${String(r.confidence).toLowerCase()})` : ""}`),
+  }));
+}
+
+// Concatenated JSON objects (govulncheck -json writes one message after another, not an array).
+export function jsonStream(text) {
+  const out = [];
+  let depth = 0;
+  let start = -1;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (c === '"') { for (i++; i < text.length && text[i] !== '"'; i++) if (text[i] === "\\") i++; continue; }
+    if (c === "{") { if (depth++ === 0) start = i; } else if (c === "}" && --depth === 0) out.push(JSON.parse(text.slice(start, i + 1)));
+  }
+  if (depth !== 0) throw new Error("truncated JSON stream");
+  return out;
+}
+
+// govulncheck -json: `finding` messages; a trace whose first frame names a function means the vulnerable
+// symbol is called from the project (high), otherwise the package is only imported or the module required (low).
+export function parseGovulncheck(stdout, root) {
+  const msgs = jsonStream(stdout);
+  if (!msgs.some((m) => m.config || m.progress || m.finding || m.osv)) throw new Error("no govulncheck messages");
+  const summary = new Map(msgs.filter((m) => m.osv).map((m) => [m.osv.id, m.osv.summary ?? ""]));
+  return msgs.filter((m) => m.finding).map(({ finding: f }) => {
+    const trace = f.trace ?? [];
+    const vuln = trace[0] ?? {};
+    const called = Boolean(vuln.function);
+    const pos = [...trace].reverse().find((t) => t.position?.filename)?.position;
+    const where = `${vuln.module ?? "?"}@${vuln.version ?? "?"}${vuln.package ? ` ${vuln.package}${vuln.function ? `.${vuln.function}` : ""}` : ""}`;
+    return {
+      file: pos ? normPath(pos.filename, root) : "go.mod", line: pos?.line ?? 0, rule: f.osv,
+      severity: called ? "high" : "low",
+      note: note(`${called ? "called" : vuln.package ? "imported, not called" : "required, not imported"}: ${where}${f.fixed_version ? `, fixed in ${f.fixed_version}` : ""}${summary.get(f.osv) ? `. ${summary.get(f.osv)}` : ""}`),
+    };
+  });
+}
+
 export function parseSarif(stdout, root) {
   const data = JSON.parse(stdout);
   if (!Array.isArray(data.runs)) throw new Error("no runs array");
@@ -168,6 +223,10 @@ export function parseTrivy(stdout, root) {
 }
 
 const EXCLUDE = [".security-audit", "node_modules"];
+// No toolchain or module downloads for the Go tools (see the header).
+const GO_ENV = { GOTOOLCHAIN: "local", GOFLAGS: "-mod=readonly", GOPROXY: "off" };
+// The shallowest go.mod: its directory is where the Go tools run (`./...` stops at nested modules).
+const goModDir = (inv) => (inv.gomods[0] ?? "go.mod").replace(/(?:^|\/)go\.mod$/, "");
 
 export const TOOLS = [
   {
@@ -229,6 +288,33 @@ export const TOOLS = [
     raw: "bandit.json",
     parse: parseBandit,
   },
+  {
+    name: "gosec",
+    category: "code",
+    check: () => "Go static analysis (gosec)",
+    applies: (ctx) => (!ctx.inv.go ? "no Go source outside tests" : ctx.inv.gomods.length ? null : "no go.mod (gosec loads packages in module mode)"),
+    version: ["-version"],
+    dir: (ctx) => goModDir(ctx.inv),
+    env: GO_ENV,
+    // -no-fail: exit 0 with issues; test files are skipped by default (no -tests).
+    native: () => ["gosec", ["-fmt=json", "-no-fail", "-exclude-generated", "-exclude-dir=.security-audit", "./..."]],
+    docker: null,
+    raw: "gosec.json",
+    parse: parseGosec,
+  },
+  {
+    name: "govulncheck",
+    category: "dependency",
+    check: () => "Go vulnerability check with call reachability (govulncheck)",
+    applies: (ctx) => (!ctx.inv.go ? "no Go source outside tests" : ctx.inv.gomods.length ? null : "no go.mod"),
+    version: ["-version"],
+    dir: (ctx) => goModDir(ctx.inv),
+    env: GO_ENV,
+    native: () => ["govulncheck", ["-json", "./..."]],
+    docker: null,
+    raw: "govulncheck.json",
+    parse: parseGovulncheck,
+  },
 ];
 
 // ---------------------------------------------------------------- run
@@ -244,9 +330,11 @@ export function runTools({ root, inv, stack, runner, write = () => {}, only = nu
     let res;
     let via;
     const [cmd, argv] = t.native(ctx);
+    const sub = t.dir?.(ctx) ?? "";
+    const cwd = sub ? join(root, sub) : root;
     if (runner.installed(cmd, t.version)) {
       via = t.name;
-      res = runner.run(cmd, argv, { cwd: root });
+      res = runner.run(cmd, argv, { cwd, ...(t.env ? { env: { ...process.env, ...t.env } } : {}) });
     } else if (runner.dockerOk && IMAGES[t.name]) {
       via = `${t.name} (docker)`;
       res = runner.run("docker", ["run", "--rm", "-v", `${root}:/src:ro`, "-w", "/src", IMAGES[t.name], ...t.docker(ctx)], { cwd: root });
@@ -257,14 +345,15 @@ export function runTools({ root, inv, stack, runner, write = () => {}, only = nu
     }
     let rows;
     try {
-      rows = t.parse(res.stdout, root);
+      rows = t.parse(res.stdout, cwd).map((r) => (sub && r.file ? { ...r, file: `${sub}/${r.file}` } : r));
     } catch {
       const why = (res.stderr || res.error?.message || "no parseable output").trim().split("\n").pop();
       return { ...base, state: "failed", status: `FAILED (${via}): ${why}` };
     }
     write(t.raw, res.stdout);
     const all = dedupe(rows.filter((r) => r.file && !EXCLUDE.some((e) => r.file === e || r.file.startsWith(`${e}/`))));
-    return { ...base, state: "ran", via, status: `${via}: ${all.length} candidates${t.name === "semgrep" ? ` (${ctx.configs.join(", ")})` : ""}`, rows: all.slice(0, MAX_ROWS), total: all.length, all };
+    const others = t.dir && ctx.inv.gomods.length > 1 ? `; ${ctx.inv.gomods.length - 1} more go.mod not scanned (${ctx.inv.gomods.slice(1).join(", ")})` : "";
+    return { ...base, state: "ran", via, status: `${via}: ${all.length} candidates${t.name === "semgrep" ? ` (${ctx.configs.join(", ")})` : ""}${sub ? ` (module ${sub})` : ""}${others}`, rows: all.slice(0, MAX_ROWS), total: all.length, all };
   });
 }
 
@@ -282,7 +371,7 @@ export function dedupe(rows) {
 
 export function renderTools(results, table) {
   const L = [];
-  L.push(`## Tool Candidates (semgrep, zizmor, hadolint, trivy, bandit)`);
+  L.push(`## Tool Candidates (semgrep, zizmor, hadolint, trivy, bandit, gosec, govulncheck)`);
   L.push("");
   L.push(`Rule hits from deterministic tools. Each row is a candidate, never a finding: the auditor who owns the file (infra for workflows, Dockerfiles and IaC) reads the code and resolves it to a finding, a non-issue citing the control, or a false positive. Rule severity is the tool's, not the audit's. Full lists: tools/tool-candidates.json.`);
   L.push("");

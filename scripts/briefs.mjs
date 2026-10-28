@@ -5,8 +5,8 @@
 //   node briefs.mjs [--dir .security-audit] [--brief name=2.1,2.3 ...] [--crypto-heavy]
 // Without --brief it writes the default five: auth, injection, infra, concurrency, upload.
 // --crypto-heavy (recon marked the project crypto-heavy) moves 2.8 Cryptography to the brief that owns 2.1.
-// Stack profiles found in the repo (Supabase, Firebase, Laravel, Symfony, Drupal, Django, FastAPI, Flask) add
-// their checklist section to the brief that owns 2.1 and their pattern sections to every brief.
+// Stack profiles found in the repo (Supabase, Firebase, Laravel, Symfony, Drupal, Django, FastAPI, Flask, and
+// Go by its files) add their checklist section to the brief that owns 2.1 and their pattern sections to every brief.
 
 import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -76,6 +76,7 @@ export function patternsFor(langs) {
   for (const part of sp.split(/^## /m).slice(1)) {
     const [title, ...rest] = part.split("\n");
     if (/PHP/.test(title) && !langs.includes("php")) continue;
+    if (/^Go\b/.test(title) && !langs.includes("go")) continue;
     if (/JS\/TS|JS frameworks/.test(title) && !langs.includes("js")) continue;
     const profile = Object.keys(FRAMEWORK_PROFILES).find((p) => title.trim().toLowerCase() === p);
     if (profile && !langs.includes(profile)) continue;
