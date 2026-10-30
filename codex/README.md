@@ -81,6 +81,15 @@ The guard hook (`hooks/guard.mjs`, PreToolUse on `Bash` and `apply_patch`), in a
   `curl`, `wget`, `ssh`, `docker` and other network tools, no package installs; `rm`, `mv`, `cp`, `tee`, `touch`,
   `mkdir`, `sed -i` and similar only into `.security-audit/`; `find -delete` and `find -exec <writer>` refused;
   `bash -c '…'` is checked inside;
+- before those checks, a few safe shapes the OpenCode rules refuse as a whole are rewritten into what they do, and
+  anything that does not match exactly is checked as written: an append (`>>`, never `>`) to the project's own
+  `.gitignore` (not through a symlink), so the Phase 0 snippet runs as SKILL.md writes it; a simple `$(…)` only as an
+  argument of `[`/`test`, its inner command checked by the same rules; `rg -g '!**/.env*'` and other negated globs
+  count as exclusions, not reads; leading `PATH=`, `PYTHONDONTWRITEBYTECODE=`, `NODE_OPTIONS=` (refused when it loads
+  code: `--require`, `--import`, loaders), `CI=`, `NO_COLOR=`, `FORCE_COLOR=`, `TZ=`, `LANG=`, `LC_ALL=` assignments,
+  `PATH` only of `/usr/bin`, `/bin`, `/usr/local/bin` and nvm's node `bin`; `for v in <literal words>; do …; done`
+  unrolled, each value substituted for `$v` and checked (globs, variables or substitutions in the list, nested
+  loops: refused); a `{a,b}` list whose every expansion stays in `.security-audit/`;
 - `apply_patch` may add, update, delete or move only files under `.security-audit/` and the project's
   `.gitignore`; a patch without a readable file header is refused;
 - a shell `workdir` outside the project is refused.

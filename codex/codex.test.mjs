@@ -4,8 +4,8 @@
 import { strict as assert } from "node:assert";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -246,6 +246,89 @@ test("guard: session-gated hook, shell rules, blocklist, patches and the report 
   assert.equal(spawnSync(process.execPath, [guard], { input: "not json", encoding: "utf8" }).status, 0);
   rmSync(home, { recursive: true, force: true });
   rmSync(proj, { recursive: true, force: true });
+});
+
+test("guard: safe shapes the shell check refused (gitignore append, env excludes, safe env, literal for, braces)", () => {
+  const home = tmp("guardfp");
+  const { skillDir } = install({ codexHome: home });
+  const guard = join(skillDir, "hooks", "guard.mjs");
+  const proj = tmp("projfp");
+  mkdirSync(join(proj, "src", "(app)"), { recursive: true });
+  mkdirSync(join(proj, ".security-audit", "findings"), { recursive: true });
+  writeFileSync(join(proj, "src", "a.ts"), "export {};\n");
+  writeFileSync(join(proj, "src", "(app)", "b.ts"), "export {};\n");
+  writeFileSync(join(proj, ".env"), "SECRET=1\n");
+  writeFileSync(join(proj, ".gitignore"), "node_modules\n");
+  const outsideFile = join(home, "elsewhere.txt");
+  writeFileSync(outsideFile, "");
+  // A second project whose .gitignore is a symlink out of it.
+  const linked = tmp("projlink");
+  symlinkSync(outsideFile, join(linked, ".gitignore"));
+
+  const session = "019a-test-fp";
+  const run = (event, cwd = proj) => spawnSync(process.execPath, [guard], { input: JSON.stringify({ session_id: session, cwd, ...event }), encoding: "utf8" });
+  const bash = (command, cwd) => run({ hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command } }, cwd);
+  assert.equal(run({ hook_event_name: "UserPromptSubmit", prompt: "$security-audit" }).status, 0);
+  const nvmBin = join(homedir(), ".nvm", "versions", "node", "v24.22.1", "bin");
+
+  // Phase 0 of SKILL.md, as the Codex SKILL.md writes it.
+  const phase0 = [
+    "# Audit files name unfixed weaknesses: ignore the directory before anything is written into it.",
+    "if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then",
+    "  git check-ignore -q .security-audit/report.md || {",
+    '    [ -s .gitignore ] && [ -n "$(tail -c1 .gitignore)" ] && echo >> .gitignore',
+    '    echo ".security-audit/" >> .gitignore',
+    "  }",
+    '  git ls-files --error-unmatch .security-audit >/dev/null 2>&1 && echo "WARNING: .security-audit is tracked in git"',
+    "fi",
+    `node ${skillDir}/scripts/prepass.mjs --new-run`,
+  ].join("\n");
+
+  const allowed = [
+    phase0, 'echo ".security-audit/" >> .gitignore', "echo >> ./.gitignore", `printf '%s\\n' .security-audit/ >> ${proj}/.gitignore`,
+    "rg --files -g '!*.lock' -g '!.env*' -g '!**/.env*'", "rg --files --glob='!**/.env*'", "rg --hidden -n x -g '!**/.env*'",
+    `PATH=/usr/bin node ${skillDir}/scripts/prepass.mjs --new-run --no-docker`, `PATH=/usr/bin:/bin:${nvmBin} node x.mjs`,
+    "PYTHONDONTWRITEBYTECODE=1 python -B manage.py test --noinput", "NODE_OPTIONS=--max-old-space-size=4096 CI=1 node x.mjs",
+    "TZ=Europe/Warsaw LANG=C.UTF-8 LC_ALL=C NO_COLOR=1 FORCE_COLOR=0 node x.mjs",
+    `for f in src/a.ts 'src/(app)/b.ts'; do echo "$f"; nl -ba "$f"; done`, "for f in src/a.ts .security-audit/x.md; do nl -ba $f; done",
+    "for f in src/a.ts\ndo\n  sed -n '1,20p' \"${f}\"\ndone | head -50",
+    "cat .security-audit/findings/{a-1,b-2}.md", "cat .security-audit/findings/{injection-20*,exposure-20*,rate-limit-402}.md",
+    "ls .security-audit/{findings,tests}",
+  ];
+  for (const command of allowed) {
+    const r = bash(command);
+    assert.equal(r.status, 0, `${command}: ${r.stderr}`);
+  }
+  const denied = [
+    // .gitignore: only append, only the project's own, not through a symlink, $( ) only inside a test.
+    "echo x > .gitignore", "echo x >> src/.gitignore", "echo x >> .gitignore.bak", 'echo x >> "$F"', "echo x >> ../.gitignore",
+    '[ -n "$(cat /etc/passwd)" ]', 'cat "$(tail -c1 .gitignore)"', 'echo "$(tail -c1 .gitignore)" >> .gitignore',
+    '[ -n "$(git push)" ]', '[ -n "$(cat .env)" ]', '[ -n x ] > "$(tail -c1 .gitignore)"', '[ -n "$(tail -c1 $(ls))" ]',
+    // .env: a positive glob or a real read is still a read.
+    "rg -g '.env*' --files", "rg --files -g '**/.env*'", "cat '!x/.env'", "rg --hidden -n x", "rg --files --hidden .github",
+    // env assignments: only the safe set with safe values.
+    "PATH=/tmp/bin:/usr/bin node x.mjs", "PATH=/usr/bin:$PATH node x.mjs", "PATH=~/bin node x.mjs",
+    "NODE_OPTIONS=--require=/tmp/x.js node x.mjs", "NODE_OPTIONS='--import /tmp/x.mjs' node x.mjs", "FOO=/etc node x.mjs",
+    "PATH=/usr/bin node ../x.mjs", "PYTHONDONTWRITEBYTECODE=1 python -B ../manage.py test",
+    // for: literal words that each pass, nothing else.
+    `for f in src/a.ts /etc/passwd; do nl -ba "$f"; done`, `for f in src/*.ts; do cat "$f"; done`, `for f in $(ls); do cat "$f"; done`,
+    `for f in src/a.ts .env; do cat "$f"; done`, `for f in src/a.ts; do cat "$g"; done`, `for f in 'src/(app)/b.ts'; do cat $f; done`,
+    `for f in src/a.ts; do for g in src/a.ts; do cat "$f" "$g"; done; done`, `for f in src/a.ts; do git push; done`,
+    `for f in .security-audit/x; do echo x > "$f.out"; rm src/a.ts; done`, `for f in {a,b}; do cat "$f"; done`,
+    // braces: every expansion inside .security-audit/.
+    "cat src/{a,b}.ts", "cat .security-audit/{findings,..}/x", "cat .security-audit/findings/{a,../../src/a}.ts",
+    "cat .security-audit/{..,x}", "cat {/etc/passwd,x}", "cat .security-audit/{a,{b,c}}", "rm .security-audit/{a,../src/a.ts}",
+  ];
+  for (const command of denied) {
+    const r = bash(command);
+    assert.equal(r.status, 2, `${command} should be refused`);
+    assert.match(r.stderr, /^security-audit guard: /, command);
+  }
+  assert.equal(bash("echo x >> .gitignore", linked).status, 2, "a .gitignore symlinked out of the project");
+  assert.match(bash("PATH=/usr/bin node ../x.mjs").stderr, /path outside the project \(\.\.\/x\.mjs\)/);
+  rmSync(home, { recursive: true, force: true });
+  rmSync(proj, { recursive: true, force: true });
+  rmSync(linked, { recursive: true, force: true });
 });
 
 test("the repository is not where the tests left anything", () => {

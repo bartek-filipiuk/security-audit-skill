@@ -28,15 +28,17 @@ Where it differs, these mappings apply. They replace the pipeline's "Portability
 - **Sandbox and network.** Run inside the workspace-write sandbox. Never request escalation
   (`sandbox_permissions: "require_escalated"`) for anything in this audit, network included. When a pre-pass
   scanner cannot run (no network, no docker), its `NOT RUN` line goes into `not-assessed.md` as the pipeline says.
-- **The rules block is enforced** when the run was started with `$security-audit`: a hook refuses edits outside
-  `.security-audit/` (and `.gitignore`), shell redirection outside `.security-audit/`, a `cd` out of the
+- **The rules block is enforced** when the run was started with `$security-audit`: a hook allows edits only in
+  `.security-audit/` and the project's `.gitignore` (`apply_patch`, or appending with `>> .gitignore`), and refuses
+  other edits, shell redirection outside `.security-audit/`, a `cd` out of the
   project, paths outside the project and `{{SKILL_DIR}}`, `.env` files, git commands that change anything,
   network tools and package installs, and rendering the report while `audit-state.mjs --final` fails. A refused
   call is the rules block working: change the method instead of retrying the same call, and record a check you
   cannot do in `not-assessed.md`.
-- **Phase 0 `.gitignore` step.** Run `git check-ignore -q .security-audit/report.md`. If it fails, add the line
-  `.security-audit/` to `.gitignore` with `apply_patch` (create the file if it is missing). Then run
-  `git ls-files --error-unmatch .security-audit` for the tracked warning.
+- **Phase 0 `.gitignore` step.** Run the Phase 0 block as written: appending to the project's `.gitignore` is
+  allowed. If a call is refused anyway, run `git check-ignore -q .security-audit/report.md`, and if it fails add the
+  line `.security-audit/` to `.gitignore` with `apply_patch` (create the file if it is missing). Never leave
+  `.security-audit/` un-ignored. Then run `git ls-files --error-unmatch .security-audit` for the tracked warning.
 - **Claude Code only.** Skip the audit-live paragraph and the safety-classifier remark.
 - **Phase 6 (fixing source) does not run here**, because the guard refuses source edits. `--verify-fixes` works,
   since it edits only finding files. When the user asks for fixes, tell them to apply them in a normal Codex
