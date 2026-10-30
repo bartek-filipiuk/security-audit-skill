@@ -46,7 +46,8 @@ Claude Code there is no Phase 6 (fixing), no `--mutation` and no live panel. Det
 Measured so far, one run per model (2026-10-27/28, `benchmark/real`): on the Drupal `ffmpeg_image_toolkit` RCE
 (SA-CONTRIB-2026-220), DeepSeek V4 Pro, Gemma 4 31B and Hinoki Offensive One reported it at the fixed lines; Kimi
 K3.1 Pro and Grok 4.7 described it but pointed at the method signature, so the scorer counts a miss. A full
-Ledgerly run in OpenCode has not finished yet (the first one stopped on provider credits before the report).
+Ledgerly run in OpenCode has not finished yet (the first one stopped on provider credits before the report). These runs
+were scored outside the repository (`score.mjs --results`), so their history is not in `benchmark/results.jsonl`.
 
 ## Use
 
