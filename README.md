@@ -49,6 +49,15 @@ K3.1 Pro and Grok 4.7 described it but pointed at the method signature, so the s
 Ledgerly run in OpenCode has not finished yet (the first one stopped on provider credits before the report). These runs
 were scored outside the repository (`score.mjs --results`), so their history is not in `benchmark/results.jsonl`.
 
+### Codex CLI
+
+The same audit as a Codex skill (codex-cli 0.155+), with a guard hook that enforces the rules block:
+`node codex/install.mjs [--auditor-model <slug>]` builds it into `~/.codex/skills/security-audit` and adds the hook
+to `~/.codex/hooks.json` (backup kept; `config.toml` is never edited). Trust the hook once in `codex` → `/hooks`,
+then in your project: `codex --sandbox workspace-write` and `$security-audit --scope top20`. Only a run started with
+`$security-audit` is guarded. Network stays off in the sandbox, so osv-scanner and the docker scanners report NOT
+RUN unless you opt in. No end-to-end benchmark yet. Details and what is still unverified: `codex/README.md`.
+
 ## Use
 
 In your project, in Claude Code:
