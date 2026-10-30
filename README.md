@@ -58,7 +58,8 @@ then in your project: `codex --sandbox workspace-write` and `$security-audit --s
 `$security-audit` is guarded. Network stays off in the sandbox, so osv-scanner and the docker scanners report NOT
 RUN unless you opt in. Smoke runs (2026-10-30, py-clinic, session model, one run each): guard
 hooks untrusted 17/18, 0 decoy false positives, 7.7 min; guard on 12/18, 1 decoy false positive, 7.2 min (3 commands
-denied; most misses are findings reported 3 lines off). Ledgerly is next. Details and what is still
+denied; most misses are findings reported 3 lines off). Ledgerly, guard on: 21/26, 1 decoy false positive, 20.6 min,
+9 subagents, guard denials inside subagents too; misses B14/B15 need the network scanners the sandbox turns off. Details and what is still
 unverified: `codex/README.md`.
 
 ## Use
