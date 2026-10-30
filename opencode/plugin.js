@@ -1,7 +1,7 @@
 // OpenCode plugin (v2 API, beta) for the sa-* audit agents. Their permissions already allow only the skill's
 // scripts, read-only git and test runners; this closes what permissions cannot see: shell redirection and
-// `git --output` writing outside .security-audit/, a cd out of the project, and a report rendered over
-// findings that do not validate.
+// `git --output` writing outside .security-audit/, a cd out of the project, shell arguments that read outside
+// the project, and a report rendered over findings that do not validate.
 import { execFileSync } from "node:child_process";
 import { isAbsolute, relative, resolve } from "node:path";
 
@@ -30,6 +30,17 @@ export function checkShell(command, root) {
     if (rel.startsWith("..") || isAbsolute(rel)) return `cd leaves the project (${target})`;
   }
   if (/\bgit\b[^;&|]*\s--output(=|\s)/.test(command)) return "git --output writes a file";
+  // Reads outside the project: `external_directory` holds the file tools, not shell arguments (`ls ..`,
+  // `git diff --no-index /x /dev/null`, a skill script with `--dir /elsewhere`). A path argument must stay in the
+  // project or the skill directory, so an audit never sees another project, another run or its answer key.
+  for (const token of command.split(/[\s;&|<>()]+/)) {
+    const path = token.replace(/^[^=]*=(?=[/~.$])/, "").replace(/^["']|["']$/g, "");
+    // A path starts with `/<name>`, `~`, `$HOME` or `..`; `/\n...` or `/^...` is a regex in a script argument.
+    if (!/^(\/[\w.~@+-]|~|\$\{?HOME|\.\.(\/|$))|\/\.\.(\/|$)/.test(path) || path === "/dev/null") continue;
+    const abs = /^[~$]/.test(path) ? null : resolve(root, path);
+    const inside = (dir) => abs !== null && !relative(dir, abs).startsWith("..") && !isAbsolute(relative(dir, abs));
+    if (!inside(root) && !inside(SKILL_DIR)) return `path outside the project (${path})`;
+  }
   return null;
 }
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Scores one benchmark run against answer-key.json and appends a line to results.jsonl.
-//   node benchmark/score.mjs <run-dir> [--label "what changed"] [--tool security-audit|claude-security] [--app <name>] [--key <path>] [--no-save]
+//   node benchmark/score.mjs <run-dir> [--label "what changed"] [--tool security-audit|claude-security] [--app <name>] [--key <path>]
+//                            [--results <file>] [--no-save]
 // <run-dir> is what setup.mjs (or benchmark/real/fetch.mjs) printed: it holds meta.json and app/.security-audit/.
 // The answer key is the file given by --key, else the one of the app named by --app, else meta.json `key`
 // (written by benchmark/real/fetch.mjs), else the one of meta.json `bench_app`, else Ledgerly's (see apps.mjs).
@@ -296,7 +297,7 @@ export function resolveKey(args, meta = {}) {
 // realpath on both sides: the skill is usually run through a symlink (~/.claude/skills/...).
 if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   const args = process.argv.slice(2);
-  const runDir = resolve(args.find((a) => !a.startsWith("--") && !["--label", "--tool", "--app", "--key"].includes(args[args.indexOf(a) - 1])) ?? ".");
+  const runDir = resolve(args.find((a) => !a.startsWith("--") && !["--label", "--tool", "--app", "--key", "--results"].includes(args[args.indexOf(a) - 1])) ?? ".");
   const label = args.indexOf("--label") >= 0 ? args[args.indexOf("--label") + 1] : "";
   const auditDir = join(runDir, "app", ".security-audit");
   const tool = args.includes("--tool") ? args[args.indexOf("--tool") + 1] : "security-audit";
@@ -349,10 +350,13 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
 
   if (!args.includes("--no-save")) {
     const { seeded, decoyFp, decoySecondary, matches, ...summary } = r;
+    // --results: another history file (a driver that compares models keeps its own). meta.run: what such a
+    // driver recorded about the run (model, cost, session), saved as is.
+    const resultsFile = args.includes("--results") ? resolve(args[args.indexOf("--results") + 1]) : join(here, "results.jsonl");
     appendFileSync(
-      join(here, "results.jsonl"),
-      JSON.stringify({ date: new Date().toISOString(), app: bench.name, tool, label, skill_sha: meta.skill_sha, skill_dirty: meta.skill_dirty, minutes, ...summary, per_bug: Object.fromEntries(seeded.map((s) => [s.id, s.result])) }) + "\n",
+      resultsFile,
+      JSON.stringify({ date: new Date().toISOString(), app: bench.name, tool, label, skill_sha: meta.skill_sha, skill_dirty: meta.skill_dirty, minutes, ...summary, per_bug: Object.fromEntries(seeded.map((s) => [s.id, s.result])), ...(meta.run ? { run: meta.run } : {}) }) + "\n",
     );
-    console.log(`\nSaved to ${join(here, "results.jsonl")}`);
+    console.log(`\nSaved to ${resultsFile}`);
   }
 }

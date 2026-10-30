@@ -1,0 +1,43 @@
+{
+  "version": 2,
+  "app": "real/drupal/ffmpeg_image_toolkit-1.0.2",
+  "module": "drupal/ffmpeg_image_toolkit",
+  "module_version": "1.0.2",
+  "note": "Ground truth for the public release ffmpeg_image_toolkit 1.0.2 (Drupal contrib, fetched by benchmark/real/fetch.mjs; manifest.json pins the tarball sha256). Never copy this file into the audited directory. `locations` are files relative to the module root (the run's app/) with 1-based inclusive line ranges of the vulnerable statements, verified with `node benchmark/real/fetch.mjs drupal/ffmpeg_image_toolkit 1.0.2 --check`. Same format and matching rules as benchmark/answer-key.json. The 1.0.3 key is the false-positive control.",
+  "window": 2,
+  "seeded": [
+    {
+      "id": "SA-2026-220",
+      "class": "SA-CONTRIB-2026-220 (CVE-2026-114523): image file names reach the ffmpeg shell command without escaping (OS command injection)",
+      "severity": "CRITICAL",
+      "advisory_url": "https://www.drupal.org/sa-contrib-2026-220",
+      "locations": [
+        {
+          "file": "src/Ffmpeg.php",
+          "lines": [
+            23,
+            31
+          ]
+        },
+        {
+          "file": "src/Ffmpeg.php",
+          "lines": [
+            39,
+            39
+          ]
+        },
+        {
+          "file": "src/Ffmpeg.php",
+          "lines": [
+            55,
+            55
+          ]
+        }
+      ],
+      "detect": "llm",
+      "why": "Ffmpeg::execute() wraps the input path in double quotes ('-i \"' . $input_path . '\"', line 25), appends output_file unescaped (line 39) and passes the string to exec() (line 55). The paths come from FfmpegToolkit (the image's real path). The denylist at lines 43-47 rejects ; | > & only, so command substitution and quote characters in a file name still reach the shell; a verifier that rejects the finding because of the denylist is wrong. Fixed in 1.0.3 with escapeshellarg() on both. Lines 43-47 are left out on purpose: the exception there that echoes the command is a separate, minor issue."
+    }
+  ],
+  "decoys": [],
+  "known_extras": []
+}

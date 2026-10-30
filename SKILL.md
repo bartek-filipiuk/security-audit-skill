@@ -157,7 +157,7 @@ File formats are defined in `references/finding-format.md`. All agents use the s
 
 ## Phase 0: Setup and Deterministic Pre-pass (every mode, every run)
 
-Run this yourself before dispatching anything. It takes seconds.
+Run this yourself before dispatching anything. Without Docker scanners it takes seconds; with them, a large repository can take several minutes. Run the pre-pass once, in the foreground, with the longest command timeout your shell tool allows (Claude Code: `timeout: 600000`), and wait for `.security-audit/prepass.md` before going on.
 
 ```bash
 # Audit files name unfixed weaknesses: ignore the directory before anything is written into it.
@@ -391,7 +391,7 @@ Measured on one production project (161 entry points, hand-rolled Node router, 5
 ## Quick-Run Mode
 
 For fast single-pass audit without subagents (any project size):
-- Still run Phase 0 (gitignore + pre-pass); it costs seconds and is the only CVE and secret-history source
+- Still run Phase 0 (gitignore + pre-pass); it costs seconds to minutes and is the only CVE and secret-history source
 - Single agent runs all phases sequentially
 - Apply EXPAND/TRACE/VERIFY/REJECT inline during Phase 2
 - Skip Phase 3 Deep Dive loop

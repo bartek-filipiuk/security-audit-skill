@@ -28,8 +28,25 @@ Optional live progress panel (a Claude Code mod, 2.1.287+): phase, time per phas
 by auditor, session cost. `cp -r ~/.claude/skills/security-audit/audit-live ~/.claude/skills/`. It only reads
 `.security-audit/` and Claude Code's own session cost figure; see `audit-live/README.md`.
 
-OpenCode: the same audit as OpenCode agents with enforced permissions, any model provider. Build with
-`node opencode/build.mjs` and install with `node dist/opencode/install.mjs`; see `opencode/README.md`.
+### OpenCode
+
+The same audit as OpenCode agents (OpenCode 2.1+), with the rules enforced as agent permissions and a model from
+any provider:
+
+```bash
+git clone https://github.com/bartek-filipiuk/security-audit-skill && cd security-audit-skill
+node opencode/build.mjs
+node dist/opencode/install.mjs --auditor-model <provider/model> --verifier-model <provider/model>
+```
+
+Then, in your project, in OpenCode: `/security-audit --scope top20`. Give the verifier the strongest model you
+have, ideally from another vendor than the auditors. Your code goes to the providers you choose. Compared to
+Claude Code there is no Phase 6 (fixing), no `--mutation` and no live panel. Details: `opencode/README.md`.
+
+Measured so far, one run per model (2026-10-27/28, `benchmark/real`): on the Drupal `ffmpeg_image_toolkit` RCE
+(SA-CONTRIB-2026-220), DeepSeek V4 Pro, Gemma 4 31B and Hinoki Offensive One reported it at the fixed lines; Kimi
+K3.1 Pro and Grok 4.7 described it but pointed at the method signature, so the scorer counts a miss. A full
+Ledgerly run in OpenCode has not finished yet (the first one stopped on provider credits before the report).
 
 ## Use
 
@@ -110,11 +127,12 @@ with `--scope top20`. Re-auditing a one-line change with `--since` cost 4.7M tok
 
 ## Other agents
 
-Status: installs; end-to-end benchmark in another agent not run yet. The scripts are tested without Claude Code
-(`scripts/portability.test.mjs`); every number in this README is from Claude Code.
+Status: OpenCode has its own package, measured on real advisories (see Install); the other agents install, with
+no end-to-end benchmark yet. The scripts are tested without Claude Code (`scripts/portability.test.mjs`); every
+number in this README outside the OpenCode section is from Claude Code.
 
-- **OpenCode** reads skills from `~/.claude/skills` and `.agents/skills`, so either install works. It has a Task
-  tool, so parallel mode is expected to run as in Claude Code.
+- **OpenCode:** use the OpenCode package (Install, above). OpenCode also reads `~/.claude/skills`, but this
+  variant's instructions assume Claude Code's tools, so the OpenCode installer denies the skill there.
 - **Codex CLI:** start it with `$security-audit` and the flags. It has subagents, so parallel mode is expected to
   run.
 - **Gemini CLI, Cursor and other agents without subagents:** the phases run one after another in the same

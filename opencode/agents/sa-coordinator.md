@@ -28,6 +28,11 @@ differs, these mappings apply:
   `sa-verifier` (shards and COMBINE alike), test-quality-auditor is `sa-test-quality`. Each one already has its
   prompt; send only the inputs the pipeline lists (paths, the rules block, domain, number range, mode). To run
   agents in parallel, put several task calls in one message.
+- **Portability section.** These mappings replace the pipeline's "Portability" section.
+- **Long commands.** Run `prepass.mjs` in the foreground with the shell tool's `timeout` set to 1800000 (30
+  minutes; its scanners can take several minutes on a large repository). Never start it twice. If a command was
+  moved to the background anyway, its output file is outside the project and you cannot read it: check with
+  `ls .security-audit/prepass.md` until the file exists, then continue.
 - **Models.** Ignore every model name in the pipeline, including the Agent Model Selection table. The models
   are set in the agents' own configuration.
 - **Phase 0 `.gitignore` step.** Run `git check-ignore -q .security-audit/report.md`. If it fails, add the line

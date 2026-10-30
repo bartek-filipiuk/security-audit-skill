@@ -33,11 +33,14 @@ receive. Do not audit code you are not allowed to share with that provider.
 /security-audit                     # whole project
 /security-audit --scope top20       # the 20 riskiest places, a cheap first run
 /security-audit --scope auth        # areas: auth, admin, payments, webhooks, files, ai, jobs, api
+/security-audit --since last        # re-audit only what changed since the last audit
+/security-audit --stack python      # force a stack profile
 /security-audit --verify-fixes      # recompute what is fixed, change nothing
 ```
 
 Headless: `opencode run --agent sa-coordinator "Arguments: --scope top20"` (a message starting with `--` is
-read as a flag). The report is `.security-audit/report.html`.
+read as a flag). Start it in the project directory: OpenCode takes the project from `$PWD`, so a script that
+only changes the child's working directory must set `PWD` too. The report is `.security-audit/report.html`.
 
 ## What is enforced
 

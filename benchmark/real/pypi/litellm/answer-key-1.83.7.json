@@ -1,0 +1,45 @@
+{
+  "version": 2,
+  "app": "real/pypi/litellm-1.83.7",
+  "module": "pypi/litellm",
+  "module_version": "1.83.7",
+  "note": "Negative control for answer-key-1.83.3.json: litellm 1.83.7 fixes both advisories. `seeded` is empty; `decoys` are the fixed code at 1.83.7 lines (verified with `node benchmark/real/fetch.mjs pypi/litellm 1.83.7 --check`), so `decoy false positives` counts verified findings that still report a fixed advisory. Run with `--scope litellm/proxy` like the target.",
+  "window": 2,
+  "seeded": [],
+  "decoys": [
+    {
+      "id": "GHSA-r75f-5x8p-qvmc-fixed",
+      "locations": [
+        {
+          "file": "litellm/proxy/utils.py",
+          "lines": [
+            3059,
+            3102
+          ]
+        }
+      ],
+      "why": "The key lookup is a plain string with `WHERE v.token = $1` and the hashed token passed as a parameter."
+    },
+    {
+      "id": "GHSA-v4p8-mg3p-g94g-fixed",
+      "locations": [
+        {
+          "file": "litellm/proxy/_experimental/mcp_server/rest_endpoints.py",
+          "lines": [
+            1021,
+            1037
+          ]
+        },
+        {
+          "file": "litellm/proxy/_experimental/mcp_server/rest_endpoints.py",
+          "lines": [
+            1051,
+            1067
+          ]
+        }
+      ],
+      "why": "Both test endpoints raise 403 unless the caller's role is PROXY_ADMIN, like the endpoint that saves a server; the stdio client code is unchanged and reachable only by an admin."
+    }
+  ],
+  "known_extras": []
+}

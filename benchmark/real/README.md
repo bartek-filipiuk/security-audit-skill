@@ -17,6 +17,8 @@ One directory per module, holding `manifest.json` and one `answer-key-<version>.
       wordpress/flamingo/                 id `wordpress/flamingo`
       npm/fast-jwt/                       id `npm/fast-jwt`
       go/goshs/                           id `go/goshs`
+      drupal/ffmpeg_image_toolkit/        id `drupal/ffmpeg_image_toolkit` (model comparison, 2026-10-27)
+      pypi/litellm/                       id `pypi/litellm` (model comparison, 2026-10-27)
 
 New modules go under `<ecosystem>/<package>/` with `ecosystem` one of `drupal`, `wordpress`, `npm`, `pypi`,
 `rubygems`, `go`; the package directory is lower case, without `@` or `/` (`npm/fastify-static` for
@@ -84,6 +86,22 @@ Notes per module:
   sum.golang.org). The release ships `.claude/rules/*.md`, which `fetch.mjs` removes. Many advisories
   published after v2.1.5 (August to October 2026) still affect both releases and are not keyed yet, so
   unmatched findings on either are expected and some are real.
+
+## Model comparison targets (2026-10-27)
+
+Two modules added to compare Claude Code with the OpenCode variant on API models. Each has its fixed release
+as the control.
+
+| Module id | Target / control | Size | Scored on the target |
+|---|---|---|---|
+| `drupal/ffmpeg_image_toolkit` | 1.0.2 / 1.0.3 | PHP, 19 files, no routes | [SA-CONTRIB-2026-220](https://www.drupal.org/sa-contrib-2026-220) (CVE-2026-114523, Highly critical 20/25): image file names reach the ffmpeg command line without shell escaping |
+| `pypi/litellm` | 1.83.3 / 1.83.7 | Python sdist, 1855 files | [GHSA-r75f-5x8p-qvmc](https://github.com/BerriAI/litellm/security/advisories/GHSA-r75f-5x8p-qvmc) (CVE-2026-42208, Critical: key lookup SQL built from the caller's key, reachable without authentication) and [GHSA-v4p8-mg3p-g94g](https://github.com/BerriAI/litellm/security/advisories/GHSA-v4p8-mg3p-g94g) (CVE-2026-42271, High: MCP test endpoints start a stdio command for any key holder) |
+
+`ffmpeg_image_toolkit` has no routes, so the skill runs Standard Mode (one agent, no separate verifier).
+`litellm` is audited with `/security-audit --scope litellm/proxy`: both advisories are there, and the scope
+holds about 700 FastAPI routes, so it runs Parallel Mode. Its sdist has no lockfile, so osv-scanner reports
+FAILED (no package sources) and the dependency gap goes to `not-assessed.md`. 42208 was published in April
+2026 and widely covered; check the model's cutoff before reading anything into a hit on it.
 
 ## Run
 

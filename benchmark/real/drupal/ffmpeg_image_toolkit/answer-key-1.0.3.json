@@ -1,0 +1,39 @@
+{
+  "version": 2,
+  "app": "real/drupal/ffmpeg_image_toolkit-1.0.3",
+  "module": "drupal/ffmpeg_image_toolkit",
+  "module_version": "1.0.3",
+  "note": "Negative control for answer-key-1.0.2.json: ffmpeg_image_toolkit 1.0.3 fixes SA-CONTRIB-2026-220. `seeded` is empty; `decoys` are the fixed code at 1.0.3 lines (verified with `node benchmark/real/fetch.mjs drupal/ffmpeg_image_toolkit 1.0.3 --check`), so `decoy false positives` counts verified findings that still report the fixed advisory. Same format and matching rules as benchmark/answer-key.json.",
+  "window": 2,
+  "seeded": [],
+  "decoys": [
+    {
+      "id": "SA-2026-220-fixed",
+      "locations": [
+        {
+          "file": "src/Ffmpeg.php",
+          "lines": [
+            23,
+            30
+          ]
+        },
+        {
+          "file": "src/Ffmpeg.php",
+          "lines": [
+            43,
+            43
+          ]
+        },
+        {
+          "file": "src/Ffmpeg.php",
+          "lines": [
+            59,
+            59
+          ]
+        }
+      ],
+      "why": "Both the input path and output_file go through escapeshellarg() before the command is built (lines 25 and 29), so the file name is a single shell word at the concatenation (line 43) and the exec() call (line 59)."
+    }
+  ],
+  "known_extras": []
+}

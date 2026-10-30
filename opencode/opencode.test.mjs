@@ -28,6 +28,20 @@ test("guard: redirection only into .security-audit/", () => {
   assert.equal(checkShell("node a.mjs --cdx 1", root), null);
 });
 
+test("guard: shell arguments may not read outside the project", () => {
+  assert.match(checkShell("ls /work", root), /outside the project/);
+  assert.match(checkShell("ls ..", root), /outside the project/);
+  assert.match(checkShell("git diff --no-index /work/other/answer-key.json /dev/null", root), /outside the project/);
+  assert.match(checkShell("node x.mjs --dir=/work/other/.security-audit", root), /outside the project/);
+  assert.match(checkShell("git -C ../other log", root), /outside the project/);
+  assert.match(checkShell("ls ~/runs", root), /outside the project/);
+  assert.match(checkShell("ls src/../../x", root), /outside the project/);
+  assert.equal(checkShell("ls /work/app/src && git diff HEAD~1 -- src/a.ts 2>/dev/null", root), null);
+  assert.equal(checkShell("cd /work/app && node x.mjs --dir /work/app/.security-audit 2>&1", root), null);
+  assert.equal(checkShell("git log --format=%H -n 3 && git show HEAD:src/a.ts", root), null);
+  assert.equal(checkShell("node x.mjs --pattern '/\\ncarried_from:/' --re /^id:/", root), null); // regexes, not paths
+});
+
 test("guard: only sa-* agents, only the shell tool", async () => {
   let hook;
   await guard.setup({ location: { directory: root }, tool: { hook: async (name, fn) => (hook = fn) } });
