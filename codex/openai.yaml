@@ -1,0 +1,6 @@
+interface:
+  display_name: "Security Audit"
+  short_description: "Evidence-based multi-agent security audit"
+  default_prompt: "Use $security-audit --scope top20 to audit the riskiest places of this project; .security-audit/report.html is the report."
+policy:
+  allow_implicit_invocation: true

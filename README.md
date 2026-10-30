@@ -49,6 +49,18 @@ K3.1 Pro and Grok 4.7 described it but pointed at the method signature, so the s
 Ledgerly run in OpenCode has not finished yet (the first one stopped on provider credits before the report). These runs
 were scored outside the repository (`score.mjs --results`), so their history is not in `benchmark/results.jsonl`.
 
+### Codex CLI
+
+The same audit as a Codex skill (codex-cli 0.155+), with a guard hook that enforces the rules block:
+`node codex/install.mjs [--auditor-model <slug>]` builds it into `~/.codex/skills/security-audit` and adds the hook
+to `~/.codex/hooks.json` (backup kept; `config.toml` is never edited). Trust the hook once in `codex` → `/hooks`,
+then in your project: `codex --sandbox workspace-write` and `$security-audit --scope top20`. Only a run started with
+`$security-audit` is guarded. Network stays off in the sandbox, so osv-scanner and the docker scanners report NOT
+RUN unless you opt in. Smoke runs (2026-10-30, py-clinic, session model, one run each): guard
+hooks untrusted 17/18, 0 decoy false positives, 7.7 min; guard on 12/18, 1 decoy false positive, 7.2 min (3 commands
+denied; most misses are findings reported 3 lines off). Ledgerly is next. Details and what is still
+unverified: `codex/README.md`.
+
 ## Use
 
 In your project, in Claude Code:
@@ -128,14 +140,13 @@ with `--scope top20`. Re-auditing a one-line change with `--since` cost 4.7M tok
 
 ## Other agents
 
-Status: OpenCode has its own package, measured on real advisories (see Install); the other agents install, with
+Status: OpenCode and Codex CLI have their own packages (see Install); the other agents install, with
 no end-to-end benchmark yet. The scripts are tested without Claude Code (`scripts/portability.test.mjs`); every
-number in this README outside the OpenCode section is from Claude Code.
+number in this README outside the OpenCode and Codex CLI sections is from Claude Code.
 
 - **OpenCode:** use the OpenCode package (Install, above). OpenCode also reads `~/.claude/skills`, but this
   variant's instructions assume Claude Code's tools, so the OpenCode installer denies the skill there.
-- **Codex CLI:** start it with `$security-audit` and the flags. It has subagents, so parallel mode is expected to
-  run.
+- **Codex CLI:** use the Codex package (Install, above).
 - **Gemini CLI, Cursor and other agents without subagents:** the phases run one after another in the same
   context (the Portability section of `SKILL.md`). Same prompts, scripts and report; slower and with a fuller
   context on big projects, so start with `--scope top20`.

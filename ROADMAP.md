@@ -97,6 +97,7 @@ Rules that apply to every item:
 - **R26 Any coding agent.** Install and run outside Claude Code (skills CLI), with the same report.
   (portability layer merged 2026-10-17, #24; OpenCode install, guard and first per-model runs on a real
   advisory merged 2026-10-30, #40; a full Ledgerly run in OpenCode has not finished yet.) Done when: the benchmark runs end to end in at least one other agent and the result is published.
+  R26 Codex status (2026-10-30): `codex/` skill + guard hook built and unit-tested on codex-cli 0.155.1; py-clinic smoke runs: hooks untrusted 17/18, 0 decoy FP; guard on 12/18, 1 decoy FP (single runs); Ledgerly pending.
 
 ## Ideas
 
