@@ -25,7 +25,7 @@ assembles it from the shared prompts into `dist/opencode/`), `ROADMAP.md` (the p
    `node benchmark/usage.mjs <session id>`. Paste both outputs into the pull request. Run twice before
    trusting a difference of one or two bugs. A change that lowers recall or adds a decoy false positive does
    not merge, whatever else it improves.
-4. **Scripts have tests.** `node --test scripts/*.test.mjs opencode/` must pass; the mod: `cd audit-live && claude plugin
+4. **Scripts have tests.** `node --test scripts/*.test.mjs opencode/ codex/codex.test.mjs` must pass; the mod: `cd audit-live && claude plugin
    validate . && claude plugin test`. Add a test for every new script behaviour. `scripts/portability.test.mjs` runs the
    script pipeline from a skill directory outside `~/.claude` with an empty HOME: scripts must not depend on
    Claude Code paths, so the skill keeps working in other agents (R26).
