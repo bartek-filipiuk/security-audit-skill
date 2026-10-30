@@ -159,6 +159,17 @@ test("install: inline [hooks] in config.toml is not edited, the TOML is printed 
   rmSync(home, { recursive: true, force: true });
 });
 
+test("install: trust records ([hooks.state]) in config.toml are not inline hooks", () => {
+  const home = tmp("state");
+  const toml = '[hooks.state]\n\n[hooks.state."/x/hooks.json:pre_tool_use:0:0"]\ntrusted_hash = "sha256:00"\n';
+  writeFileSync(join(home, "config.toml"), toml);
+  const { hooksNote } = install({ codexHome: home });
+  assert.doesNotMatch(hooksNote, /not edited/);
+  assert.ok(existsSync(join(home, "hooks.json")));
+  assert.equal(readFileSync(join(home, "config.toml"), "utf8"), toml);
+  rmSync(home, { recursive: true, force: true });
+});
+
 test("guard: session-gated hook, shell rules, blocklist, patches and the report gate", () => {
   const home = tmp("guard");
   const { skillDir } = install({ codexHome: home });

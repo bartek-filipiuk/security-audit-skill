@@ -66,7 +66,8 @@ function tomlFor(hooks) {
 
 const inlineHooks = (codexHome) => {
   const toml = join(codexHome, "config.toml");
-  return existsSync(toml) && /^\s*\[\[?\s*hooks[.\]\s]/m.test(readFileSync(toml, "utf8"));
+  // [hooks.state."…"] tables are Codex's own trust records (written by /hooks), not hook definitions.
+  return existsSync(toml) && /^\s*\[\[?\s*hooks(?!\.state\b)[.\]\s]/m.test(readFileSync(toml, "utf8"));
 };
 
 // Merges our handlers into hooks.json. Never edits config.toml; if hooks live inline there, prints the TOML.
