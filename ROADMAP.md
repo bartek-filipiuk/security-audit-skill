@@ -95,7 +95,8 @@ Rules that apply to every item:
 - **R13 Cheaper auditors.** Measure on the benchmark whether auditors can run on a lighter model without
   losing recall. Done when: the number is published, whatever it says.
 - **R26 Any coding agent.** Install and run outside Claude Code (skills CLI), with the same report.
-  (portability layer merged 2026-10-17, #24; end-to-end benchmark in OpenCode pending.) Done when: the benchmark runs end to end in at least one other agent and the result is published.
+  (portability layer merged 2026-10-17, #24; OpenCode install, guard and first per-model runs on a real
+  advisory merged 2026-10-30, #40; a full Ledgerly run in OpenCode has not finished yet.) Done when: the benchmark runs end to end in at least one other agent and the result is published.
 
 ## Ideas
 
@@ -114,6 +115,10 @@ Rules that apply to every item:
   (Drupal, WordPress, npm, PyPI, RubyGems, Go), each pinned to a release before a recent advisory and scored
   against its fixed release as the control. Unmatched findings are never published; the owner verifies them
   and reports privately (policy in `benchmark/real/README.md`).
+  Status (2026-10-30): week-1 keys in, plus `drupal/ffmpeg_image_toolkit` and `pypi/litellm` (#40). First runs
+  2026-10-26 (Claude Code, Opus 5.5, one run each): `go/goshs` v2.1.4 6/8, `npm/fast-jwt` 6.2.4 1/3, the 6.3.1
+  control 0 decoy hits; results in `benchmark/real/README.md` and on the site's runs page. The fast-jwt misses led
+  to R32.
   Status (2026-10-20): tooling and week-1 keys in; runs pending the owner's budget. `fetch.mjs` takes
   `ecosystem/package` ids, zip and gem archives with entry checks, and an explicit module root; week 1 is
   `drupal/rest_api_authentication` 3.1.0, `wordpress/flamingo` 2.6.2, `npm/fast-jwt` 6.2.4 (3 advisories)
