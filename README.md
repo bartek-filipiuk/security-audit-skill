@@ -56,8 +56,9 @@ The same audit as a Codex skill (codex-cli 0.155+), with a guard hook that enfor
 to `~/.codex/hooks.json` (backup kept; `config.toml` is never edited). Trust the hook once in `codex` → `/hooks`,
 then in your project: `codex --sandbox workspace-write` and `$security-audit --scope top20`. Only a run started with
 `$security-audit` is guarded. Network stays off in the sandbox, so osv-scanner and the docker scanners report NOT
-RUN unless you opt in. First smoke run (2026-10-30, py-clinic, session model, guard hooks not yet trusted):
-recall 17/18, 0 decoy false positives, 7.7 min; Ledgerly and a guarded run are next. Details and what is still
+RUN unless you opt in. Smoke runs (2026-10-30, py-clinic, session model, one run each): guard
+hooks untrusted 17/18, 0 decoy false positives, 7.7 min; guard on 12/18, 1 decoy false positive, 7.2 min (3 commands
+denied; most misses are findings reported 3 lines off). Ledgerly is next. Details and what is still
 unverified: `codex/README.md`.
 
 ## Use
