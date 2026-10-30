@@ -166,7 +166,7 @@ Next:
      Untrusted hooks are skipped silently, so the guard is off until you do. \`codex exec\` can pass
      --dangerously-bypass-hook-trust instead.
   2. Run in workspace-write: \`codex --sandbox workspace-write\`, or headless
-     \`codex exec --sandbox workspace-write -a never '$security-audit --scope top20'\`.
+     \`codex exec --sandbox workspace-write -c approval_policy='"never"' '$security-audit --scope top20'\`.
      Start with \`$security-audit\`: only then is the session guarded.
 Optional, by hand in ${join(codexHome, "config.toml")} (this installer never edits it):
   [agents]

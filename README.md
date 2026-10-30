@@ -56,7 +56,9 @@ The same audit as a Codex skill (codex-cli 0.155+), with a guard hook that enfor
 to `~/.codex/hooks.json` (backup kept; `config.toml` is never edited). Trust the hook once in `codex` → `/hooks`,
 then in your project: `codex --sandbox workspace-write` and `$security-audit --scope top20`. Only a run started with
 `$security-audit` is guarded. Network stays off in the sandbox, so osv-scanner and the docker scanners report NOT
-RUN unless you opt in. No end-to-end benchmark yet. Details and what is still unverified: `codex/README.md`.
+RUN unless you opt in. First smoke run (2026-10-30, py-clinic, session model, guard hooks not yet trusted):
+recall 17/18, 0 decoy false positives, 7.7 min; Ledgerly and a guarded run are next. Details and what is still
+unverified: `codex/README.md`.
 
 ## Use
 
@@ -137,14 +139,13 @@ with `--scope top20`. Re-auditing a one-line change with `--since` cost 4.7M tok
 
 ## Other agents
 
-Status: OpenCode has its own package, measured on real advisories (see Install); the other agents install, with
+Status: OpenCode and Codex CLI have their own packages (see Install); the other agents install, with
 no end-to-end benchmark yet. The scripts are tested without Claude Code (`scripts/portability.test.mjs`); every
-number in this README outside the OpenCode section is from Claude Code.
+number in this README outside the OpenCode and Codex CLI sections is from Claude Code.
 
 - **OpenCode:** use the OpenCode package (Install, above). OpenCode also reads `~/.claude/skills`, but this
   variant's instructions assume Claude Code's tools, so the OpenCode installer denies the skill there.
-- **Codex CLI:** start it with `$security-audit` and the flags. It has subagents, so parallel mode is expected to
-  run.
+- **Codex CLI:** use the Codex package (Install, above).
 - **Gemini CLI, Cursor and other agents without subagents:** the phases run one after another in the same
   context (the Portability section of `SKILL.md`). Same prompts, scripts and report; slower and with a fuller
   context on big projects, so start with `--scope top20`.

@@ -56,7 +56,7 @@ $security-audit --since last         # re-audit only what changed since the last
 $security-audit --verify-fixes       # recompute what is fixed, change nothing
 ```
 
-Headless: `codex exec --sandbox workspace-write -a never '$security-audit --scope top20'` (add `--json` for the
+Headless: `codex exec --sandbox workspace-write -c approval_policy='"never"' '$security-audit --scope top20'` (add `--json` for the
 event stream, `-o FILE` for the last message). The default `codex exec` sandbox is read-only, which cannot write
 `.security-audit/`. The report is `.security-audit/report.html`.
 
@@ -146,7 +146,7 @@ Assumed, to check in the first real run:
 ```bash
 node benchmark/setup.mjs --app py-clinic --dest "$HOME/runs/codex-pyc"
 cd "$HOME/runs/codex-pyc/app"
-codex exec --sandbox workspace-write -a never --dangerously-bypass-hook-trust \
+codex exec --sandbox workspace-write -c approval_policy='"never"' --dangerously-bypass-hook-trust \
   --json -o ../last-message.md '$security-audit' > ../events.jsonl
 cd - && node benchmark/score.mjs "$HOME/runs/codex-pyc" --label "codex 0.155 py-clinic smoke" \
   --results "$HOME/runs/codex-results.jsonl"
