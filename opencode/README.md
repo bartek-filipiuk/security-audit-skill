@@ -49,7 +49,12 @@ The Claude Code variant states its rules in the prompt. Here they are agent perm
 - edits only inside `.security-audit/` (the coordinator also `.gitignore`); no `.env` reads; no web access;
 - shell is deny-by-default: the skill's scripts, read-only git, `ls`, and the project's test runner;
 - the guard plugin refuses shell redirection or `git --output` outside `.security-audit/`, and refuses to render
-  the report while `audit-state.mjs --final` fails.
+  the report while `audit-state.mjs --final` fails;
+- it refuses a `cd` (or `pushd`) out of the project, to home or to `-`;
+- it refuses shell arguments that read outside the project or the skill directory (`ls ..`, `--dir /elsewhere`,
+  `git -C ../other`). Arguments are read as bash reads them (quotes, backslashes and `//` removed) and resolved
+  through symlinks; variables, `$(..)`, `$'..'`, `~`, brace expansion and globs that could leave the project are
+  refused rather than guessed. A quoted `'/api/'` that names nothing on disk is taken as a regex, not a path.
 
 The limit: the test runner executes the regression tests the verifier writes, and test code can do anything
 the project's tests can. The permissions stop accidents, not a hostile model. `workspace-check.mjs` lists any

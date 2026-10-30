@@ -1,5 +1,5 @@
 import { strict as assert } from "node:assert";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -40,6 +40,52 @@ test("guard: shell arguments may not read outside the project", () => {
   assert.equal(checkShell("cd /work/app && node x.mjs --dir /work/app/.security-audit 2>&1", root), null);
   assert.equal(checkShell("git log --format=%H -n 3 && git show HEAD:src/a.ts", root), null);
   assert.equal(checkShell("node x.mjs --pattern '/\\ncarried_from:/' --re /^id:/", root), null); // regexes, not paths
+});
+
+test("guard: paths are read as bash reads them, unresolvable ones are refused", () => {
+  const refused = [
+    "ls //work/other", "git -C //x log", "node x.mjs --dir //work/other", "cat //etc/passwd", // doubled slashes
+    "ls /*/x", "ls {/work/other,/tmp}/x", "ls .*", "ls src/*/../../x", "ls {..,src}", // globs and braces
+    "ls $'/work/other/x'", "ls \\/work/other", 'ls ""/work/other', 'ls ".."/other', "ls .\\./other/x", // quoting
+    "ls $OLDPWD/x", "ls $TMPDIR/x", "ls ${XDG_CONFIG_HOME}/x", "ls $PWD/..", 'ls "$HOME"', "ls `pwd`/..", // variables
+    "ls $(dirname $PWD)", "node x.mjs --dir=$OLDPWD", "node x.mjs --dir=~/x",
+  ];
+  for (const command of refused) assert.match(checkShell(command, root) ?? "", /outside the project/, command);
+  for (const command of ["cd //work/other", "cd $OLDPWD", "cd -", "cd /work/app/../other", '"cd" /tmp', "if true; then cd /x; fi"]) {
+    assert.match(checkShell(command, root) ?? "", /cd leaves/, command);
+  }
+  for (const command of ["echo x > .security-audit/$X", "echo x > '/tmp/(a)'", "echo x > ~/a", "echo x >& out.txt"]) {
+    assert.match(checkShell(command, root) ?? "", /redirection writes outside/, command);
+  }
+  const allowed = [
+    "git log -S '/api/'", "node x.mjs --pattern '/x/'", "grep -E '/v1/(users|orgs)' src/a.ts", 'grep -rn "/api/v2/" src',
+    "ls src/*.ts && ls //work/app/src", "ls /work/app/src/*.ts", "ls '/work/app/src'", "git log --oneline HEAD..main",
+    "cd //work/app/src && ls", "node x.mjs 2>&1 | head -5 # a comment with /etc/passwd",
+  ];
+  for (const command of allowed) assert.equal(checkShell(command, root), null, command);
+});
+
+test("guard: symlinks are followed, inside the project and to it", () => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "sa-guard-")));
+  const app = join(dir, "app");
+  mkdirSync(join(app, "src"), { recursive: true });
+  mkdirSync(join(dir, "other"));
+  writeFileSync(join(dir, "other", "answer-key.json"), "{}");
+  symlinkSync(join(dir, "other"), join(app, "out")); // a link in the project that points out of it
+  symlinkSync(join(app, "src"), join(app, "lib")); // a link that stays inside
+  symlinkSync(join(dir, "missing"), join(app, "dangling"));
+  symlinkSync(app, join(dir, "applink")); // the project itself opened through a link
+  for (const r of [app, join(dir, "applink")]) {
+    for (const command of ["ls out", "cat out/answer-key.json", "ls src/../out/", "ls dangling", "ls lib/../../other"]) {
+      assert.match(checkShell(command, r) ?? "", /outside the project/, `${r}: ${command}`);
+    }
+    assert.match(checkShell("cd out", r) ?? "", /cd leaves/);
+    assert.match(checkShell("echo x > .security-audit/../out/a", r) ?? "", /redirection writes outside/);
+    for (const command of ["ls src lib/", `ls ${app}/src ${dir}/applink/lib`, "cd lib && ls", "ls src/*"]) {
+      assert.equal(checkShell(command, r), null, `${r}: ${command}`);
+    }
+  }
+  rmSync(dir, { recursive: true, force: true });
 });
 
 test("guard: only sa-* agents, only the shell tool", async () => {
