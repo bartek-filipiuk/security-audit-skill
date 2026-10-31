@@ -94,10 +94,6 @@ Rules that apply to every item:
   otherwise); a `Stack profile: Go` checklist section and Go stack patterns. R10 is still open.
 - **R13 Cheaper auditors.** Measure on the benchmark whether auditors can run on a lighter model without
   losing recall. Done when: the number is published, whatever it says.
-- **R26 Any coding agent.** Install and run outside Claude Code (skills CLI), with the same report.
-  (portability layer merged 2026-10-17, #24; OpenCode install, guard and first per-model runs on a real
-  advisory merged 2026-10-30, #40; a full Ledgerly run in OpenCode has not finished yet.) Done when: the benchmark runs end to end in at least one other agent and the result is published.
-  R26 Codex status (2026-10-30): `codex/` skill + guard hook built and unit-tested on codex-cli 0.155.1; py-clinic smoke runs: hooks untrusted 17/18, 0 decoy FP; guard on 12/18, 1 decoy FP; Ledgerly guard on 21/26, 1 decoy FP, 9 subagents, hook fires in subagents (single runs).
 
 ## Ideas
 
@@ -132,6 +128,13 @@ Rules that apply to every item:
 
 ## Done
 
+- **R26 Any coding agent** (2026-10-30): the skill installs and runs outside Claude Code with the same report.
+  Portability layer #24 (scripts never depend on Claude Code paths); OpenCode package #40 (agents, permissions,
+  guard plugin) and guard hardening #42; Codex CLI package #43-#45 (`codex/`: generated skill, installer, guard
+  hook gated on `$security-audit`). End-to-end Ledgerly runs published on the site's benchmarks page: OpenCode with
+  Hinoki Offensive One 26/26, 5 decoy false positives; Codex CLI with gpt-6-astra and 9 subagents 21/26, 1 decoy
+  false positive (one run each). Network scanners do not run in Codex's sandbox by default, so dependency and
+  git-history findings depend on opting in.
 - **R17 audit-live: phase timing, per-auditor view, session cost** (2026-10-15): the optional mod's pane shows
   how long each phase took and how long the current one has run, derived from the mtimes of the files each phase
   writes (`prepass.md`, `recon.md`, the newest writer ledger in `coverage/`, the newest verified or rejected
