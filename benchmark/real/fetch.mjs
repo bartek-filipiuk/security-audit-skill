@@ -12,8 +12,13 @@
 // the extracted tree is checked for symlinks again. The module root is the version's `root` (a relative path
 // inside the archive, e.g. `goshs.de/goshs/v2@v2.1.4` for a Go proxy zip), else the single top directory of a
 // tar.gz or zip, else the archive root (always for a gem). Agent instruction files shipped in the release
-// (`.claude/`, `CLAUDE.md`, `CLAUDE.local.md`, `.mcp.json`) are removed from app/ and listed in meta.json: they
-// would steer the audit, and project settings can run hooks. DIR/app gets one git commit with a fixed date,
+// (`.claude/`, `CLAUDE.md`, `CLAUDE.local.md`, `.mcp.json`, `AGENTS.md`) are removed from app/ and listed in meta.json: they
+// would steer the audit, and project settings can run hooks. Training apps (R33) take three more manifest
+// options, per version or for the whole manifest: `exclude` (paths under the module root that are not
+// extracted at all, e.g. a packaged app's node_modules and build output; tar.gz with an explicit `root` only),
+// `withhold` (answer material removed from app/: the app's own fixes, solutions, challenge texts) and
+// `strip_markers: "vuln-code-snippet"` (Juice Shop's coding-challenge comments are cut from their lines, the
+// lines stay, so the key's line numbers hold; see juice-key.mjs). All three are listed in meta.json. DIR/app gets one git commit with a fixed date,
 // like benchmark/setup.mjs; meta.json and the archive stay in DIR, outside what the audit sees. meta.json
 // records the answer key's absolute path, which benchmark/score.mjs reads.
 // Default DIR: $TMPDIR/real-<module with / as .>-<version>-<timestamp>.
@@ -39,7 +44,7 @@ export const sha256File = (path) => createHash("sha256").update(readFileSync(pat
 export const MODULE_ID = /^[a-z0-9_]+(\/[a-z0-9_][a-z0-9_.-]*)?$/;
 export const ARCHIVES = ["tar.gz", "zip", "gem"];
 // Agent instruction and settings files that never reach app/.
-export const AGENT_FILES = new Set([".claude", "CLAUDE.md", "CLAUDE.local.md", ".mcp.json"]);
+export const AGENT_FILES = new Set([".claude", "CLAUDE.md", "CLAUDE.local.md", ".mcp.json", "AGENTS.md"]);
 // A module id as one path segment, for e-mail addresses and directory names.
 export const moduleSlug = (module) => module.replace(/\//g, ".");
 
@@ -179,13 +184,29 @@ function refuseEntries(entries, label) {
   }
 }
 
-// Extracts `archive` of `type` into the empty directory `staging`, refusing unsafe entries first.
-export function extractArchive(archive, type, staging) {
+// Paths a manifest lists relative to the module root (`exclude`, `withhold`): relative, no `..`, no glob.
+export function checkRelPaths(list, label) {
+  if (!Array.isArray(list)) throw new Error(`${label} must be a list of paths`);
+  for (const p of list) {
+    if (typeof p !== "string" || unsafeEntryName(p) || /[*?[\]\\]/.test(p) || p.endsWith("/")) throw new Error(`invalid ${label} path "${p}"`);
+  }
+  return list;
+}
+
+// Extracts `archive` of `type` into the empty directory `staging`, refusing unsafe entries first. `exclude`
+// (tar.gz only, needs `root`) lists paths under the module root that are neither checked nor extracted:
+// build output and installed dependencies a release ships (a packaged app's node_modules holds symlinks).
+export function extractArchive(archive, type, staging, { root, exclude = [] } = {}) {
   if (!ARCHIVES.includes(type)) throw new Error(`unknown archive type "${type}" (use ${ARCHIVES.join(", ")})`);
+  checkRelPaths(exclude, "exclude");
+  if (exclude.length && (type !== "tar.gz" || typeof root !== "string" || unsafeEntryName(root))) throw new Error("exclude needs a tar.gz release and an explicit root");
+  const prefixes = exclude.map((p) => `${root}/${p}`);
+  const excluded = (name) => prefixes.some((x) => name === x || name === x + "/" || name.startsWith(x + "/"));
   const tarOpts = ["-C", staging, "--no-same-owner", "--no-same-permissions"];
   if (type === "tar.gz") {
-    refuseEntries(tarEntries(archive, true), "the release");
-    execFileSync("tar", ["-xzf", archive, ...tarOpts], { stdio: "pipe" });
+    refuseEntries(tarEntries(archive, true).filter((e) => !excluded(e.name)), "the release");
+    const ex = prefixes.flatMap((x) => ["--anchored", "--no-wildcards", `--exclude=${x}`]);
+    execFileSync("tar", ["-xzf", archive, ...ex, ...tarOpts], { stdio: "pipe" });
   } else if (type === "zip") {
     refuseEntries(zipEntries(readFileSync(archive)), "the release");
     execFileSync("unzip", ["-q", archive, "-d", staging], { stdio: "pipe" });
@@ -231,6 +252,20 @@ export function stripAgentFiles(dir, base = dir) {
   return removed.sort();
 }
 
+// Removes answer material a training app ships (manifest `withhold`: its own fixes, solutions, challenge
+// texts) from app/; returns the paths that existed, relative to app/.
+export function withholdPaths(app, list) {
+  const out = [];
+  for (const p of checkRelPaths(list, "withhold")) {
+    const full = resolve(app, p);
+    if (relative(app, full).startsWith("..")) throw new Error(`invalid withhold path "${p}"`);
+    if (!existsSync(full)) continue;
+    rmSync(full, { recursive: true, force: true });
+    out.push(p);
+  }
+  return out.sort();
+}
+
 export async function fetchRun({ module, version, dest, tarball, root = here, now = new Date() }) {
   const manifest = loadManifest(module, root);
   const v = manifest.versions?.[version];
@@ -259,12 +294,17 @@ export async function fetchRun({ module, version, dest, tarball, root = here, no
   rmSync(staging, { recursive: true, force: true });
   mkdirSync(staging);
   try {
-    extractArchive(archive, type, staging);
+    extractArchive(archive, type, staging, { root: v.root, exclude: v.exclude ?? manifest.exclude ?? [] });
     renameSync(moduleRootOf(staging, type, v.root), app);
   } finally {
     rmSync(staging, { recursive: true, force: true });
   }
   const stripped = stripAgentFiles(app);
+  const withheld = withholdPaths(app, v.withhold ?? manifest.withhold ?? []);
+  const markerKind = v.strip_markers ?? manifest.strip_markers;
+  if (markerKind != null && markerKind !== "vuln-code-snippet") throw new Error(`unknown strip_markers "${markerKind}"`);
+  // Imported here: juice-key.mjs imports this file for its own extraction.
+  const markers = markerKind ? (await import("./juice-key.mjs")).stripMarkersInTree(app) : null;
 
   const date = `${v.released ?? "2026-01-01"}T12:00:00+00:00`;
   const git = (argv) =>
@@ -292,6 +332,9 @@ export async function fetchRun({ module, version, dest, tarball, root = here, no
     key: join(root, module, v.key),
     source: { url: v.url, sha256: v.sha256, tarball: basename(archive), archive: type, ...(v.root != null ? { root: v.root } : {}) },
     stripped,
+    ...(v.exclude ?? manifest.exclude ? { excluded: v.exclude ?? manifest.exclude } : {}),
+    ...(withheld.length ? { withheld } : {}),
+    ...(markers ? { markers_stripped: markers } : {}),
   };
   writeFileSync(join(runDir, "meta.json"), JSON.stringify(meta, null, 2) + "\n");
   return { runDir, app, meta };
@@ -340,7 +383,10 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       runDir = r.runDir;
       console.log(`Real-advisory run ready: ${runDir}
   ${module} ${version}, sha256 ${r.meta.source.sha256} verified${r.meta.stripped.length ? `
-  removed agent instruction files from app/: ${r.meta.stripped.join(", ")}` : ""}
+  removed agent instruction files from app/: ${r.meta.stripped.join(", ")}` : ""}${r.meta.excluded ? `
+  not extracted: ${r.meta.excluded.join(", ")}` : ""}${r.meta.withheld ? `
+  withheld from app/ (answers): ${r.meta.withheld.join(", ")}` : ""}${r.meta.markers_stripped ? `
+  vuln-code-snippet markers blanked: ${r.meta.markers_stripped.lines} lines in ${r.meta.markers_stripped.files.length} files (line numbers unchanged)` : ""}
   key: ${r.meta.key} (outside the run; never copy it into app/)
 
 1. Audit it (fresh session, skill installed):

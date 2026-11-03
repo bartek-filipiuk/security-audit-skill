@@ -26,7 +26,7 @@ const SEVERITIES = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
 const keyId = (a) => (a.sa ? a.sa.replace("CONTRIB-", "") : a.id);
 
 test("real benchmarks: module ids, one per ecosystem directory, and the week-1 batch is there", () => {
-  for (const m of ["miniorange_saml", "drupal/rest_api_authentication", "wordpress/flamingo", "npm/fast-jwt", "go/goshs"]) assert.ok(modules.includes(m), m);
+  for (const m of ["miniorange_saml", "drupal/rest_api_authentication", "wordpress/flamingo", "npm/fast-jwt", "go/goshs", "npm/juice-shop"]) assert.ok(modules.includes(m), m);
   for (const m of modules) {
     assert.match(m, MODULE_ID, `${m} is a valid module id`);
     if (m.includes("/")) assert.ok(ECOSYSTEMS.includes(m.split("/")[0]), `${m} sits under a known ecosystem`);
@@ -48,6 +48,13 @@ test("real benchmarks: manifests pin a sha256 per version and every advisory has
       if (x.root != null) assert.equal(unsafeEntryName(x.root), null, `${m} ${v} root is relative`);
       assert.match(x.released, /^\d{4}-\d{2}-\d{2}$/, `${m} ${v} released`);
       assert.ok(existsSync(join(real, m, x.key)), `${m} ${v} key file ${x.key}`);
+    }
+    if (man.kind === "training-app") {
+      // R33: a training app is scored on its own challenges, so it has no advisories; its answer material and
+      // build output are kept out of app/ by the manifest.
+      assert.deepEqual(man.advisories, [], `${m}: a training app lists no advisories`);
+      assert.ok(Array.isArray(man.withhold) && man.withhold.length, `${m} withholds its answer material`);
+      continue;
     }
     assert.ok(man.advisories.length, `${m} has advisories`);
     for (const a of man.advisories) {
@@ -78,7 +85,13 @@ test("real benchmarks: answer keys follow the benchmark key format", () => {
       for (const k of ["seeded", "decoys", "known_extras"]) assert.ok(Array.isArray(key[k]), `${x.key} ${k}`);
       const all = [...key.seeded, ...key.decoys, ...key.known_extras];
       assert.equal(new Set(all.map((e) => e.id)).size, all.length, `${x.key} unique ids`);
-      for (const e of key.seeded) {
+      for (const e of man.kind === "training-app" ? key.seeded : []) {
+        assert.ok(Array.isArray(e.challenges) && e.challenges.length, `${e.id} lists its challenges`);
+        assert.equal(e.id, e.challenges.join("+"), `${e.id} is named after its challenges`);
+        assert.ok(Number.isInteger(e.difficulty) && e.difficulty >= 1 && e.difficulty <= 6, `${e.id} difficulty`);
+        for (const f of ["class", "category", "detect", "why"]) assert.equal(typeof e[f], "string", `${e.id} ${f}`);
+      }
+      for (const e of man.kind === "training-app" ? [] : key.seeded) {
         assert.ok(sas.has(e.id), `${e.id} is an advisory in the manifest`);
         assert.ok(SEVERITIES.includes(e.severity), `${e.id} severity`);
         for (const f of ["class", "detect", "why", "advisory_url"]) assert.equal(typeof e[f], "string", `${e.id} ${f}`);
