@@ -134,7 +134,9 @@ advisory's fix changes. First module: the Drupal contrib module `miniorange_saml
 drupal.org advisories, SA-CONTRIB-2026-031 and the 2026-09-09 batch) with 3.2.0 as the fixed control.
 R31 adds a weekly batch across ecosystems (`benchmark/real/<ecosystem>/<package>/`, ids like
 `npm/fast-jwt`); week 1 is Drupal `rest_api_authentication`, WordPress `flamingo`, npm `fast-jwt` and Go
-`goshs`, each with its fixed release as control.
+`goshs`, each with its fixed release as control. R33 adds OWASP Juice Shop (`npm/juice-shop`), a training app
+whose key `benchmark/real/juice-key.mjs` generates from the release's own coding-challenge markers; `fetch.mjs`
+withholds its answer files and blanks the markers in `app/` without moving lines.
 
     node benchmark/real/fetch.mjs miniorange_saml 3.1.3      # --dest DIR, --tarball FILE, --check
     cd <run>/app && CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 claude -p "/security-audit" --permission-mode auto --output-format json

@@ -31,7 +31,7 @@ assembles it from the shared prompts into `dist/opencode/`), `ROADMAP.md` (the p
    Claude Code paths, so the skill keeps working in other agents (R26).
 5. **No real projects.** No names, paths, findings or numbers from anyone's real project in the repo.
    Ledgerly and the other benchmark apps under `benchmark/` are the only projects that may be named. Never commit `.security-audit/` output or `.env` files.
-   Exception: public open-source modules under `benchmark/real/`, referenced by a published advisory and fetched by script (never vendored), may be named with their answer keys.
+   Exception: public open-source modules under `benchmark/real/`, referenced by a published advisory or published as a deliberately vulnerable training app (R33), and fetched by script (never vendored), may be named with their answer keys.
 
 ## Stack profiles
 

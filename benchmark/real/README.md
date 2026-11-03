@@ -1,4 +1,4 @@
-# Real-advisory benchmarks (R30, R31)
+# Real-advisory benchmarks (R30, R31) and training apps (R33)
 
 The other benchmark apps are written for this skill, with planted bugs. These are public open-source
 modules pinned to a release from before a published security fix, scored on whether the skill finds what
@@ -19,6 +19,8 @@ One directory per module, holding `manifest.json` and one `answer-key-<version>.
       go/goshs/                           id `go/goshs`
       drupal/ffmpeg_image_toolkit/        id `drupal/ffmpeg_image_toolkit` (model comparison, 2026-10-27)
       pypi/litellm/                       id `pypi/litellm` (model comparison, 2026-10-27)
+      npm/juice-shop/                     id `npm/juice-shop`, OWASP Juice Shop (R33, a training app, key generated)
+      juice-key.mjs                       Juice Shop marker stripper and answer-key generator
 
 New modules go under `<ecosystem>/<package>/` with `ecosystem` one of `drupal`, `wordpress`, `npm`, `pypi`,
 `rubygems`, `go`; the package directory is lower case, without `@` or `/` (`npm/fastify-static` for
@@ -32,8 +34,75 @@ the archive root). `secret_constants` lists PHP constants whose value must never
 `fetch.mjs` refuses an archive with an absolute entry, a `..` segment, a symlink, a hard link or a special
 file (tar.gz, zip and the gem's inner `data.tar.gz` alike, checked before extraction and again on the
 extracted tree). It removes agent instruction files the release ships (`.claude/`, `CLAUDE.md`,
-`CLAUDE.local.md`, `.mcp.json`) from `app/` and lists them in `meta.json`: they would steer the audit, and
+`CLAUDE.local.md`, `.mcp.json`, `AGENTS.md`) from `app/` and lists them in `meta.json`: they would steer the audit, and
 project settings can run hooks on the operator's machine.
+
+## OWASP Juice Shop (R33, training app)
+
+| Release | Source | Key |
+|---|---|---|
+| 20.3.0 (2026-10-11) | GitHub release asset `juice-shop-20.3.0_node24_linux_x64.tgz`, sha256 pinned (equal to the digest GitHub lists for the asset) | `answer-key-20.3.0.json`, generated: 27 entries covering 33 challenges |
+
+Juice Shop is a deliberately insecure shop with about 116 challenges. 33 of them are coding challenges: the
+source marks their vulnerable lines with `// vuln-code-snippet vuln-line <challengeKey>` comments (`#` in
+YAML) between `vuln-code-snippet start` and `end` comments, next to `neutral-line`, `hide-line` and
+`hide-start`/`hide-end` comments for the in-game snippet viewer. `juice-key.mjs` turns those into the key:
+
+    node benchmark/real/juice-key.mjs --tarball <run>/juice-shop-20.3.0_node24_linux_x64.tgz --version 20.3.0
+
+It checks the sha256 against the manifest, extracts the release with `fetch.mjs`'s extractor into a temporary
+directory, reads the markers and `data/static/challenges.yml` (name, category, difficulty; descriptions and
+hints are not copied) and writes `npm/juice-shop/answer-key-<version>.json`. Never edit the key by hand;
+regenerate it. Rules:
+
+- One entry per group of challenges whose vuln-lines share a line (`loginAdminChallenge+loginBenderChallenge+loginJimChallenge`
+  is one SQL statement). The scorer credits a finding to every entry at the same distance, so separate entries
+  would count one finding three times. 20.3.0 has five such groups.
+- Locations are the vuln-line runs, file by file. A vuln-line outside its challenge's start/end block, an
+  unclosed block, or a challenge missing from `challenges.yml` stops the generator.
+- Juice Shop has no severities. `difficulty` (1 to 6) is the game's rating, kept for reading results, not a risk score.
+- The other 83 challenges have no marked line and are not keyed: a finding about them is unmatched, not a
+  false positive, and recall is over the 27 keyed entries only.
+
+The npm package `juice-shop` was unpublished in 2019, so the source is the packaged release asset (an uploaded
+file, not a generated `archive/refs/tags` tarball). It bundles `node_modules` (with `.bin` symlinks, which
+`fetch.mjs` would refuse), the compiled server `build/` and the compiled frontend `frontend/dist`. Three
+manifest options prepare the run, and `meta.json` lists what each did:
+
+- `exclude`: `node_modules`, `build`, `frontend/dist` are neither checked nor extracted (tar.gz with an
+  explicit `root` only; a link anywhere else is still refused).
+- `withhold`: answer material is removed from `app/`: `data/static/codefixes/` (the fix options for every
+  coding challenge, with the correct one named and explained), `data/static/challenges.yml` and
+  `data/static/i18n/` (challenge texts and hints), `frontend/src/hacking-instructor/` (step-by-step
+  tutorials), `SOLUTIONS.md` and `REFERENCES.md` (links to walkthroughs). `AGENTS.md` goes as an agent file.
+- `strip_markers: "vuln-code-snippet"`: every marker comment is cut from its line and the line stays (a
+  marker-only line becomes blank), so line numbers in `app/` equal the release's and the key's. 20.3.0: 173
+  lines in 13 files. Juice Shop's own parser (`lib/codingChallenges.ts`) and a route that filters markers
+  still name the tool in code; they mark nothing.
+
+After prep, `app/` of 20.3.0 holds 465 files and 112.2k lines, of which `bom.json` (42.1k) and
+`ftp/package-lock.json.bak` (21.3k) are data; the code is 23.5k lines of TypeScript outside tests (server side
+10.6k, Angular frontend 12.9k) plus 19.1k lines of specs.
+
+Caveats specific to Juice Shop, stated with any published number:
+
+- Training data. Juice Shop, its challenge list, its coding-challenge fixes and many walkthroughs have been
+  public for years and are in every current model's training data. A model may recognise the app and recall
+  where the challenges are instead of finding them. The number says less than the private benchmark apps or
+  the post-cutoff advisories above: a floor on familiarity, not a measure of discovery.
+- Hints that stay. The app's own challenge bookkeeping (`challengeUtils.solveIf(challenges.<key>, ...)` next
+  to the vulnerable code, `README.md` and `package.json` calling it insecure) is part of the code and is not
+  removed. Withholding the answer files and blanking the markers removes the direct answers, not the context.
+- Coverage. 27 entries for 33 of about 116 challenges; vulnerabilities outside the coding challenges are
+  real but unkeyed, so unmatched findings are expected and many are true. They are not "new": this is a
+  published training app and its unmatched findings need no disclosure, but they still stay local with the
+  rest of `.security-audit/`.
+
+Run, after the owner's go (a full Claude Code audit is a cost decision, see R33 in the roadmap):
+
+    node benchmark/real/fetch.mjs npm/juice-shop 20.3.0 --check
+    cd <run>/app && CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 claude -p "/security-audit" --permission-mode auto --output-format json
+    node benchmark/score.mjs <run> --label "R33 npm/juice-shop 20.3.0 <run>"
 
 ## miniorange_saml (Drupal: SAML SSO - Service Provider)
 
