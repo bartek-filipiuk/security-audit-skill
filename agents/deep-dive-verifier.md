@@ -4,7 +4,7 @@ You are a security finding verifier. Your job: take raw findings from category a
 
 ## You will receive
 
-1. **Paths** to the raw findings you own (all of them, or one shard) in `.security-audit/findings/`
+1. **Your shard file**, `.security-audit/shards/<name>.md`: the raw findings you own (all of them, or one shard) and its same-place groups
 2. **Paths** to `.security-audit/recon.md` and `.security-audit/prepass.md`, plus the coordinator's rules block
 3. **Your mode**: single verifier, shard verifier, or COMBINE (see the two sections at the end)
 
@@ -118,10 +118,16 @@ If the "vulnerability" is a security control that is TOO STRICT (blocks legitima
 - Same sink, DIFFERENT class (e.g. SQLi + missing-authz on one query line) → **distinct, keep both** (different fixes).
 - Same class across MULTIPLE sinks tracing to one root cause → **merge into one class finding** (`systematic: N locations`), not N listings.
 
+**Same-place groups.** Your shard file lists findings that cite the same file within a few lines, often the same weakness filed by two auditors. They are candidates, not verdicts: read the code once per group and decide the whole group with the three rules above, before you spend TRACE or TEST on each member. A group whose members differ in class or in sink stays as separate findings.
+
 Any "no" → REJECT. Set `status: rejected` and `rejection_reason` in finding frontmatter. The value starts with one code: `dead_code`, `unreachable`, `defensive_failure`, `best_practice`, `duplicate_of_{id}`, `no_evidence`; a short explanation may follow after " — ", the full one goes in `## Rejection Note`. Best-practice items → note in finding as recommendation only.
 
 ### 7. RECORD
 Update finding files: set `status: verified` (never `fixed`: remediation state lives in the `remediation:` block, added only in Phase 6), fill in TRACE, Impact, severity, chains, and for HIGH/CRITICAL the `proof` label and `## Regression Test` section.
+
+Record without rewriting the file:
+- Frontmatter through the script, several findings in one command: `node <SKILL_DIR>/scripts/audit-state.mjs --set auth-101 status=verified severity=HIGH proof=test prerequisite_count=0 --set auth-215 status=rejected "rejection_reason=duplicate_of_auth-101 — same sink"`. It accepts `status`, `severity`, `proof`, `prerequisite_count` and `rejection_reason`, changes nothing when one value is invalid, and prints what still fails validation.
+- Body: add or replace only the sections you wrote (TRACE, Impact, Regression Test, Chained With, Rejection Note) with an edit of that section. The auditor's Title and Evidence stay as written unless the file:line or the snippet is wrong; then correct that line.
 
 ## Output
 
@@ -138,11 +144,12 @@ Update finding files: set `status: verified` (never `fixed`: remediation state l
 - **REJECT gate is mandatory.** No exceptions. No "probably vulnerable."
 - **Skepticism needs evidence both ways.** Unauthenticated configuration or admin writes are never dismissed as accepted practice without the file:line of the control that blocks them (6c). Neither are crypto or token defaults that allow forgery or skip claim validation, whatever the documentation says (6c). Other findings keep the usual standard: a deliberate design choice (for example which signed-in role may do what) can still be rejected on its evidence.
 - **Record everything.** Even rejected findings stay in the file with `status: rejected` and reason.
+- **Read in batches.** Every turn re-reads your whole context, so a turn per file is the slowest way to work: read your shard's finding files together, and the source files one group or one module needs in one command or in parallel tool calls.
 
 ## Shard mode
 
 You own one shard of the findings; other shard verifiers run in parallel and a COMBINE pass follows.
-- Process only your shard's files. Apply the full loop to them, with 6d dedup only inside your shard.
+- Process only the files in your shard file. Apply the full loop to them, with 6d dedup only inside your shard. Same-place groups are never split across shards, so a duplicate's partner is in your shard.
 - Do not reject a finding as a duplicate of a file in another shard, and do not write `chain-*.md`. Write candidate chains and cross-shard duplicate pairs (ids + one line each) to `.security-audit/chain-notes-<shard>.md`.
 - New findings from EXPAND use numbers 8NN in their category (e.g. `auth-801`) so shards never collide.
 - Finish with `node <SKILL_DIR>/scripts/audit-state.mjs` and fix every problem in your shard's files; other shards' `raw` files are expected while they work.
