@@ -57,6 +57,19 @@ Rules that apply to every item:
   workflow on a pull request.
   Status (2026-10-15): example workflow and scripts merged (`examples/github-actions/security-audit.yml`,
   `scripts/ci-scope.mjs`, `scripts/ci-summary.mjs`); moves to Done after one recorded end-to-end run.
+- **R34 Faster verification at the same quality** (merged 2026-11-09 without a benchmark run yet, waiting for it).
+  In one measured Ledgerly run (Claude Code, 2026-10-28, 26/26, 36.5 min) verification took 68% of the tokens and
+  22 of the minutes, and 17 of the 58 raw findings were duplicates, 15 of them filed by two different auditors.
+  Done when: two scored Ledgerly runs keep 26/26 with no extra decoy false positive and a shorter Phase 3, with
+  the `benchmark/usage.mjs` numbers next to those of 2026-10-28.
+  Status (2026-11-09): `scripts/shards.mjs` groups raw findings that cite the same place and writes even
+  verifier shards that never separate a group (replayed on that run: 16 of 17 duplicate pairs in one group, all
+  17 in their partner's shard); `audit-state.mjs --set` records a verdict without rewriting the file (#50).
+  Recon writes a Test Recipe once and nobody takes a test runner from outside the project; the test-quality
+  agent starts with the verifiers (#51). The pre-pass scanners run side by side: 9.0 s to 4.1 s on Ledgerly
+  (#52). Known effect: Ledgerly ships without `node_modules`, so its regression tests are `proof: static`
+  until the benchmark setup installs the dependencies. Dropped after measuring: per-category stack patterns in
+  the briefs (under 1% of the run's tokens, with a recall risk).
 
 ## Next
 
