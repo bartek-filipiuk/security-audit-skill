@@ -22,7 +22,7 @@
 // fallback runs `pip-audit --no-deps --disable-pip` on requirements.txt (reads the file, installs nothing).
 // Secrets are always redacted (gitleaks --redact) so no secret value lands on disk or in agent context.
 
-import { spawnSync } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { inScope, LOCKFILES, phpTaintStatus, rankHotspots, scanEntryPoints, scanScope, walk } from "./surface.mjs";
@@ -65,6 +65,15 @@ for (const d of ["findings", "non-issues", "tests", "coverage"]) mkdirSync(join(
 
 const run = (cmd, argv, opts = {}) =>
   spawnSync(cmd, argv, { encoding: "utf8", maxBuffer: 512 * 1024 * 1024, timeout: 600_000, ...opts });
+// The scanners run side by side (runDeps, runSecrets and every tool of runCodeTools): same result shape as
+// spawnSync, where `error` means the process did not start or was killed, never a non-zero exit.
+const runAsync = (cmd, argv, opts = {}) =>
+  new Promise((done) => {
+    execFile(cmd, argv, { encoding: "utf8", maxBuffer: 512 * 1024 * 1024, timeout: 600_000, ...opts }, (err, stdout, stderr) => {
+      const exited = !err || typeof err.code === "number";
+      done({ status: err ? (exited ? err.code : null) : 0, stdout, stderr, error: exited ? undefined : err });
+    });
+  });
 const installed = (cmd, argv = ["--version"]) => !run(cmd, argv, { timeout: 10_000 }).error;
 const dockerOk = allowDocker && run("docker", ["info", "--format", "{{.ServerVersion}}"], { timeout: 15_000 }).status === 0;
 const uid = process.getuid ? `${process.getuid()}:${process.getgid()}` : null;
@@ -115,9 +124,7 @@ if (incremental?.mode === "incremental") {
   const reaudit = new Set(incremental.reaudit.map((t) => `${t.file}:${t.line}`));
   for (const h of ranked) h.inScope = reaudit.has(`${h.file}:${h.line}`);
 }
-const deps = runDeps();
-const secrets = runSecrets();
-const toolResults = runCodeTools();
+const [deps, secrets, toolResults] = await Promise.all([runDeps(), runSecrets(), runCodeTools()]);
 const phpTaint = phpTaintStatus(files);
 
 writeFileSync(join(toolsDir, "stack.json"), JSON.stringify(stack, null, 2));
@@ -191,17 +198,17 @@ function incrementalSummary() {
 
 // ---------------------------------------------------------------- dependencies
 
-function runDeps() {
+async function runDeps() {
   for (const f of ["osv.json", "pnpm-audit.json", "npm-audit.json", "composer-audit.json", "pip-audit.json"]) rmSync(join(toolsDir, f), { force: true });
   if (!lockfiles.length) return { status: "no lockfile found", rows: [] };
   let res;
   let via;
   if (installed("osv-scanner")) {
     via = "osv-scanner";
-    res = run("osv-scanner", ["scan", "source", "-r", "--format", "json", depRoot]);
+    res = await runAsync("osv-scanner", ["scan", "source", "-r", "--format", "json", depRoot]);
   } else if (dockerOk) {
     via = "osv-scanner (docker)";
-    res = run("docker", ["run", "--rm", "-v", `${depRoot}:/src:ro`, "ghcr.io/google/osv-scanner:latest", "scan", "source", "-r", "--format", "json", "/src"]);
+    res = await runAsync("docker", ["run", "--rm", "-v", `${depRoot}:/src:ro`, "ghcr.io/google/osv-scanner:latest", "scan", "source", "-r", "--format", "json", "/src"]);
   } else {
     return fallbackAudit();
   }
@@ -301,7 +308,7 @@ function fallbackAudit() {
 
 // ---------------------------------------------------------------- secrets
 
-function runSecrets() {
+async function runSecrets() {
   const mode = isGit ? "git" : "dir";
   const common = ["--redact", "--no-banner", "--report-format", "json", "--exit-code", "0"];
   let res;
@@ -310,11 +317,11 @@ function runSecrets() {
   rmSync(report, { force: true }); // never read a previous run's report as this run's result
   if (installed("gitleaks", ["version"])) {
     via = "gitleaks";
-    res = run("gitleaks", [mode, gitTop, ...common, "--report-path", report]);
+    res = await runAsync("gitleaks", [mode, gitTop, ...common, "--report-path", report]);
   } else if (dockerOk) {
     via = "gitleaks (docker)";
     const user = uid ? ["--user", uid] : [];
-    res = run("docker", [
+    res = await runAsync("docker", [
       "run", "--rm", ...user, "-v", `${gitTop}:/repo:ro`, "-v", `${toolsDir}:/out`,
       "ghcr.io/gitleaks/gitleaks:latest", mode, "/repo", ...common, "--report-path", "/out/gitleaks.json",
     ]);
@@ -346,12 +353,12 @@ function runSecrets() {
 
 // ---------------------------------------------------------------- semgrep, zizmor, hadolint, trivy
 
-function runCodeTools() {
+async function runCodeTools() {
   for (const f of ["semgrep.json", "zizmor.sarif", "hadolint.json", "trivy.json", "bandit.json", "gosec.json", "govulncheck.json", "tool-candidates.json"]) rmSync(join(toolsDir, f), { force: true });
   const inv = inventory(root);
-  const results = runTools({
+  const results = await runTools({
     root, inv, stack: rulesetStack(inv, stack),
-    runner: { installed, run, dockerOk, dockerDisabled: !allowDocker },
+    runner: { installed, run: runAsync, dockerOk, dockerDisabled: !allowDocker },
     write: (name, text) => writeFileSync(join(toolsDir, name), text),
   });
   writeFileSync(join(toolsDir, "tool-candidates.json"), JSON.stringify(results.map(({ rows, all, ...r }) => ({ ...r, candidates: all ?? [] })), null, 2));
