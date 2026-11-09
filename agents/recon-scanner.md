@@ -32,7 +32,11 @@ You are a security mapping agent. Your job: map the project's exposed surface, w
 
 8. **Run the test suite.** Execute the project's tests. Record: pass/fail/skip counts, runtime. If tests can't run, record why.
 
-9. **Triage domains.** On a `--scope` run, triage only the in-scope targets listed in prepass.md. Group entry points into functional domains (auth, payments, admin, API, upload, AI, jobs, etc.). Assign risk: HIGH (auth, payments, admin, user/tenant data, file upload, AI tools with data access), MEDIUM (CRUD, search, notifications), LOW (health checks, static content, public read-only).
+9. **Write the Test Recipe.** Verifiers write regression tests under `.security-audit/tests/`. Find out once, for all of them, how such a file is run: put a one-assertion smoke test there that imports one module of the project, run it with the project's own runner, and record the exact command (from the project root) with anything it needed: a config file under `.security-audit/tests/`, path aliases, an environment variable with a placeholder value, how a test gets a database or a client without touching real data (mock, in-memory, a file under `.security-audit/tests/tmp`). Delete nothing you did not create.
+   - The runner is not installed, cannot run a file outside the project's test directory, or needs real secrets or infrastructure: write `unavailable` with the reason, and add the row to "Not assessed" with how to enable it (for example "install the project's dependencies, then re-run the audit").
+   - Never install or download anything, and never take a runner, module or binary from another project or directory. A test run with a borrowed runner proves nothing about this project and executes code the user did not ask you to run.
+
+10. **Triage domains.** On a `--scope` run, triage only the in-scope targets listed in prepass.md. Group entry points into functional domains (auth, payments, admin, API, upload, AI, jobs, etc.). Assign risk: HIGH (auth, payments, admin, user/tenant data, file upload, AI tools with data access), MEDIUM (CRUD, search, notifications), LOW (health checks, static content, public read-only).
 
 ## Output
 

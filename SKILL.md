@@ -192,7 +192,8 @@ Paste this block, completed with the project's own rules from Phase 0, into ever
 Project root: <abs path>. Audit dir (write ONLY here): <abs path>/.security-audit. SKILL_DIR: <abs path>.
 - Never read, print or edit secret files (.env and similar). Never write a key, token, code, phone number or a person's text into any file; use placeholders.
 - Modify nothing outside .security-audit/: no source edits, no state-changing git, no writes to the project's database or data directories. Run helper scripts with explicit arguments and with cwd inside .security-audit/; never run a project script without arguments from the project root.
-- Tests: <exact command with the right runtime>. The project's test suite may write generated files; workspace-check.mjs reports that at the end.
+- Tests: <exact command with the right runtime>. Regression tests: <the Test Recipe from recon.md once it exists, or `unavailable: reason`>. The project's test suite may write generated files; workspace-check.mjs reports that at the end.
+- Never install or download anything, and never take a runner, module or binary from another project or directory. Without a working Test Recipe, proofs are `static`.
 - Start no servers and make no network requests. The only code the audit runs is the project's own test runner, the regression tests under .security-audit/tests/ and the skill's scripts. Scratch files and databases go to .security-audit/tests/tmp.
 - Do not read .security-audit/history/ or any earlier audit. Files with `carried_from:` in their frontmatter come from the previous audit (incremental run): never edit, overwrite or re-verify them; number new files after the highest number already used in your range.
 - <project-specific rules>
@@ -224,6 +225,7 @@ From the recon output, extract:
 - Security claims (become verification targets)
 - Authorization Map, especially "proximity-only" entry points (only guarded by proxy/middleware, a layout or a page)
 - Crypto-heavy flag (Stack section): yes when the project is a crypto, auth or token library or hand-rolls token, signature or encryption code
+- Test Recipe: the command that runs a regression test under `.security-audit/tests/`, or `unavailable` with the reason. Copy it into the rules block. Never build a test setup yourself: in a measured run the coordinator spent seven commands on one and ended up linking a runner from an unrelated project. When it is `unavailable`, tell the user in one line how to enable test proofs
 
 ---
 
@@ -269,17 +271,19 @@ Crypto-heavy project: add `--crypto-heavy`, which moves 2.8 to the Auth Auditor;
 
 This is the most critical phase. Use the prompt from `agents/deep-dive-verifier.md`.
 
+**Dispatch Phase 4 (test quality) in the same turn as the verifiers** (unless this run skips it: an incremental run may carry `test-quality.md`). Most of its work reads tests, not findings, so it does not wait for verification; on a project with a real test suite its 20-minute time box would otherwise run after everything else.
+
 **Shards.** Up to about 25 findings: one verifier. More: split into shards of at most about 25 by category family so related findings stay together (e.g. auth + rate-limit + business-logic + docs-vs-reality / injection + exposure + config + crypto + logging / concurrency + upload) and run the shard verifiers in parallel. On a 160-entry-point project (50 findings) two shards finished in about 14 minutes each, where a single verifier had not finished one pass after 13.
 
 **Provide each shard verifier:** the rules block; the paths of `recon.md`, `prepass.md` and its shard's finding files; the Shard mode section of the verifier prompt; likely overlaps you noticed (cross-shard ones go to COMBINE, not rejected inside a shard); the loop rules: max 3 iterations, stop on set-convergence, never exit with a finding still `raw`.
 
-**Test method.** For HIGH/CRITICAL the verifier writes one regression test in the project's own runner under `.security-audit/tests/`, asserting the correct behaviour, and runs it once against a scratch database: a failing test confirms the finding (`proof: test`). No standalone scripts and no requests to any host. Where the runner cannot reach the code or real secrets would be needed, `proof: static` with one line why. The tests are the starting point of Phase 6.
+**Test method.** For HIGH/CRITICAL the verifier writes one regression test in the project's own runner under `.security-audit/tests/`, asserting the correct behaviour, and runs it once against a scratch database with the command from recon's Test Recipe: a failing test confirms the finding (`proof: test`). No standalone scripts and no requests to any host. Where the runner cannot reach the code or real secrets would be needed, `proof: static` with one line why. The tests are the starting point of Phase 6.
 
 **If a verifier stops before its shard is done** (its completion notification arrives with files still `raw`): make sure it has really ended, re-dispatch the remaining files in verify-only mode, and tell the user what happened.
 
 **Before re-dispatching any work over the same files, confirm the earlier agent has ended.** A "stopped" verifier in a real run kept writing while its replacements ran.
 
-**COMBINE pass (one agent, after all shards):** the COMBINE mode section of the verifier prompt. It reads every shard's `chain-notes-*.md`, decides cross-shard duplicates with rule 6d (a docs-vs-reality finding whose only remedy is its partner's code fix is a duplicate), verifies candidate chains against the code, writes `chain-9NN.md` findings, and runs `audit-state.mjs --final`. Start Phase 4 at the same time as COMBINE.
+**COMBINE pass (one agent, after all shards):** the COMBINE mode section of the verifier prompt. It reads every shard's `chain-notes-*.md`, decides cross-shard duplicates with rule 6d (a docs-vs-reality finding whose only remedy is its partner's code fix is a duplicate), verifies candidate chains against the code, writes `chain-9NN.md` findings, and runs `audit-state.mjs --final`. Phase 4 is already running by then.
 
 **Wait for completion.** Then:
 1. Run `node "$SKILL_DIR/scripts/audit-state.mjs" --final --summary`. It fails on any finding still `raw`, on invalid categories/severities/rejection codes, on verified findings without file:line or an Impact section, and on HIGH/CRITICAL without a proof label. Raw findings → re-dispatch a verify-only pass; format problems → fix the files. Repeat until it exits 0.
@@ -293,9 +297,9 @@ This is the most critical phase. Use the prompt from `agents/deep-dive-verifier.
 
 ### Phase 4: Test Quality (1 agent, Sonnet, time-boxed)
 
-Dispatch a single agent with the prompt from `agents/test-quality-auditor.md`, in parallel with COMBINE.
+Dispatch a single agent with the prompt from `agents/test-quality-auditor.md`, in the same turn as the Phase 3 verifiers.
 
-**Provide:** the rules block; the path of `recon.md` (Test Inventory section); the list of verified ids and titles from `audit-state.mjs --summary`; output path `.security-audit/test-quality.md`; the time box (about 20 minutes of work).
+**Provide:** the rules block; the path of `recon.md` (Test Inventory and Test Recipe sections); output path `.security-audit/test-quality.md`; the time box (about 20 minutes of work). It lists the verified findings itself with `audit-state.mjs --summary` when it reaches the coverage table, and names any finding that was still raw then.
 
 **Mutation testing is off by default.** In a real run it was the slowest phase of the whole audit (62 minutes) and wrote a stray file into the project root. Run it only when the user passes `--mutation` or asks, and then only on a copy of the repository outside the project directory.
 

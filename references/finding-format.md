@@ -179,6 +179,11 @@ Levels: proxy | layout | page | handler | action | procedure | DAL | query | non
 - Security tests: [list files]
 - Pre-existing failures: [list or "none"]
 
+## Test Recipe
+- Regression tests: [`exact command, from the project root, that runs one file under .security-audit/tests/`] | unavailable: [reason]
+- Checked with: [the smoke test's path and its result] | not checked: [reason]
+- Needs: [config file under .security-audit/tests/, path aliases, placeholder env vars, how a test gets a database or client without real data; or "nothing"]
+
 ## Triage (for parallel mode)
 | Domain | Risk | Entry Points | Categories to Audit |
 |--------|------|-------------|-------------------|
