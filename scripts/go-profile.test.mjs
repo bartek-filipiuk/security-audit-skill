@@ -526,12 +526,12 @@ const goProject = () => project({
   "main.go": 'package main\n\nimport "net/http"\n\nfunc main() {\n\thttp.HandleFunc("/ping", ping)\n}\n\nfunc ping(w http.ResponseWriter, r *http.Request) {}\n',
 });
 
-test("gosec and govulncheck: native only, NOT RUN with how to enable them, no downloads, skipped without Go", () => {
+test("gosec and govulncheck: native only, NOT RUN with how to enable them, no downloads, skipped without Go", async () => {
   const root = goProject();
   const inv = inventory(root);
   assert.equal(inv.go, 1);
   assert.deepEqual(inv.gomods, ["go.mod"]);
-  const none = runTools({ root, inv, stack: [], only: ["gosec", "govulncheck"], runner: { installed: () => false, run: () => assert.fail("must not run"), dockerOk: true } });
+  const none = await runTools({ root, inv, stack: [], only: ["gosec", "govulncheck"], runner: { installed: () => false, run: () => assert.fail("must not run"), dockerOk: true } });
   assert.deepEqual(none.map((r) => r.state), ["not-run", "not-run"]);
   assert.match(none[0].status, /^NOT RUN: gosec not installed \(no docker fallback\); to enable: `go install github\.com\/securego\/gosec\/v2\/cmd\/gosec@latest`/);
   assert.match(none[1].status, /^NOT RUN: govulncheck not installed \(no docker fallback\); to enable: `go install golang\.org\/x\/vuln\/cmd\/govulncheck@latest`/);
@@ -541,7 +541,7 @@ test("gosec and govulncheck: native only, NOT RUN with how to enable them, no do
     { severity: "MEDIUM", confidence: "HIGH", cwe: { id: "22" }, rule_id: "G304", details: "Potential file inclusion via variable", file: `${root}/main.go`, line: "9-10" },
   ], Stats: {} });
   const calls = [];
-  const ran = runTools({ root, inv, stack: [], only: ["gosec"], runner: { installed: (c) => c === "gosec", run: (c, a, o) => { calls.push([c, a, o]); return { status: 0, stdout: gosecOut, stderr: "" }; } } });
+  const ran = await runTools({ root, inv, stack: [], only: ["gosec"], runner: { installed: (c) => c === "gosec", run: (c, a, o) => { calls.push([c, a, o]); return { status: 0, stdout: gosecOut, stderr: "" }; } } });
   assert.equal(ran[0].status, "gosec: 1 candidates");
   assert.deepEqual([ran[0].rows[0].file, ran[0].rows[0].line, ran[0].rows[0].rule, ran[0].rows[0].severity], ["main.go", 9, "G304 CWE-22", "medium"]);
   const [cmd, argv, opts] = calls[0];
@@ -551,18 +551,18 @@ test("gosec and govulncheck: native only, NOT RUN with how to enable them, no do
   assert.deepEqual([opts.env.GOTOOLCHAIN, opts.env.GOFLAGS, opts.env.GOPROXY], ["local", "-mod=readonly", "off"]);
 
   const testsOnly = project({ "go.mod": "module example.com/x\n", "x_test.go": "package x\n" });
-  const skipped = runTools({ root: testsOnly, inv: inventory(testsOnly), stack: [], only: ["gosec", "govulncheck"], runner: { installed: () => true, run: () => assert.fail("must not run") } });
+  const skipped = await runTools({ root: testsOnly, inv: inventory(testsOnly), stack: [], only: ["gosec", "govulncheck"], runner: { installed: () => true, run: () => assert.fail("must not run") } });
   assert.deepEqual(skipped.map((r) => r.status), ["skipped: no Go source outside tests", "skipped: no Go source outside tests"]);
   const noMod = project({ "main.go": "package main\n" });
-  assert.equal(runTools({ root: noMod, inv: inventory(noMod), stack: [], only: ["gosec"], runner: { installed: () => true, run: () => assert.fail("must not run") } })[0].status, "skipped: no go.mod (gosec loads packages in module mode)");
+  assert.equal((await runTools({ root: noMod, inv: inventory(noMod), stack: [], only: ["gosec"], runner: { installed: () => true, run: () => assert.fail("must not run") } }))[0].status, "skipped: no go.mod (gosec loads packages in module mode)");
 });
 
-test("the Go tools run in the shallowest module and report paths from the project root", () => {
+test("the Go tools run in the shallowest module and report paths from the project root", async () => {
   const root = project({ "backend/go.mod": "module example.com/b\n", "backend/api/h.go": "package api\n", "tools/go.mod": "module example.com/t\n", "tools/x.go": "package main\n" });
   const inv = inventory(root);
   const out = JSON.stringify({ Issues: [{ severity: "HIGH", rule_id: "G204", details: "Subprocess launched with variable", file: `${root}/backend/api/h.go`, line: "3" }] });
   const calls = [];
-  const ran = runTools({ root, inv, stack: [], only: ["gosec"], runner: { installed: () => true, run: (c, a, o) => { calls.push(o.cwd); return { status: 0, stdout: out }; } } });
+  const ran = await runTools({ root, inv, stack: [], only: ["gosec"], runner: { installed: () => true, run: (c, a, o) => { calls.push(o.cwd); return { status: 0, stdout: out }; } } });
   assert.deepEqual(calls, [join(root, "backend")]);
   assert.equal(ran[0].rows[0].file, "backend/api/h.go");
   assert.equal(ran[0].status, "gosec: 1 candidates (module backend); 1 more go.mod not scanned (tools/go.mod)");

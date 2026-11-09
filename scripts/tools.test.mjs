@@ -69,13 +69,13 @@ test("inventory finds workflows, Dockerfiles and IaC outside skipped directories
   assert.deepEqual(semgrepConfigs([]), []);
 });
 
-test("on Ledgerly every tool applies (R08 seeds a workflow, Dockerfile and compose file) and none runs without a binary or docker", () => {
+test("on Ledgerly every tool applies (R08 seeds a workflow, Dockerfile and compose file) and none runs without a binary or docker", async () => {
   const root = join(repo, "benchmark", "app");
   const inv = inventory(root);
   const stack = rulesetStack(inv);
   assert.ok(stack.includes("nextjs") && stack.includes("ts"));
   const calls = [];
-  const res = runTools({ root, inv, stack, runner: { installed: () => false, run: (...a) => calls.push(a), dockerOk: false } });
+  const res = await runTools({ root, inv, stack, runner: { installed: () => false, run: (...a) => calls.push(a), dockerOk: false } });
   assert.deepEqual(calls, [], "nothing is executed when no tool is available");
   const by = Object.fromEntries(res.map((r) => [r.tool, r]));
   assert.equal(by.semgrep.state, "not-run");
@@ -101,7 +101,7 @@ test("parsers normalize paths, severities and notes; dedupe keeps the most sever
   assert.throws(() => parseHadolint("{}", root));
 });
 
-test("runTools: native first, then docker pinned by digest, else NOT RUN; FAILED on unparsable output", () => {
+test("runTools: native first, then docker pinned by digest, else NOT RUN; FAILED on unparsable output", async () => {
   const root = infraProject();
   const inv = inventory(root);
   const stack = rulesetStack(inv);
@@ -118,7 +118,7 @@ test("runTools: native first, then docker pinned by digest, else NOT RUN; FAILED
       return { status: 0, stdout: trivyOut };
     },
   };
-  const res = runTools({ root, inv, stack, runner, write: (n, t) => { written[n] = t; } });
+  const res = await runTools({ root, inv, stack, runner, write: (n, t) => { written[n] = t; } });
   const by = Object.fromEntries(res.map((r) => [r.tool, r]));
 
   const [, semArgs] = calls.find(([c]) => c === "semgrep");
@@ -136,17 +136,17 @@ test("runTools: native first, then docker pinned by digest, else NOT RUN; FAILED
   assert.equal(by.trivy.total, 1);
   assert.deepEqual(Object.keys(written).sort(), ["hadolint.json", "semgrep.json", "trivy.json"]);
 
-  const off = runTools({ root, inv, stack, runner: { installed: () => false, run: () => assert.fail("must not run"), dockerOk: false, dockerDisabled: true } });
+  const off = await runTools({ root, inv, stack, runner: { installed: () => false, run: () => assert.fail("must not run"), dockerOk: false, dockerDisabled: true } });
   assert.equal(off.find((r) => r.tool === "bandit").status, "skipped: no Python source outside tests");
   for (const t of ["gosec", "govulncheck"]) assert.equal(off.find((r) => r.tool === t).status, "skipped: no Go source outside tests");
   assert.ok(off.filter((r) => !["bandit", "gosec", "govulncheck"].includes(r.tool)).every((r) => r.state === "not-run"));
   assert.match(off[0].status, /docker disabled by --no-docker/);
 });
 
-test("candidates are capped per tool and the total is kept", () => {
+test("candidates are capped per tool and the total is kept", async () => {
   const root = "/w";
   const results = Array.from({ length: MAX_ROWS + 5 }, (_, i) => ({ check_id: "r", path: `a${i}.js`, start: { line: 1 }, extra: { severity: "INFO", message: "m|n" } }));
-  const res = runTools({
+  const res = await runTools({
     root, inv: { langs: { js: 1 }, manifests: [], workflows: [], dockerfiles: [], iac: [] }, stack: ["js"], only: ["semgrep"],
     runner: { installed: () => true, run: () => ({ status: 0, stdout: JSON.stringify({ results }) }) },
   });

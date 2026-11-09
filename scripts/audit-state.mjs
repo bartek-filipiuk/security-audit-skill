@@ -5,6 +5,9 @@
 // --final: also fail on findings still `raw` (use after Phase 3).
 // --write: (re)generate remediation.json; refuses while there are validation errors.
 // --summary: compact counts plus one line per verified finding, so the coordinator need not read the files.
+// --set <id> key=value ...: change frontmatter fields of one finding in place (status, severity, proof,
+//   rejection_reason, prerequisite_count), so a verifier records a verdict without rewriting the file.
+//   Repeat --set for several findings; nothing is written unless every --set is valid.
 // Exit code 1 when validation fails.
 
 import { existsSync, readFileSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
@@ -88,6 +91,45 @@ export const section = (body, name) => {
   return m ? m[1].trim() : null;
 };
 export const titleOf = (fm, body) => fm.title || section(body, "Title")?.split("\n")[0] || "";
+
+// Locations cited by a finding. Shared with benchmark/score.mjs, so the scorer and shards.mjs read a finding's
+// place the same way.
+export const PATH = String.raw`[\w.()[\]@-]+(?:\/[\w.()[\]@-]+)*`;
+const LOC = new RegExp(String.raw`(${PATH}|\.env(?![.\w]))(?::(\d+)(?:\s*[-\u2013]\s*(\d+))?)?`, "g");
+
+// File names a finding may cite: code (JS/TS, PHP, Python, Go, Rust, JVM, Ruby, Elixir, .NET, Swift, Dart, C/C++,
+// shell), config, manifests, CI workflows, Dockerfiles and IaC.
+export const SOURCE_FILE = /\.(?:[cm]?[jt]sx?|json|ya?ml|md|example|env|toml|tf|hcl|dockerfile|sql|rules|php|twig|module|inc|install|theme|py|html?|txt|cfg|ini|go|mod|rs|java|kts?|scala|groovy|gradle|rb|erb|ex|exs|cs|swift|dart|c|h|cc|cpp|hpp|lua|sh|bash|xml|properties|conf|vue|svelte)$|^\.env|^(?:Dockerfile|Containerfile)(?:\.[\w-]+)?$|^\.npmrc$/;
+
+export const normalizePath = (p) => p.replace(/^\((?![^/]*\))/, "").replace(/^\.\//, "").replace(/^app\//, "");
+
+// The first path in `text` that looks like a source file, with its line or line range when given.
+export function parseLocation(text) {
+  for (const m of text.matchAll(LOC)) {
+    const file = m[1];
+    if (file !== ".env" && !SOURCE_FILE.test(file.split("/").pop())) continue;
+    const start = m[2] ? Number(m[2]) : null;
+    const end = m[3] ? Math.max(Number(m[3]), start) : start;
+    return { file: normalizePath(file), start, end };
+  }
+  return null;
+}
+
+// Primary location of a finding file: the Evidence `**File**:` line, else the first cited path:line.
+export function primaryLocation(text) {
+  const fileLine = text.match(/\*\*File\*\*:?\s*(.+)/);
+  if (fileLine) {
+    const loc = parseLocation(fileLine[1]);
+    if (loc) return loc;
+  }
+  const body = text.replace(/^---\r?\n[\s\S]*?\r?\n---/, "");
+  for (const m of body.matchAll(LOC)) {
+    if (!m[2]) continue;
+    const loc = parseLocation(m[0]);
+    if (loc) return loc;
+  }
+  return parseLocation(body);
+}
 
 export function loadAudit(dir) {
   const read = (sub) => {
@@ -232,11 +274,75 @@ export function buildRemediation({ findings, nonIssues }, prev, { project, sourc
   };
 }
 
+// Fields a verifier may change with --set, each with the check its value must pass.
+const SETTABLE = {
+  status: (v) => STATUSES.includes(v),
+  severity: (v) => SEVERITIES.includes(v),
+  proof: (v) => PROOFS.includes(v),
+  prerequisite_count: (v) => /^\d+$/.test(v),
+  rejection_reason: (v) => v === "" || REJECTIONS.includes(v.match(/^[\w-]+/)?.[0]) || /^duplicate_of_[\w-]+/.test(v),
+};
+
+// `text` with the frontmatter fields set: an existing top-level line is replaced, a new key goes before the
+// closing `---`. Throws on a field or value --set does not accept.
+export function setFields(text, fields) {
+  const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!m) throw new Error("missing frontmatter block");
+  let fm = m[1];
+  for (const [key, value] of Object.entries(fields)) {
+    if (!SETTABLE[key]) throw new Error(`${key}: not settable (allowed: ${Object.keys(SETTABLE).join(", ")})`);
+    if (/[\r\n]/.test(value) || !SETTABLE[key](value)) throw new Error(`${key}: value "${value.slice(0, 60)}" is not valid`);
+    const line = `${key}: ${key === "rejection_reason" ? JSON.stringify(value) : value}`;
+    const re = new RegExp(`^${key}:.*$`, "m");
+    fm = re.test(fm) ? fm.replace(re, () => line) : `${fm}\n${line}`;
+  }
+  return text.replace(m[1], () => fm);
+}
+
+// --set <id> key=value ... (repeatable) → [[id, { key: value }]]
+export function parseSets(args) {
+  const sets = [];
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] !== "--set") continue;
+    const fields = {};
+    let j = i + 2;
+    for (; j < args.length && !args[j].startsWith("--"); j++) {
+      const eq = args[j].indexOf("=");
+      if (eq < 1) throw new Error(`--set ${args[i + 1]}: "${args[j]}" is not key=value`);
+      fields[args[j].slice(0, eq)] = args[j].slice(eq + 1);
+    }
+    if (!args[i + 1] || args[i + 1].startsWith("--") || !Object.keys(fields).length) throw new Error("--set needs a finding id and at least one key=value");
+    sets.push([args[i + 1], fields]);
+    i = j - 1;
+  }
+  return sets;
+}
+
+// Applies every --set or none. Carried findings belong to the previous audit and are never edited.
+export function applySets(dir, sets) {
+  const { findings } = loadAudit(dir);
+  const writes = sets.map(([id, fields]) => {
+    const f = findings.find((x) => x.stem === id);
+    if (!f) throw new Error(`--set ${id}: no such finding in ${join(dir, "findings")}`);
+    if (f.data?.carried_from) throw new Error(`--set ${id}: carried from a previous audit, never edited`);
+    try { return [join(dir, f.file), setFields(f.text, fields)]; } catch (e) { throw new Error(`--set ${id}: ${e.message}`); }
+  });
+  for (const [path, text] of writes) writeFileSync(path, text);
+  return writes.length;
+}
+
 // realpath on both sides: the skill is usually run through a symlink (~/.claude/skills/...).
 if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   const args = process.argv.slice(2);
   const opt = (n, d) => (args.indexOf(n) >= 0 ? args[args.indexOf(n) + 1] : d);
   const dir = resolve(opt("--dir", ".security-audit"));
+  try {
+    const n = applySets(dir, parseSets(args));
+    if (n) console.log(`audit-state: frontmatter updated in ${n} finding(s)`);
+  } catch (e) {
+    console.log(`audit-state: nothing changed. ${e.message}`);
+    process.exit(1);
+  }
   const audit = loadAudit(dir);
   const errors = validate(audit, { final: args.includes("--final") });
 

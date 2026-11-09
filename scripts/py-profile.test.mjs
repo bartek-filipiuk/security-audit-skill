@@ -424,10 +424,10 @@ test("Python file signals: templates, settings, Flask secrets and debug, csrf_ex
   assert.equal(rows.find((r) => r.file === "s/settings.py" && r.line === 4).score, 6);
 });
 
-test("bandit runs in the R07 tool runner for Python projects (native only), pip-audit is a read-only dependency fallback", () => {
+test("bandit runs in the R07 tool runner for Python projects (native only), pip-audit is a read-only dependency fallback", async () => {
   const inv = inventory(bench.app);
   assert.ok(inv.python > 0);
-  const none = runTools({ root: bench.app, inv, stack: [], only: ["bandit"], runner: { installed: () => false, run: () => assert.fail("must not run"), dockerOk: true } });
+  const none = await runTools({ root: bench.app, inv, stack: [], only: ["bandit"], runner: { installed: () => false, run: () => assert.fail("must not run"), dockerOk: true } });
   assert.equal(none[0].state, "not-run");
   assert.match(none[0].status, /^NOT RUN: bandit not installed \(no docker fallback\); to enable: `pipx install bandit`/);
 
@@ -435,7 +435,7 @@ test("bandit runs in the R07 tool runner for Python projects (native only), pip-
     { filename: "./appointments/views.py", line_number: 29, test_id: "B608", test_name: "hardcoded_sql_expressions", issue_severity: "MEDIUM", issue_confidence: "LOW", issue_text: "Possible SQL injection vector through string-based query construction." },
   ] });
   const calls = [];
-  const ran = runTools({ root: bench.app, inv, stack: [], only: ["bandit"], runner: { installed: (c) => c === "bandit", run: (c, a) => { calls.push([c, a]); return { status: 1, stdout: out, stderr: "" }; } } });
+  const ran = await runTools({ root: bench.app, inv, stack: [], only: ["bandit"], runner: { installed: (c) => c === "bandit", run: (c, a) => { calls.push([c, a]); return { status: 1, stdout: out, stderr: "" }; } } });
   assert.deepEqual(calls[0].slice(0, 1), ["bandit"]);
   for (const a of ["-r", ".", "-f", "json"]) assert.ok(calls[0][1].includes(a), a);
   assert.equal(ran[0].status, "bandit: 1 candidates");
@@ -444,7 +444,7 @@ test("bandit runs in the R07 tool runner for Python projects (native only), pip-
   const testsOnly = mkdtempSync(join(tmpdir(), "sa-r06-bandit-"));
   mkdirSync(join(testsOnly, "tests"));
   writeFileSync(join(testsOnly, "tests", "test_x.py"), "x = 1\n");
-  const skipped = runTools({ root: testsOnly, inv: inventory(testsOnly), stack: [], only: ["bandit"], runner: { installed: () => true, run: () => assert.fail("must not run") } });
+  const skipped = await runTools({ root: testsOnly, inv: inventory(testsOnly), stack: [], only: ["bandit"], runner: { installed: () => true, run: () => assert.fail("must not run") } });
   assert.equal(skipped[0].status, "skipped: no Python source outside tests", "test files alone are not a Python project");
 
   const prepass = readFileSync(join(repo, "scripts", "prepass.mjs"), "utf8");

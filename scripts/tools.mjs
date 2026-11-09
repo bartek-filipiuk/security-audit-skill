@@ -320,10 +320,11 @@ export const TOOLS = [
 // ---------------------------------------------------------------- run
 
 // runner: { installed(cmd, argv) -> bool, run(cmd, argv, opts) -> {status, stdout, stderr, error}, dockerOk, dockerDisabled }
-// write(name, text): stores raw output under tools/. Returns one result per tool, in TOOLS order.
+// write(name, text): stores raw output under tools/. The tools run side by side (runner.run may return a
+// promise); resolves to one result per tool, in TOOLS order.
 export function runTools({ root, inv, stack, runner, write = () => {}, only = null }) {
   const ctx = { root, inv, stack, configs: semgrepConfigs(stack) };
-  return TOOLS.filter((t) => !only || only.includes(t.name)).map((t) => {
+  return Promise.all(TOOLS.filter((t) => !only || only.includes(t.name)).map(async (t) => {
     const base = { tool: t.name, category: t.category, check: t.check(ctx), rows: [], total: 0 };
     const skip = t.applies(ctx);
     if (skip) return { ...base, state: "skipped", status: `skipped: ${skip}` };
@@ -334,10 +335,10 @@ export function runTools({ root, inv, stack, runner, write = () => {}, only = nu
     const cwd = sub ? join(root, sub) : root;
     if (runner.installed(cmd, t.version)) {
       via = t.name;
-      res = runner.run(cmd, argv, { cwd, ...(t.env ? { env: { ...process.env, ...t.env } } : {}) });
+      res = await runner.run(cmd, argv, { cwd, ...(t.env ? { env: { ...process.env, ...t.env } } : {}) });
     } else if (runner.dockerOk && IMAGES[t.name]) {
       via = `${t.name} (docker)`;
-      res = runner.run("docker", ["run", "--rm", "-v", `${root}:/src:ro`, "-w", "/src", IMAGES[t.name], ...t.docker(ctx)], { cwd: root });
+      res = await runner.run("docker", ["run", "--rm", "-v", `${root}:/src:ro`, "-w", "/src", IMAGES[t.name], ...t.docker(ctx)], { cwd: root });
     } else {
       if (!IMAGES[t.name]) return { ...base, state: "not-run", status: `NOT RUN: ${t.name} not installed (no docker fallback); to enable: ${INSTALL[t.name]}` };
       const docker = runner.dockerDisabled ? "docker disabled by --no-docker" : "docker unavailable";
@@ -354,7 +355,7 @@ export function runTools({ root, inv, stack, runner, write = () => {}, only = nu
     const all = dedupe(rows.filter((r) => r.file && !EXCLUDE.some((e) => r.file === e || r.file.startsWith(`${e}/`))));
     const others = t.dir && ctx.inv.gomods.length > 1 ? `; ${ctx.inv.gomods.length - 1} more go.mod not scanned (${ctx.inv.gomods.slice(1).join(", ")})` : "";
     return { ...base, state: "ran", via, status: `${via}: ${all.length} candidates${t.name === "semgrep" ? ` (${ctx.configs.join(", ")})` : ""}${sub ? ` (module ${sub})` : ""}${others}`, rows: all.slice(0, MAX_ROWS), total: all.length, all };
-  });
+  }));
 }
 
 // Same file, line and rule once; most severe first, then by place.
