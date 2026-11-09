@@ -116,3 +116,36 @@ test("verifier: crypto and token defaults that allow forgery are never dismissed
   assert.match(verifier, /\*\*Token or signature verify issue found\*\*/);
   assert.match(verifier, /Crypto and token APIs: the regression test generates its own keys inside the test/);
 });
+
+test("test recipe: recon finds out once how a regression test runs, and nobody borrows a runner from outside the project", () => {
+  const read = (p) => readFileSync(join(repo, p), "utf8");
+  const recon = read("agents/recon-scanner.md");
+  assert.match(recon, /\*\*Write the Test Recipe\.\*\*[\s\S]*one-assertion smoke test[\s\S]*project's own runner/);
+  assert.match(recon, /write `unavailable` with the reason, and add the row to "Not assessed" with how to enable it/);
+  const never = /Never install or download anything, and never take a runner, module or binary from another project or directory/i;
+  assert.match(recon, never);
+  assert.match(read("SKILL.md").match(/^```\nProject root:[\s\S]*?^```/m)?.[0] ?? "", never, "in the rules block every agent gets");
+  assert.match(read("SKILL.md"), /Without a working Test Recipe, proofs are `static`/);
+  assert.match(read("references/finding-format.md"), /^## Test Recipe\n- Regression tests: .*\| unavailable: \[reason\]/m);
+  const test4b = verifier.match(/### 4b\. TEST[\s\S]*?(?=### 5\. RATE)/)?.[0] ?? "";
+  assert.match(test4b, /\*\*Test Recipe\*\* section of `recon\.md`/);
+  assert.match(test4b, /Recipe `unavailable` → every finding is `proof: static`/);
+  assert.match(test4b, /never take a runner, module or binary from another project or directory/);
+});
+
+test("phase 4 starts with the verifiers and maps only verified findings", async () => {
+  const read = (p) => readFileSync(join(repo, p), "utf8");
+  const skill = read("SKILL.md");
+  assert.match(skill, /\*\*Dispatch Phase 4 \(test quality\) in the same turn as the verifiers\*\*/);
+  assert.doesNotMatch(skill, /Start Phase 4 at the same time as COMBINE|in parallel with COMBINE/);
+  const tq = read("agents/test-quality-auditor.md");
+  assert.match(tq, /Work in this order: 4\.1, 4\.2, 4\.4, then 4\.3/);
+  assert.match(tq, /audit-state\.mjs --dir <audit dir> --summary/);
+  assert.match(tq, /Never map a raw or rejected finding as if it were confirmed/);
+  assert.match(tq, /Not mapped \(verification still running\): <ids>/);
+  // The summary the agent runs names what is still raw.
+  const { summarize } = await import("./audit-state.mjs");
+  const f = (id, status) => ({ stem: id, body: `## Title\n${id}\n`, data: { id, status, severity: "HIGH", category: "auth", proof: "static" } });
+  assert.match(summarize({ findings: [f("auth-101", "verified"), f("auth-102", "raw"), f("auth-103", "raw")], nonIssues: [] }), /^still raw: auth-102, auth-103$/m);
+  assert.doesNotMatch(summarize({ findings: [f("auth-101", "verified")], nonIssues: [] }), /still raw/);
+});

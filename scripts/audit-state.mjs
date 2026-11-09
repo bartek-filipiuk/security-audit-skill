@@ -221,11 +221,13 @@ export function summarize({ findings, nonIssues }) {
   const verified = fs.filter((f) => f.data.status === "verified")
     .sort((a, b) => SEVERITIES.indexOf(a.data.severity) - SEVERITIES.indexOf(b.data.severity) || a.stem.localeCompare(b.stem));
   const rejected = fs.filter((f) => f.data.status === "rejected");
+  const raw = fs.filter((f) => f.data.status === "raw").map((f) => f.stem);
   const carried = fs.filter((f) => f.data.carried_from).length + nonIssues.filter((n) => n.data?.carried_from).length;
   const L = [
     `status: ${JSON.stringify(by(fs, (f) => f.data.status))} · non-issues: ${nonIssues.length}${carried ? ` · carried from a previous run: ${carried} (do not re-verify)` : ""}`,
     `verified by severity: ${JSON.stringify(by(verified, (f) => f.data.severity))} · by category: ${JSON.stringify(by(verified, (f) => f.data.category))}`,
     `rejected by reason: ${JSON.stringify(by(rejected, (f) => String(f.data.rejection_reason ?? "").match(/^[\w-]+/)?.[0]?.replace(/^duplicate_of_.*/, "duplicate") ?? "?"))}`,
+    ...(raw.length ? [`still raw: ${raw.join(", ")}`] : []),
     ...verified.map((f) => `  ${f.data.severity.padEnd(8)} ${f.stem.padEnd(22)} ${(f.data.proof ?? "-").padEnd(7)} pre=${f.data.prerequisite_count ?? "?"} ${f.data.carried_from ? "[carried] " : ""}${titleOf(f.data, f.body).slice(0, 110)}`),
   ];
   return L.join("\n");

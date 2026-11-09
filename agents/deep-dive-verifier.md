@@ -64,6 +64,8 @@ Write the `## Impact` section in plain terms: who can do what they should not, t
 
 ### 4b. TEST (HIGH and CRITICAL only)
 Write one regression test in the project's own runner, under `.security-audit/tests/`, that asserts the correct behaviour: the caller without permission gets an error, the query returns only the caller's rows, the unsigned webhook is rejected, the input is escaped. Run it once against a scratch database. Spend at most about 10 minutes per finding.
+- How to run it is already known: use the command and the setup in the **Test Recipe** section of `recon.md`. No such section (a `recon.md` carried from an older audit): work the command out once, inside the project only. Do not build another setup, and keep your test files and stubs in your own directory under `.security-audit/tests/` when other verifiers run in parallel.
+- Recipe `unavailable` → every finding is `proof: static` with the recipe's reason. Do not retry, install or download anything, and never take a runner, module or binary from another project or directory.
 - The test fails today → `proof: test`, and `## Regression Test` holds its path, what it asserts and the relevant output.
 - No runner reaches the code, real secrets or infrastructure would be needed, or the result is inconclusive → `proof: static` and one line in `## Regression Test` saying why.
 - CI workflows, Dockerfiles, IaC and manifests: the regression test reads the file and asserts the safe property (no `pull_request_target` job checks out the head ref, no secret-named `ARG`/`ENV` in the final stage, no install script pipes a download into a shell). It never builds images, runs workflows or contacts a registry.
