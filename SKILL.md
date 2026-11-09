@@ -141,6 +141,7 @@ All agents read from and write to `.security-audit/` in the project root. This i
 ├── coverage.json            # GENERATED: the merged ledger (scripts/coverage.mjs --write)
 ├── tests/                   # Phase 3 regression tests for HIGH/CRITICAL, in the project's own runner (never in the source tree)
 ├── briefs/                  # Phase 2 per-auditor briefs (scripts/briefs.mjs)
+├── shards/                  # Phase 3 plan, one file per verifier: its raw findings and same-place groups (scripts/shards.mjs)
 ├── test-quality.md          # Phase 4 output
 ├── summary.md               # Phase 5: the coordinator's own text (summary, top risks, actions)
 ├── report.md                # Final report, assembled by scripts/report-md.mjs
@@ -269,13 +270,19 @@ Crypto-heavy project: add `--crypto-heavy`, which moves 2.8 to the Auth Auditor;
 
 This is the most critical phase. Use the prompt from `agents/deep-dive-verifier.md`.
 
-**Shards.** Up to about 25 findings: one verifier. More: split into shards of at most about 25 by category family so related findings stay together (e.g. auth + rate-limit + business-logic + docs-vs-reality / injection + exposure + config + crypto + logging / concurrency + upload) and run the shard verifiers in parallel. On a 160-entry-point project (50 findings) two shards finished in about 14 minutes each, where a single verifier had not finished one pass after 13.
+**Shards.** Plan the phase with the script, never by hand:
 
-**Provide each shard verifier:** the rules block; the paths of `recon.md`, `prepass.md` and its shard's finding files; the Shard mode section of the verifier prompt; likely overlaps you noticed (cross-shard ones go to COMBINE, not rejected inside a shard); the loop rules: max 3 iterations, stop on set-convergence, never exit with a finding still `raw`.
+```bash
+node "$SKILL_DIR/scripts/shards.mjs"   # → .security-audit/shards/<a,b,…>.md, one file per verifier
+```
+
+It groups the raw findings that cite the same place (duplicate candidates: on Ledgerly 17 of 58 raw findings were duplicates, 15 of them filed by two different auditors) and splits the work so that a group is never separated. Up to 25 raw findings it writes one shard: dispatch a single verifier and skip the COMBINE pass. Above that it writes even shards of at most 15, ordered by category family so related findings stay together (auth + rate-limit + business-logic + docs-vs-reality / injection + exposure + config + crypto + logging / concurrency + upload): run one shard verifier per file, in parallel. The phase lasts as long as its largest shard (on Ledgerly shards of 26, 21 and 9 findings took 11.9, 13.8 and 7.2 minutes), so even shards matter more than small ones: every extra shard costs about 4 minutes of reading before its first finding and its own tokens. `--size N` changes the limit when wall-clock time matters more than tokens.
+
+**Provide each shard verifier:** the rules block; the paths of `recon.md`, `prepass.md` and its shard file; the Shard mode section of the verifier prompt (not for a single verifier); likely overlaps you noticed (cross-shard ones go to COMBINE, not rejected inside a shard); the loop rules: max 3 iterations, stop on set-convergence, never exit with a finding still `raw`.
 
 **Test method.** For HIGH/CRITICAL the verifier writes one regression test in the project's own runner under `.security-audit/tests/`, asserting the correct behaviour, and runs it once against a scratch database: a failing test confirms the finding (`proof: test`). No standalone scripts and no requests to any host. Where the runner cannot reach the code or real secrets would be needed, `proof: static` with one line why. The tests are the starting point of Phase 6.
 
-**If a verifier stops before its shard is done** (its completion notification arrives with files still `raw`): make sure it has really ended, re-dispatch the remaining files in verify-only mode, and tell the user what happened.
+**If a verifier stops before its shard is done** (its completion notification arrives with files still `raw`): make sure it has really ended, run `shards.mjs` again (it plans only what is still `raw`), re-dispatch those files in verify-only mode, and tell the user what happened.
 
 **Before re-dispatching any work over the same files, confirm the earlier agent has ended.** A "stopped" verifier in a real run kept writing while its replacements ran.
 
@@ -428,9 +435,10 @@ This methodology is stack-agnostic. Phase 1 discovers the stack; Phase 2 adapts.
 | `references/remediation.md` | Phase 6 | Remediation workflow + `remediation.json` contract + `public_safe` redaction flag |
 | `scripts/prepass.mjs` | Phase 0 | Stack profile, entry points, Drizzle scope scan, osv-scanner, gitleaks, rule scanners (`scripts/tools.mjs`: semgrep, zizmor, hadolint, trivy, bandit, gosec, govulncheck) → `prepass.md` |
 | `scripts/stack.mjs` | Phase 0 (via prepass) | Stack detection from manifests, profiles (covers / does not cover), `--stack` |
-| `scripts/audit-state.mjs` | After Phases 2, 3, 6 and 5.5 | Validates finding frontmatter; `--write` generates `remediation.json` |
+| `scripts/audit-state.mjs` | After Phases 2, 3, 6 and 5.5 | Validates finding frontmatter; `--write` generates `remediation.json`; `--set <id> key=value` records a verdict without rewriting the file |
 | `scripts/report-html.mjs` | End of Phase 5 / after Phase 6 | Renders `report.html` (to fix / verified safe / not assessed) from the finding files |
 | `scripts/briefs.mjs` | Phase 2 dispatch | One brief per auditor: its checklist sections + stack patterns for the repo's languages |
+| `scripts/shards.mjs` | Phase 3 dispatch | Groups raw findings that cite the same place (duplicate candidates) and splits them into even verifier shards of at most 15 |
 | `scripts/report-md.mjs` | Phase 5 | Assembles `report.md` from the coordinator's `summary.md` and the audit files |
 | `scripts/workspace-check.mjs` | Phase 5 | Lists files changed outside `.security-audit/` since prepass `--new-run` |
 | `scripts/coverage.mjs` | After Phase 2, Phase 5 | Validates the coverage ledger (`references/coverage-ledger.schema.json`); report-md and report-html derive Coverage and Not Assessed from it |

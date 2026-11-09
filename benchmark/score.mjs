@@ -37,48 +37,12 @@
 import { appendFileSync, existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadAudit, titleOf } from "../scripts/audit-state.mjs";
+import { loadAudit, normalizePath as normalize, parseLocation, PATH, primaryLocation, SOURCE_FILE, titleOf } from "../scripts/audit-state.mjs";
 import { benchApp } from "./apps.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const DEFAULT_WINDOW = 2;
-
-const PATH = String.raw`[\w.()[\]@-]+(?:\/[\w.()[\]@-]+)*`;
-const LOC = new RegExp(String.raw`(${PATH}|\.env(?![.\w]))(?::(\d+)(?:\s*[-\u2013]\s*(\d+))?)?`, "g");
-
-// File names a finding may cite: code (JS/TS, PHP, Python, Go, Rust, JVM, Ruby, Elixir, .NET, Swift, Dart, C/C++,
-// shell), config, manifests, CI workflows, Dockerfiles and IaC.
-const SOURCE_FILE = /\.(?:[cm]?[jt]sx?|json|ya?ml|md|example|env|toml|tf|hcl|dockerfile|sql|rules|php|twig|module|inc|install|theme|py|html?|txt|cfg|ini|go|mod|rs|java|kts?|scala|groovy|gradle|rb|erb|ex|exs|cs|swift|dart|c|h|cc|cpp|hpp|lua|sh|bash|xml|properties|conf|vue|svelte)$|^\.env|^(?:Dockerfile|Containerfile)(?:\.[\w-]+)?$|^\.npmrc$/;
-
-const normalize = (p) => p.replace(/^\((?![^/]*\))/, "").replace(/^\.\//, "").replace(/^app\//, "");
-
-// The first path in `text` that looks like a source file, with its line or line range when given.
-export function parseLocation(text) {
-  for (const m of text.matchAll(LOC)) {
-    const file = m[1];
-    if (file !== ".env" && !SOURCE_FILE.test(file.split("/").pop())) continue;
-    const start = m[2] ? Number(m[2]) : null;
-    const end = m[3] ? Math.max(Number(m[3]), start) : start;
-    return { file: normalize(file), start, end };
-  }
-  return null;
-}
-
-// Primary location of a finding file: the Evidence `**File**:` line, else the first cited path:line.
-export function primaryLocation(text) {
-  const fileLine = text.match(/\*\*File\*\*:?\s*(.+)/);
-  if (fileLine) {
-    const loc = parseLocation(fileLine[1]);
-    if (loc) return loc;
-  }
-  const body = text.replace(/^---\r?\n[\s\S]*?\r?\n---/, "");
-  for (const m of body.matchAll(LOC)) {
-    if (!m[2]) continue;
-    const loc = parseLocation(m[0]);
-    if (loc) return loc;
-  }
-  return parseLocation(body);
-}
+export { parseLocation, primaryLocation };
 
 // Every location cited in `text`: `path:line`, `path:a-b`, `path:1,5,9` (one location per line or range)
 // and a bare `:27-31` that continues the previous file. Fenced code blocks are skipped.
