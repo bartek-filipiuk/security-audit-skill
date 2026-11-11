@@ -267,23 +267,24 @@ test("fetch.mjs: ecosystem/package ids, a zip release with an explicit root, age
     { name: `${top}/.claude/rules/notes.md`, data: "project notes\n" },
     { name: `${top}/CLAUDE.md`, data: "notes\n" },
     { name: `${top}/pkg/.mcp.json`, data: "{}\n" },
+    { name: `${top}/pkg/.agents/skills/x/SKILL.md`, data: "skill\n" },
   ]));
-  assert.deepEqual(zipEntries(readFileSync(zip)).map((e) => e.link), [false, false, false, false, false]);
+  assert.deepEqual(zipEntries(readFileSync(zip)).map((e) => e.link), [false, false, false, false, false, false]);
   const root = join(dir, "root");
   pinModule(root, "go/demo-mod.v2", zip, { archive: "zip", rootPath: top });
   const dest = join(dir, "run");
   const r = fetchModule(root, "go/demo-mod.v2", zip, dest);
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /check OK: go\/demo-mod\.v2 1\.0\.0/);
-  assert.match(r.stdout, /removed agent instruction files from app\/: \.claude, CLAUDE\.md, pkg\/\.mcp\.json/);
+  assert.match(r.stdout, /removed agent instruction files from app\/: \.claude, CLAUDE\.md, pkg\/\.agents, pkg\/\.mcp\.json/);
   assert.ok(existsSync(join(dest, "app", "go.mod")) && existsSync(join(dest, "app", "src", "main.js")), "the root inside the zip is app/");
-  for (const f of [".claude", "CLAUDE.md", join("pkg", ".mcp.json")]) assert.ok(!existsSync(join(dest, "app", f)), `${f} removed`);
+  for (const f of [".claude", "CLAUDE.md", join("pkg", ".agents"), join("pkg", ".mcp.json")]) assert.ok(!existsSync(join(dest, "app", f)), `${f} removed`);
   const meta = JSON.parse(readFileSync(join(dest, "meta.json"), "utf8"));
   assert.equal(meta.bench_app, "real/go/demo-mod.v2-1.0.0");
   assert.equal(meta.key, join(root, "go", "demo-mod.v2", "answer-key-1.0.0.json"));
   assert.deepEqual(meta.source.root, top);
   assert.equal(meta.source.archive, "zip");
-  assert.deepEqual(meta.stripped, [".claude", "CLAUDE.md", join("pkg", ".mcp.json")]);
+  assert.deepEqual(meta.stripped, [".claude", "CLAUDE.md", join("pkg", ".agents"), join("pkg", ".mcp.json")]);
   const email = execFileSync("git", ["-C", join(dest, "app"), "log", "--format=%ae"], { encoding: "utf8" }).trim();
   assert.equal(email, "dev@go.demo-mod.v2.invalid", "no / in the commit e-mail");
   const files = execFileSync("git", ["-C", join(dest, "app"), "ls-files"], { encoding: "utf8" }).trim().split("\n");
@@ -403,4 +404,16 @@ test("fetch.mjs: a tar.gz with a symlink, a hard link or a `..` entry is refused
   assert.equal(unsafeEntryName("a/../b"), "`..` segment");
   assert.equal(unsafeEntryName("C:\\x"), "absolute path");
   assert.equal(unsafeEntryName("a/b..c"), null);
+});
+
+test("pruneTree keeps listed directories, files above them and nothing else; drops names and paths anywhere", async () => {
+  const { pruneTree } = await import("../benchmark/real/fetch.mjs");
+  const app = mkdtempSync(join(tmpdir(), "sa-prune-"));
+  for (const f of ["a.info.yml", "src/x.php", "src/tests/t.php", "docs/d.md", "modules/README.md", "modules/keep/k.php", "modules/keep/big.js", "modules/gone/g.php"]) {
+    mkdirSync(join(app, dirname(f)), { recursive: true });
+    writeFileSync(join(app, f), "x\n");
+  }
+  const removed = pruneTree(app, { keep: ["src", "modules/keep/"], drop_names: ["tests"], drop_paths: ["modules/keep/big.js"] });
+  assert.deepEqual(removed, ["docs", "modules/gone", "modules/keep/big.js", "src/tests"]);
+  for (const f of ["a.info.yml", "src/x.php", "modules/README.md", "modules/keep/k.php"]) assert.ok(existsSync(join(app, f)), `${f} kept`);
 });

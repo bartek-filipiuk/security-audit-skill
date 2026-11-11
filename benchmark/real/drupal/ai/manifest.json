@@ -1,0 +1,113 @@
+{
+  "project": "ai",
+  "ecosystem": "drupal",
+  "name": "AI (Artificial Intelligence) (Drupal contrib)",
+  "homepage": "https://www.drupal.org/project/ai",
+  "license": "GPL-2.0-or-later",
+  "loc": "PHP about 92k lines and JS about 21k lines outside tests, 14 submodules; fetch.mjs prunes it (manifest `prune`) to about 95k lines: core src/, assets, config, templates and seven submodules, five with fixes and two without (ai_assistant_api, ai_observability), tests and the bundled deepchat.bundle.js removed",
+  "note": "Public releases fetched by benchmark/real/fetch.mjs, never vendored. 1.5.1 is the vulnerable target, 1.5.2 the fixed control. The eight advisories of 2026-10-28 (SA-CONTRIB-2026-266 to 273) were fixed in commits with neutral titles (git.drupalcode.org compare 1.5.1...1.5.2): 7d0a6cda tooltip, 546e16aa deepchat block, c1411e30 Markdown links and stream hold (plus the backslash hunk in isUrlAllowed), 8581438d plain-text URLs and protocol-relative hosts, 13bbda76 HTMX attributes, 4aa3779d AI Search results, 25d9a125 speech-to-text, 58e9238c automators. Which commit fixes which advisory is inferred from the advisory text and the diff, not stated by the maintainers; the `why` of each key entry says so. a93f325e (api_explorer output files) and 3f3be8ca (ai_ckeditor term access) look like security fixes without an advisory and are known extras. The release ships `.agents/skills/` (also in two submodules), which fetch.mjs removes. Every contender audits the same pruned tree with no path list in the prompt; the two untouched submodules are there so the tree itself is not a hint. SA-270's cache lives in search_api, which is not in the tarball: report it apart from the other seven.",
+  "archive": "tar.gz",
+  "versions": {
+    "1.5.1": {
+      "url": "https://ftp.drupal.org/files/projects/ai-1.5.1.tar.gz",
+      "sha256": "0d133605c449433c4cad5a7572d772111e3c12c714c1ea26083ad78fcc3a4307",
+      "tag": "1.5.1",
+      "released": "2026-10-14",
+      "key": "answer-key-1.5.1.json"
+    },
+    "1.5.2": {
+      "url": "https://ftp.drupal.org/files/projects/ai-1.5.2.tar.gz",
+      "sha256": "c32dc3f9f43e639e89c29c988ab1e5ca2e5880f7cbcfff421030f6cdd89f31c5",
+      "tag": "1.5.2",
+      "released": "2026-10-28",
+      "key": "answer-key-1.5.2.json"
+    }
+  },
+  "advisories": [
+    {
+      "sa": "SA-CONTRIB-2026-266",
+      "cve": "CVE-2026-118545",
+      "risk": "Moderately critical 14/25",
+      "type": "Cross-site scripting (HTML rendering not restricted enough)",
+      "fixed_in": "1.5.2",
+      "url": "https://www.drupal.org/sa-contrib-2026-266"
+    },
+    {
+      "sa": "SA-CONTRIB-2026-267",
+      "risk": "Moderately critical",
+      "type": "Cross-site scripting (AI Chatbot block settings)",
+      "fixed_in": "1.5.2",
+      "url": "https://www.drupal.org/sa-contrib-2026-267",
+      "cve": "CVE-2026-118546"
+    },
+    {
+      "sa": "SA-CONTRIB-2026-268",
+      "risk": "Moderately critical",
+      "type": "Information disclosure (links not validated, data sent to external sites)",
+      "fixed_in": "1.5.2",
+      "url": "https://www.drupal.org/sa-contrib-2026-268",
+      "cve": "CVE-2026-118548"
+    },
+    {
+      "sa": "SA-CONTRIB-2026-269",
+      "risk": "Critical",
+      "type": "Cross-site scripting (Markdown links)",
+      "fixed_in": "1.5.2",
+      "url": "https://www.drupal.org/sa-contrib-2026-269",
+      "cve": "CVE-2026-118549"
+    },
+    {
+      "sa": "SA-CONTRIB-2026-270",
+      "risk": "Moderately critical",
+      "type": "Access bypass (deprecated AI Search submodule)",
+      "fixed_in": "1.5.2",
+      "url": "https://www.drupal.org/sa-contrib-2026-270",
+      "cve": "CVE-2026-118550"
+    },
+    {
+      "sa": "SA-CONTRIB-2026-271",
+      "risk": "Less critical",
+      "type": "Information disclosure (speech-to-text audio in a shared temporary file)",
+      "fixed_in": "1.5.2",
+      "url": "https://www.drupal.org/sa-contrib-2026-271",
+      "cve": "CVE-2026-118551"
+    },
+    {
+      "sa": "SA-CONTRIB-2026-272",
+      "risk": "Moderately critical",
+      "type": "Cross-site scripting (HTMX attributes)",
+      "fixed_in": "1.5.2",
+      "url": "https://www.drupal.org/sa-contrib-2026-272",
+      "cve": "CVE-2026-118552"
+    },
+    {
+      "sa": "SA-CONTRIB-2026-273",
+      "risk": "Moderately critical",
+      "type": "Cross-site scripting (AI Automators write fields in text formats the user may not use)",
+      "fixed_in": "1.5.2",
+      "url": "https://www.drupal.org/sa-contrib-2026-273",
+      "cve": "CVE-2026-118553"
+    }
+  ],
+  "prune": {
+    "keep": [
+      "src",
+      "assets",
+      "config",
+      "templates",
+      "modules/ai_automators",
+      "modules/ai_chatbot",
+      "modules/ai_search",
+      "modules/ai_ckeditor",
+      "modules/ai_api_explorer",
+      "modules/ai_assistant_api",
+      "modules/ai_observability"
+    ],
+    "drop_names": [
+      "tests"
+    ],
+    "drop_paths": [
+      "modules/ai_chatbot/deepchat/deepchat.bundle.js"
+    ]
+  }
+}

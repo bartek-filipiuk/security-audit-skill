@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Scores one benchmark run against answer-key.json and appends a line to results.jsonl.
-//   node benchmark/score.mjs <run-dir> [--label "what changed"] [--tool security-audit|claude-security] [--app <name>] [--key <path>]
+//   node benchmark/score.mjs <run-dir> [--label "what changed"] [--tool security-audit|claude-security|plain] [--app <name>] [--key <path>]
 //                            [--results <file>] [--no-save]
 // <run-dir> is what setup.mjs (or benchmark/real/fetch.mjs) printed: it holds meta.json and app/.security-audit/.
 // The answer key is the file given by --key, else the one of the app named by --app, else meta.json `key`
@@ -223,15 +223,21 @@ export function loadClaudeSecurity(appDir) {
   const dir = join(appDir, dirs[dirs.length - 1]);
   const jsonl = join(dir, "CLAUDE-SECURITY-RESULTS.jsonl");
   if (!existsSync(jsonl)) return null;
+  return { dir, findings: loadJsonlFindings(jsonl), report: join(dir, "CLAUDE-SECURITY-RESULTS.md") };
+}
+
+// One finding per JSON line (`file`, `line`, `title`, `severity`, ...), each counted as verified. Used for the
+// Claude Security plugin and for `--tool plain`: <run>/plain-findings.jsonl, written by a driver from the final
+// answer of a plain agent (no skill), so read-only runs never write into app/.
+export function loadJsonlFindings(jsonl) {
   const rows = readFileSync(jsonl, "utf8").split("\n").filter((l) => l.trim()).map((l) => JSON.parse(l));
-  const findings = rows.map((o, i) => {
+  return rows.map((o, i) => {
     const pick = (...keys) => keys.map((k) => o[k]).find((v) => typeof v === "string" && v.trim());
     const title = pick("title", "name", "summary") ?? String(pick("description") ?? "").slice(0, 120);
     const id = String(pick("id", "finding_id") ?? `F${i + 1}`);
     const text = JSON.stringify(o);
     return { stem: id, data: { id, status: "verified", severity: String(pick("severity") ?? "").toUpperCase(), title }, body: `## Title\n${title}\n`, text, loc: claudeSecurityLocation(o) ?? primaryLocation(text) };
   });
-  return { dir, findings, report: join(dir, "CLAUDE-SECURITY-RESULTS.md") };
 }
 
 export function claudeSecurityLocation(o) {
@@ -270,6 +276,11 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     const cs = loadClaudeSecurity(join(runDir, "app"));
     if (!cs) { console.error(`No CLAUDE-SECURITY-*/CLAUDE-SECURITY-RESULTS.jsonl in ${join(runDir, "app")}.`); process.exit(1); }
     ({ findings, report } = cs);
+  } else if (tool === "plain") {
+    const jsonl = join(runDir, "plain-findings.jsonl");
+    if (!existsSync(jsonl)) { console.error(`No ${jsonl}. The driver writes it from the agent's answer.`); process.exit(1); }
+    findings = loadJsonlFindings(jsonl);
+    report = jsonl;
   } else {
     if (!existsSync(join(auditDir, "findings"))) {
       console.error(`No findings in ${auditDir}. Run the audit first (see setup.mjs output).`);

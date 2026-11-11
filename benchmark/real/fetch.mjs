@@ -12,7 +12,7 @@
 // the extracted tree is checked for symlinks again. The module root is the version's `root` (a relative path
 // inside the archive, e.g. `goshs.de/goshs/v2@v2.1.4` for a Go proxy zip), else the single top directory of a
 // tar.gz or zip, else the archive root (always for a gem). Agent instruction files shipped in the release
-// (`.claude/`, `CLAUDE.md`, `CLAUDE.local.md`, `.mcp.json`) are removed from app/ and listed in meta.json: they
+// (`.claude/`, `CLAUDE.md`, `CLAUDE.local.md`, `.mcp.json`, `.agents/`, `AGENTS.md`, `.opencode/`, `opencode.json`, `.codex/`) are removed from app/ and listed in meta.json: they
 // would steer the audit, and project settings can run hooks. DIR/app gets one git commit with a fixed date,
 // like benchmark/setup.mjs; meta.json and the archive stay in DIR, outside what the audit sees. meta.json
 // records the answer key's absolute path, which benchmark/score.mjs reads.
@@ -26,7 +26,7 @@
 
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -39,7 +39,9 @@ export const sha256File = (path) => createHash("sha256").update(readFileSync(pat
 export const MODULE_ID = /^[a-z0-9_]+(\/[a-z0-9_][a-z0-9_.-]*)?$/;
 export const ARCHIVES = ["tar.gz", "zip", "gem"];
 // Agent instruction and settings files that never reach app/.
-export const AGENT_FILES = new Set([".claude", "CLAUDE.md", "CLAUDE.local.md", ".mcp.json"]);
+// Claude Code, OpenCode and Codex all run audits here, so each one's project files go: `.agents/skills` and
+// `AGENTS.md` are read by OpenCode and Codex, `opencode.json`/`.opencode/` can load plugins and MCP servers.
+export const AGENT_FILES = new Set([".claude", "CLAUDE.md", "CLAUDE.local.md", ".mcp.json", ".agents", "AGENTS.md", ".opencode", "opencode.json", ".codex"]);
 // A module id as one path segment, for e-mail addresses and directory names.
 export const moduleSlug = (module) => module.replace(/\//g, ".");
 
@@ -231,6 +233,30 @@ export function stripAgentFiles(dir, base = dir) {
   return removed.sort();
 }
 
+// Cuts a big module down to the part every contender audits (manifest `prune`), so a skill and a plain agent see
+// the same tree and no path list in the prompt hints where to look. `keep`: directories that stay; any other
+// directory is removed unless it holds or lies inside a kept one, and files outside directories (the module
+// root, `modules/`) stay. `drop_names`: file or directory names removed anywhere (e.g. `tests`). `drop_paths`:
+// exact relative paths removed. Returns the removed paths, sorted.
+export function pruneTree(app, { keep = [], drop_names = [], drop_paths = [] }) {
+  const removed = [];
+  const kept = keep.map((k) => k.replace(/\/+$/, ""));
+  const walk = (rel) => {
+    for (const ent of readdirSync(join(app, rel), { withFileTypes: true })) {
+      const p = rel ? `${rel}/${ent.name}` : ent.name;
+      const inside = kept.some((k) => p === k || p.startsWith(`${k}/`));
+      const above = kept.some((k) => k.startsWith(`${p}/`));
+      const gone = drop_names.includes(ent.name) || drop_paths.includes(p) || (ent.isDirectory() && kept.length && !inside && !above);
+      if (gone) {
+        rmSync(join(app, p), { recursive: true, force: true });
+        removed.push(p);
+      } else if (ent.isDirectory()) walk(p);
+    }
+  };
+  walk("");
+  return removed.sort();
+}
+
 export async function fetchRun({ module, version, dest, tarball, root = here, now = new Date() }) {
   const manifest = loadManifest(module, root);
   const v = manifest.versions?.[version];
@@ -265,6 +291,7 @@ export async function fetchRun({ module, version, dest, tarball, root = here, no
     rmSync(staging, { recursive: true, force: true });
   }
   const stripped = stripAgentFiles(app);
+  const pruned = manifest.prune ? pruneTree(app, manifest.prune) : [];
 
   const date = `${v.released ?? "2026-01-01"}T12:00:00+00:00`;
   const git = (argv) =>
@@ -292,6 +319,7 @@ export async function fetchRun({ module, version, dest, tarball, root = here, no
     key: join(root, module, v.key),
     source: { url: v.url, sha256: v.sha256, tarball: basename(archive), archive: type, ...(v.root != null ? { root: v.root } : {}) },
     stripped,
+    ...(pruned.length ? { pruned } : {}),
   };
   writeFileSync(join(runDir, "meta.json"), JSON.stringify(meta, null, 2) + "\n");
   return { runDir, app, meta };
@@ -323,7 +351,8 @@ export function checkRun({ module, version, runDir, root = here }) {
   return { errors, notes };
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// realpath on both sides: run through the ~/.claude/skills symlink this was a silent no-op (exit 0, no run).
+if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   const args = process.argv.slice(2);
   const opt = (name) => (args.indexOf(name) >= 0 ? args[args.indexOf(name) + 1] : undefined);
   const [module, version] = args.filter((a, i) => !a.startsWith("--") && !["--dest", "--tarball", "--root"].includes(args[i - 1]));

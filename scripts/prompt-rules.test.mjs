@@ -149,3 +149,12 @@ test("phase 4 starts with the verifiers and maps only verified findings", async 
   assert.match(summarize({ findings: [f("auth-101", "verified"), f("auth-102", "raw"), f("auth-103", "raw")], nonIssues: [] }), /^still raw: auth-102, auth-103$/m);
   assert.doesNotMatch(summarize({ findings: [f("auth-101", "verified")], nonIssues: [] }), /still raw/);
 });
+
+test("skill: no subagent is pinned to a model; auditors and verifiers follow the session or the flags", () => {
+  const skill = readFileSync(join(repo, "SKILL.md"), "utf8");
+  const table = skill.match(/## Agent Model Selection[\s\S]*?(?=\n---\n)/)?.[0] ?? "";
+  assert.ok(table, "model table present");
+  assert.doesNotMatch(table, /\|\s*(sonnet|opus|haiku|fable)\s*\|/i, "a phase is pinned to a model again");
+  assert.match(skill, /### `--auditor-model <model>` \/ `--verifier-model <model>`/);
+  assert.doesNotMatch(skill, /^### Phase \d[^\n]*\b(Sonnet|Opus|Haiku)\b/m, "a phase heading names a fixed model");
+});

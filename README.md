@@ -182,13 +182,13 @@ prepass.mjs (no LLM) → entry points by framework convention, Drizzle scope sca
                        osv-scanner advisories, gitleaks over git history,
                        semgrep / zizmor / hadolint / trivy / bandit candidates → prepass.md
         ↓
-Recon Scanner (Sonnet) → maps exposed surface + authorization map, writes .security-audit/recon.md
+Recon Scanner (auditor model) → maps exposed surface + authorization map, writes .security-audit/recon.md
         ↓
-Category Auditors (Sonnet, parallel) → audit by domain, write findings/
+Category Auditors (auditor model, parallel) → audit by domain, write findings/
         ↓
 Deep Dive Verifier (session model) → verify, expand, chain, prove HIGH/CRITICAL, reject false positives
         ↓
-Test Quality Auditor (Sonnet) → assess test coverage vs findings
+Test Quality Auditor (auditor model) → assess test coverage vs findings
         ↓
 Coordinator → assembles final report.md, audit-state.mjs generates remediation.json
 ```

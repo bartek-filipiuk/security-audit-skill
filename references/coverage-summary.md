@@ -54,7 +54,7 @@ Stack: detected from manifests and framework files; dedicated profile for JS/TS 
   --stack <name> forces a profile
 Report: report.md + report.html (to fix / verified safe / not assessed)
 Private benchmark: benchmark/ (Ledgerly, own stack, 26 seeded bugs + 16 decoys; supabase-notes, 10 + 12; php-tickets, 13 + 14; py-clinic, 18 + 18), see benchmark/README.md
-Models: sonnet for the mechanical phases (1, 2, 4); Phase 3 verifier inherits the session model
+Models: the session model everywhere by default; `--auditor-model` (phases 1, 2, 4) and `--verifier-model` (phase 3) override it in Claude Code
 Proof labels: HIGH/CRITICAL are marked test (a regression test fails today) or static (code reading)
 Coverage ledger: every auditor records per entry point and class checked / not applicable / not assessed
   (schema-validated); the report's Coverage and Not Assessed sections come from it, so "not found" ≠ "not looked at"
