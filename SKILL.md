@@ -50,6 +50,10 @@ Re-audits only the entry points whose code changed since `<commit>` (or since th
 - **Mode** is chosen by the number of re-audit targets, so a small change runs in Standard mode. Skip Phase 1 when `recon.md` was carried (update its rows for the re-audit targets yourself, or in the auditor brief), dispatch Phase 2 auditors only for the domains of the re-audit targets with that list, verify in Phase 3 only findings without `carried_from` (chains may cite carried ones), and skip Phase 4 unless no `test-quality.md` was carried.
 - **Report.** The Phase 5 scripts are the same. `summary.md` says "Incremental audit since <commit>": re-audited N of M targets, K findings carried from <commit>. Top risks may include carried findings. Never describe the run as a fresh full audit; `report.md` and `report.html` mark every carried item with its commit.
 
+### `--auditor-model <model>` / `--verifier-model <model>` — Choose the subagent models (Claude Code)
+
+Both default to the session model (`claude --model ...`). `--auditor-model` sets the model of recon, the category auditors and test quality; `--verifier-model` sets Phase 3 verifiers and COMBINE. The value is what the Agent tool accepts as `model` (an alias such as `opus`, `fable`, `sonnet`); for an exact model version start the session with it and leave the flag out. Example: `--auditor-model opus --verifier-model fable`, so finding and rejecting are done by different models and do not share blind spots. Record both models in `summary.md`. Standard and Triage Mode run in the session itself and ignore both flags. The OpenCode and Codex packages set these models at install time instead.
+
 ### `--stack <name>` — Force the stack profile
 
 Phase 0 detects the stack from the manifests (`package.json`, `composer.json`, `pyproject.toml`/`requirements*.txt`, `go.mod`, `Cargo.toml`, `Gemfile`, `pom.xml`/`build.gradle`, `*.csproj`, up to three directories deep) and applies one profile per detected stack. `--stack` replaces that with one profile: `js`, `php`, `python`, `go`, `rust`, `ruby`, `java`, `dotnet`, `generic`, or an alias (`nextjs`, `laravel`, `symfony`, `drupal`, `django`, `fastapi`, `flask`, `rails`, ...). Pass it to the pre-pass: `prepass.mjs --new-run --stack <name>`. Combines with `--scope` and `--since`.
@@ -117,7 +121,7 @@ Entry points found in Phase 1?
 The skill is written for Claude Code. In another agent, apply these fallbacks only when their condition holds; where it does not, the rest of this file applies unchanged.
 
 - **`$SKILL_DIR`:** if no base directory was announced when the skill loaded, it is the absolute path of the directory that contains this `SKILL.md`. Resolve it once and use it everywhere below.
-- **Arguments:** if the literal text `$ARGUMENTS` appears above unexpanded, take the flags (`--scope`, `--since`, `--stack`, `--info`, `--verify-fixes`, `--mutation`) from the user's message instead.
+- **Arguments:** if the literal text `$ARGUMENTS` appears above unexpanded, take the flags (`--scope`, `--since`, `--stack`, `--info`, `--verify-fixes`, `--mutation`, `--auditor-model`, `--verifier-model`) from the user's message instead.
 - **No subagents:** only when the agent has no tool that runs a prompt as a separate agent (Claude Code Task/Agent, Codex subagents and OpenCode Task all count as one), Parallel Mode runs Phases 1–4 sequentially in this context: the same `agents/*.md` prompts in phase order, the same number ranges, the same scripts and the same files. Record coverage in `.security-audit/coverage/coordinator.json`, as in Standard Mode.
 - **Models:** where a model cannot be chosen per agent, ignore the model table in Agent Model Selection.
 
@@ -209,7 +213,7 @@ Pass **paths, not contents**: agents read `recon.md`, `prepass.md`, briefs and f
 
 You are the **coordinator**. You dispatch agents, pass context, collect results, and assemble the report. You do NOT audit code yourself (except in Standard/Triage modes).
 
-### Phase 1: Recon (1 agent, Sonnet)
+### Phase 1: Recon (1 agent, auditor model)
 
 Dispatch a single agent with the prompt from `agents/recon-scanner.md`.
 
@@ -230,7 +234,7 @@ From the recon output, extract:
 
 ---
 
-### Phase 2: Parallel Audit (3-5 agents, Sonnet)
+### Phase 2: Parallel Audit (3-5 agents, auditor model)
 
 Dispatch category auditors **in parallel**. Each agent uses the prompt from `agents/category-auditor.md`.
 
@@ -302,7 +306,7 @@ It groups the raw findings that cite the same place (duplicate candidates: on Le
 
 ---
 
-### Phase 4: Test Quality (1 agent, Sonnet, time-boxed)
+### Phase 4: Test Quality (1 agent, auditor model, time-boxed)
 
 Dispatch a single agent with the prompt from `agents/test-quality-auditor.md`, in the same turn as the Phase 3 verifiers.
 
@@ -380,18 +384,18 @@ Only count findings with `status: verified`. The score is a **reporting metric**
 
 | Phase | Agent | Model | Why |
 |-------|-------|-------|-----|
-| 1 | Recon Scanner | sonnet | Mechanical: file reading, pattern matching — cost over quality |
-| 2 | Category Auditors | sonnet | Pattern matching, checklist verification — cost over quality |
-| 3 | Deep Dive Verifier | inherit (omit `model`) | Judgment: confirmation, chain detection, REJECT decisions — run on the strongest model in the session |
-| 4 | Test Quality | sonnet | Structured analysis of test files |
+| 1 | Recon Scanner | auditor model | The map every auditor works from: a missed entry point is never audited |
+| 2 | Category Auditors | auditor model | Finding the bug is the step that decides recall; the verifier can only reject what they report |
+| 3 | Deep Dive Verifier | verifier model | Judgment: confirmation, chain detection, REJECT decisions |
+| 4 | Test Quality | auditor model | Structured analysis of test files |
 
-Pin `model` only where cost matters more than quality. Phase 3 shards and COMBINE inherit the session model. If a verifier is stopped by a safety classifier, follow the Phase 3 rule: change the method, never the model.
+The auditor model is `--auditor-model` when given, otherwise the session model: omit `model` in the Agent call. The verifier model (Phase 3 shards and COMBINE) is `--verifier-model` when given, otherwise the session model. A given value goes into the Agent call's `model` unchanged. Run on the strongest model you have; `--auditor-model sonnet` trades recall for cost on big projects. If a verifier is stopped by a safety classifier, follow the Phase 3 rule: change the method, never the model.
 
 ---
 
 ## Cost on Big Projects
 
-Measured on one production project (161 entry points, hand-rolled Node router, 50 raw findings): about 2 h 10 min wall clock and about 4.8M subagent tokens. Recon took 0.4M, six auditors 2.8M, verification 0.8M (including a stopped first attempt), COMBINE 0.2M, test quality with mutation testing 0.5M. To spend less:
+Measured on one production project with Sonnet auditors (before the session model became the default; it costs more now unless you pass `--auditor-model sonnet`) (161 entry points, hand-rolled Node router, 50 raw findings): about 2 h 10 min wall clock and about 4.8M subagent tokens. Recon took 0.4M, six auditors 2.8M, verification 0.8M (including a stopped first attempt), COMBINE 0.2M, test quality with mutation testing 0.5M. To spend less:
 - start with `--scope top20` or one domain (`--scope auth`) and widen only where it finds something;
 - merge small auditor domains (concurrency + upload) instead of one agent each;
 - keep mutation testing off;
