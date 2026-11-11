@@ -1,11 +1,12 @@
 // Run: node --test scripts/*.test.mjs
 // Exact benchmark scoring (roadmap R03): findings match the answer key by file and line only.
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { citedLocations, claudeSecurityLocation, distance, primaryLocation, score, secondaryLocations } from "../benchmark/score.mjs";
+import { citedLocations, claudeSecurityLocation, distance, loadJsonlFindings, primaryLocation, score, secondaryLocations } from "../benchmark/score.mjs";
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), "..");
 const key = JSON.parse(readFileSync(join(repo, "benchmark", "answer-key.json"), "utf8"));
@@ -449,4 +450,17 @@ test("--key and meta.key pick the answer key; a key with no seeded bugs is a con
   assert.equal(saved.status, 0, saved.stderr);
   const line = JSON.parse(readFileSync(results, "utf8").trim());
   assert.deepEqual([line.found, line.label, line.run], [1, "x", { config: "C1", model: "a/b", cost_usd: 0.5 }]);
+});
+
+test("plain JSONL findings (--tool plain) are scored by file and line like any other", () => {
+  const aiKey = JSON.parse(readFileSync(join(repo, "benchmark", "real", "drupal", "ai", "answer-key-1.5.1.json"), "utf8"));
+  const jsonl = join(mkdtempSync(join(tmpdir(), "plain-")), "plain-findings.jsonl");
+  writeFileSync(jsonl, [
+    { title: "Tooltip HTML from a data attribute", severity: "medium", file: "assets/js/ai_global.js", line: 21 },
+    { title: "Somewhere else", severity: "low", file: "src/Service/HostnameFilter.php", line: 5 },
+  ].map((o) => JSON.stringify(o)).join("\n") + "\n");
+  const r = score(loadJsonlFindings(jsonl), aiKey);
+  assert.equal(r.found, 1);
+  assert.equal(r.seeded.find((s) => s.id === "SA-2026-266").result, "found");
+  assert.equal(r.unmatched.length, 1);
 });

@@ -1,0 +1,364 @@
+{
+  "version": 2,
+  "app": "real/drupal/ai-1.5.1",
+  "module": "drupal/ai",
+  "module_version": "1.5.1",
+  "note": "Ground truth for the public release ai 1.5.1 (Drupal contrib, fetched by benchmark/real/fetch.mjs; manifest.json pins the tarball sha256). Never copy this file into the audited directory. `locations` are files relative to the module root (the run's app/) with 1-based inclusive line ranges, verified with `node benchmark/real/fetch.mjs drupal/ai 1.5.1 --check`. The maintainers fixed all eight advisories in commits with neutral titles, so the advisory-to-commit mapping is inferred from the advisory text and the diff; each `why` names the commit. All entries are inside the tree that the manifest's `prune` keeps. Ranges cover the statement that lets the attack through and the function around it where a finding would reasonably cite the function, widened on 2026-11-10 after a review found correct cites outside the first, narrower ranges. The 1.5.2 key is the false-positive control.",
+  "window": 2,
+  "seeded": [
+    {
+      "id": "SA-2026-266",
+      "class": "SA-CONTRIB-2026-266 (CVE-2026-118545): the ai-tooltip behavior parses a data attribute as HTML (DOM XSS)",
+      "severity": "MEDIUM",
+      "advisory_url": "https://www.drupal.org/sa-contrib-2026-266",
+      "locations": [
+        {
+          "file": "assets/js/ai_global.js",
+          "lines": [
+            21,
+            21
+          ]
+        }
+      ],
+      "detect": "llm",
+      "why": "popover.innerHTML = popoverTrigger.dataset.aiTooltip. data-* attributes survive Xss::filter() and the filtered text formats, so a user with a format that keeps attributes can plant markup that runs when the tooltip is built. Fixed in commit 7d0a6cda ('Fix tooltip position') with textContent. Mapping inferred: the advisory says HTML rendering is not restricted enough and needs a text format that renders HTML."
+    },
+    {
+      "id": "SA-2026-267",
+      "class": "SA-CONTRIB-2026-267 (CVE-2026-118546): AI Chatbot block width and height reach the deep-chat element unescaped (stored XSS by block administrators)",
+      "severity": "MEDIUM",
+      "advisory_url": "https://www.drupal.org/sa-contrib-2026-267",
+      "locations": [
+        {
+          "file": "modules/ai_chatbot/src/Plugin/Block/DeepChatFormBlock.php",
+          "lines": [
+            487,
+            511
+          ]
+        },
+        {
+          "file": "modules/ai_chatbot/src/Plugin/Block/DeepChatFormBlock.php",
+          "lines": [
+            635,
+            636
+          ]
+        },
+        {
+          "file": "modules/ai_chatbot/src/Plugin/Block/DeepChatFormBlock.php",
+          "lines": [
+            697,
+            698
+          ]
+        },
+        {
+          "file": "modules/ai_chatbot/src/Plugin/Block/DeepChatFormBlock.php",
+          "lines": [
+            750,
+            762
+          ]
+        },
+        {
+          "file": "modules/ai_chatbot/templates/ai-deepchat.html.twig",
+          "lines": [
+            33,
+            33
+          ]
+        },
+        {
+          "file": "modules/ai_chatbot/templates/ai-deepchat--toolbar.html.twig",
+          "lines": [
+            34,
+            34
+          ]
+        }
+      ],
+      "detect": "llm",
+      "why": "blockSubmit stores the styling width and height as typed (635-636); they go into drupalSettings (697-698) and into the inline style string (755-757), and both templates print every deepchat setting into a single-quoted attribute with |raw. Fixed in commit 546e16aa ('Improve rendering of deepchat block'): blockValidate accepts only CSS lengths, getCssLength() falls back to the default, |raw removed. The advisory requires block administration access."
+    },
+    {
+      "id": "SA-2026-268",
+      "class": "SA-CONTRIB-2026-268 (CVE-2026-118548): HostnameFilter lets backslash and slash-variant URLs through (/\\host as a relative path, \\\\host as a URL without host), so links and images to disallowed hosts stay in rendered output",
+      "severity": "MEDIUM",
+      "advisory_url": "https://www.drupal.org/sa-contrib-2026-268",
+      "locations": [
+        {
+          "file": "src/Service/HostnameFilter.php",
+          "lines": [
+            343,
+            364
+          ]
+        },
+        {
+          "file": "src/Service/HostnameFilter.php",
+          "lines": [
+            658,
+            682
+          ]
+        },
+        {
+          "file": "src/Service/HostnameFilter.php",
+          "lines": [
+            699,
+            708
+          ]
+        }
+      ],
+      "detect": "llm",
+      "why": "isUrlAllowed() returns TRUE for anything starting with '/' that is not '//' (679-681), so '/\\evil.com' passes, and for anything parse_url() finds no host in (706-708), so '\\\\evil.com' passes; browsers read both as //evil.com. filterUrlsInPlainText's pattern (349) does not treat backslash forms as URLs. Fixed mainly in commit 8581438d (pattern, isProtocolRelativeHost, slash collapsing) plus the backslash normalisation hunk of c1411e30. 268 and 269 share this file and an image bypass to an external host touches both; the nearest range decides."
+    },
+    {
+      "id": "SA-2026-269",
+      "class": "SA-CONTRIB-2026-269 (CVE-2026-118549): Markdown link filter is regex-based and is bypassed by nested brackets, parentheses and escapes; streamed chunks split a javascript: URL across two filter passes (XSS without privileges)",
+      "severity": "CRITICAL",
+      "advisory_url": "https://www.drupal.org/sa-contrib-2026-269",
+      "locations": [
+        {
+          "file": "src/Service/HostnameFilter.php",
+          "lines": [
+            545,
+            596
+          ]
+        },
+        {
+          "file": "src/Service/HostnameFilter.php",
+          "lines": [
+            615,
+            630
+          ]
+        },
+        {
+          "file": "src/OperationType/Chat/StreamedChatMessageIterator.php",
+          "lines": [
+            923,
+            928
+          ]
+        },
+        {
+          "file": "src/OperationType/Chat/StreamedChatMessageIterator.php",
+          "lines": [
+            936,
+            941
+          ]
+        }
+      ],
+      "detect": "llm",
+      "why": "filterMarkdownLinks matches images and links with [^\\]]+ and [^\\s\\)]+ (549-596), so [a[b]](javascript:...) or a destination with parentheses or backslash escapes is never checked, and the reference-definition pattern (615) misses definitions inside lists or quotes. StreamedChatMessageIterator::shouldFlush (937-941) holds the buffer only for http and / destinations, so 'javas' and 'cript:' are filtered separately and joined by the client. Fixed in commit c1411e30: a bracket-aware Markdown parser and a hold on unfinished link syntax. The advisory says no privileges are required (model output in chat)."
+    },
+    {
+      "id": "SA-2026-270",
+      "class": "SA-CONTRIB-2026-270 (CVE-2026-118550): AI Search checks access per result for the searching user, but Views caches those results for everyone (access bypass)",
+      "severity": "MEDIUM",
+      "advisory_url": "https://www.drupal.org/sa-contrib-2026-270",
+      "locations": [
+        {
+          "file": "modules/ai_search/src/Plugin/search_api/backend/SearchApiAiSearchBackend.php",
+          "lines": [
+            852,
+            855
+          ]
+        },
+        {
+          "file": "modules/ai_search/src/Plugin/search_api/backend/SearchApiAiSearchBackend.php",
+          "lines": [
+            1001,
+            1021
+          ]
+        }
+      ],
+      "detect": "llm",
+      "why": "search() drops results the current user may not view (checkEntityAccess at 852) but adds no user or permission cache context, so a Search API view with result caching serves one user's access-filtered results to the next. Fixed in commit 4aa3779d ('Task: Result caching improvements'): ResultsCacheVariation adds cache contexts per configured mode and access conditions are handled explicitly. The fix is all additions, so the range is the access check whose result gets cached. Mapping inferred from the advisory ('deprecated AI Search submodule exposes content'). The cache itself is Search API's (not in the tarball), so this advisory is reported apart from the other seven."
+    },
+    {
+      "id": "SA-2026-271",
+      "class": "SA-CONTRIB-2026-271 (CVE-2026-118551): speech-to-text writes every upload to one shared temporary file and never deletes it",
+      "severity": "LOW",
+      "advisory_url": "https://www.drupal.org/sa-contrib-2026-271",
+      "locations": [
+        {
+          "file": "src/Base/OpenAiBasedProviderClientBase.php",
+          "lines": [
+            540,
+            568
+          ]
+        }
+      ],
+      "detect": "llm",
+      "why": "speechToText() saves the audio to temporary://speech_to_text.mp3 with FileExists::Replace (547) and opens it (548); the file stays after the request, readable to anyone with access to the temp directory, and concurrent requests overwrite each other. Fixed in commit 25d9a125 ('Keep the original audio filename that is sent to LLM') with an in-memory stream. The advisory text matches this fix directly."
+    },
+    {
+      "id": "SA-2026-272",
+      "class": "SA-CONTRIB-2026-272 (CVE-2026-118552): HostnameFilter strips on* attributes but keeps hx-* and data-hx-* (XSS through HTMX)",
+      "severity": "MEDIUM",
+      "advisory_url": "https://www.drupal.org/sa-contrib-2026-272",
+      "locations": [
+        {
+          "file": "src/Service/HostnameFilter.php",
+          "lines": [
+            373,
+            393
+          ]
+        }
+      ],
+      "detect": "llm",
+      "why": "filterHtmlLinks() removes only attributes whose name starts with 'on' (384-389), so hx-get, hx-on and data-hx-* attributes in model or user HTML survive and Drupal core's HTMX acts on them. Fixed in commit 13bbda76 ('Adding more useful unit testing to the service layer') by also stripping hx and data-hx attributes. The advisory names unsanitized HTMX attributes."
+    },
+    {
+      "id": "SA-2026-273",
+      "class": "SA-CONTRIB-2026-273 (CVE-2026-118553): AI Automators store generated text in the configured text format whether or not the saving user may use it (XSS through a privileged format)",
+      "severity": "MEDIUM",
+      "advisory_url": "https://www.drupal.org/sa-contrib-2026-273",
+      "locations": [
+        {
+          "file": "modules/ai_automators/src/Plugin/AiAutomatorType/LlmText.php",
+          "lines": [
+            52,
+            66
+          ]
+        },
+        {
+          "file": "modules/ai_automators/src/Plugin/AiAutomatorType/LlmTextLong.php",
+          "lines": [
+            52,
+            68
+          ]
+        },
+        {
+          "file": "modules/ai_automators/src/Plugin/AiAutomatorType/LlmTextWithSummary.php",
+          "lines": [
+            52,
+            66
+          ]
+        },
+        {
+          "file": "modules/ai_automators/src/Plugin/AiAutomatorType/LlmSimpleTextLong.php",
+          "lines": [
+            49,
+            62
+          ]
+        },
+        {
+          "file": "modules/ai_automators/src/Plugin/AiAutomatorType/LlmSimpleTextWithSummary.php",
+          "lines": [
+            49,
+            62
+          ]
+        },
+        {
+          "file": "modules/ai_automators/src/Plugin/AiAutomatorType/LlmSummarizeToTextLong.php",
+          "lines": [
+            49,
+            62
+          ]
+        },
+        {
+          "file": "modules/ai_automators/src/Plugin/AiAutomatorType/LlmVideoToTextLong.php",
+          "lines": [
+            49,
+            62
+          ]
+        },
+        {
+          "file": "modules/ai_automators/src/Plugin/AiAutomatorType/LlmVideoToHtml.php",
+          "lines": [
+            149,
+            182
+          ]
+        }
+      ],
+      "detect": "llm",
+      "why": "storeValues() takes automator_use_text_format from the field config (or the field's first allowed format) and writes the generated text with it, with no check that the user who saved the entity may use that format; queued runs execute as anonymous. An editor limited to plain text can steer the model (or the source field) into HTML stored as full_html. Fixed in commit 58e9238c ('Improve automators queue runner'): TextFormatAccessTrait, runs as the saving user or a configured fallback user."
+    }
+  ],
+  "decoys": [],
+  "known_extras": [
+    {
+      "id": "X01",
+      "locations": [
+        {
+          "file": "modules/ai_api_explorer/ai_api_explorer.module",
+          "lines": [
+            53,
+            62
+          ]
+        },
+        {
+          "file": "modules/ai_api_explorer/src/Plugin/AiApiExplorer/TextToSpeechGenerator.php",
+          "lines": [
+            186,
+            186
+          ]
+        },
+        {
+          "file": "modules/ai_api_explorer/src/Plugin/AiApiExplorer/ImageAndAudioToVideoGenerator.php",
+          "lines": [
+            165,
+            165
+          ]
+        },
+        {
+          "file": "modules/ai_api_explorer/src/Plugin/AiApiExplorer/ImageToImageGenerator.php",
+          "lines": [
+            205,
+            205
+          ]
+        },
+        {
+          "file": "modules/ai_api_explorer/src/Plugin/AiApiExplorer/TextToImageGenerator.php",
+          "lines": [
+            182,
+            182
+          ]
+        },
+        {
+          "file": "modules/ai_api_explorer/src/Plugin/AiApiExplorer/SpeechToSpeechGenerator.php",
+          "lines": [
+            158,
+            158
+          ]
+        },
+        {
+          "file": "modules/ai_api_explorer/src/Plugin/AiApiExplorer/AudioToAudioGenerator.php",
+          "lines": [
+            140,
+            140
+          ]
+        }
+      ],
+      "why": "hook_file_download allows every file under temporary://ai-explorers/ to anyone who can request it, so one explorer user's generated images and audio are readable by others. Fixed in commit a93f325e ('Improve file handling in ai_api_explorer') with per-user file entities; no advisory of its own. Valid, not scored."
+    },
+    {
+      "id": "X02",
+      "locations": [
+        {
+          "file": "modules/ai_ckeditor/src/Plugin/AiCKEditor/Tone.php",
+          "lines": [
+            269,
+            272
+          ]
+        },
+        {
+          "file": "modules/ai_ckeditor/src/Plugin/AiCKEditor/Tone.php",
+          "lines": [
+            331,
+            334
+          ]
+        },
+        {
+          "file": "modules/ai_ckeditor/src/Plugin/AiCKEditor/Translate.php",
+          "lines": [
+            323,
+            324
+          ]
+        },
+        {
+          "file": "modules/ai_ckeditor/src/Plugin/AiCKEditor/Translate.php",
+          "lines": [
+            376,
+            380
+          ]
+        }
+      ],
+      "why": "The Tone and Translate CKEditor plugins load any taxonomy term id from the request and list terms without a view access check, disclosing unpublished terms. Fixed in commit 3f3be8ca ('Fix configuration forms of ai_ckeditor plugins'); no advisory of its own. Valid, not scored."
+    }
+  ]
+}

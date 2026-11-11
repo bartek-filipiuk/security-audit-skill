@@ -1,0 +1,347 @@
+{
+  "version": 2,
+  "app": "real/drupal/ai-1.5.2",
+  "module": "drupal/ai",
+  "module_version": "1.5.2",
+  "note": "Negative control for answer-key-1.5.1.json: ai 1.5.2 fixes SA-CONTRIB-2026-266 to 273. `seeded` is empty; `decoys` are the whole fixed functions (and the new helper files) at 1.5.2 lines, the code a false positive would cite (verified with `node benchmark/real/fetch.mjs drupal/ai 1.5.2 --check`), so `decoy false positives` counts verified findings that still report a fixed advisory. Audited on the same pruned tree as the target (manifest `prune`).",
+  "window": 2,
+  "seeded": [],
+  "decoys": [
+    {
+      "id": "SA-2026-266-fixed",
+      "locations": [
+        {
+          "file": "assets/js/ai_global.js",
+          "lines": [
+            17,
+            24
+          ]
+        }
+      ],
+      "why": "The tooltip text is assigned with textContent, so the data attribute is never parsed as HTML."
+    },
+    {
+      "id": "SA-2026-267-fixed",
+      "locations": [
+        {
+          "file": "modules/ai_chatbot/src/Plugin/Block/DeepChatFormBlock.php",
+          "lines": [
+            624,
+            669
+          ]
+        },
+        {
+          "file": "modules/ai_chatbot/src/Plugin/Block/DeepChatFormBlock.php",
+          "lines": [
+            674,
+            704
+          ]
+        },
+        {
+          "file": "modules/ai_chatbot/src/Plugin/Block/DeepChatFormBlock.php",
+          "lines": [
+            723,
+            724
+          ]
+        },
+        {
+          "file": "modules/ai_chatbot/src/Plugin/Block/DeepChatFormBlock.php",
+          "lines": [
+            749,
+            750
+          ]
+        },
+        {
+          "file": "modules/ai_chatbot/src/Plugin/Block/DeepChatFormBlock.php",
+          "lines": [
+            807,
+            809
+          ]
+        },
+        {
+          "file": "modules/ai_chatbot/templates/ai-deepchat.html.twig",
+          "lines": [
+            33,
+            33
+          ]
+        },
+        {
+          "file": "modules/ai_chatbot/templates/ai-deepchat--toolbar.html.twig",
+          "lines": [
+            34,
+            34
+          ]
+        }
+      ],
+      "why": "Width and height pass blockValidate and getCssLength() (a CSS length or the default) before they reach drupalSettings and the style string, and the templates no longer use |raw, so Twig escapes the attribute values."
+    },
+    {
+      "id": "SA-2026-268-fixed",
+      "locations": [
+        {
+          "file": "src/Service/HostnameFilter.php",
+          "lines": [
+            320,
+            378
+          ]
+        },
+        {
+          "file": "src/Service/HostnameFilter.php",
+          "lines": [
+            396,
+            413
+          ]
+        },
+        {
+          "file": "src/Service/HostnameFilter.php",
+          "lines": [
+            880,
+            960
+          ]
+        }
+      ],
+      "why": "The plain-text URL pattern also matches backslash and slash-run forms and isUrlAllowed normalizes them the way browsers do before reading the host."
+    },
+    {
+      "id": "SA-2026-269-fixed",
+      "locations": [
+        {
+          "file": "src/Service/HostnameFilter.php",
+          "lines": [
+            597,
+            638
+          ]
+        },
+        {
+          "file": "src/Service/HostnameFilter.php",
+          "lines": [
+            658,
+            717
+          ]
+        },
+        {
+          "file": "src/Service/HostnameFilter.php",
+          "lines": [
+            731,
+            786
+          ]
+        },
+        {
+          "file": "src/Service/HostnameFilter.php",
+          "lines": [
+            804,
+            846
+          ]
+        },
+        {
+          "file": "src/Service/HostnameFilter.php",
+          "lines": [
+            861,
+            869
+          ]
+        },
+        {
+          "file": "src/OperationType/Chat/StreamedChatMessageIterator.php",
+          "lines": [
+            923,
+            928
+          ]
+        },
+        {
+          "file": "src/OperationType/Chat/StreamedChatMessageIterator.php",
+          "lines": [
+            936,
+            986
+          ]
+        }
+      ],
+      "why": "Inline links go through a bracket-aware parser (filterMarkdownInlineLinks) and isMarkdownUrlAllowed checks escaped and unescaped forms; reference definitions inside containers are matched; the stream holds the buffer while it ends inside link syntax."
+    },
+    {
+      "id": "SA-2026-270-fixed",
+      "locations": [
+        {
+          "file": "modules/ai_search/src/Plugin/search_api/backend/SearchApiAiSearchBackend.php",
+          "lines": [
+            863,
+            866
+          ]
+        },
+        {
+          "file": "modules/ai_search/src/Plugin/search_api/backend/SearchApiAiSearchBackend.php",
+          "lines": [
+            1063,
+            1083
+          ]
+        },
+        {
+          "file": "modules/ai_search/src/ResultsCacheVariation.php",
+          "lines": [
+            1,
+            142
+          ]
+        },
+        {
+          "file": "modules/ai_search/ai_search.module",
+          "lines": [
+            36,
+            48
+          ]
+        }
+      ],
+      "why": "The per-result access check is unchanged, but ResultsCacheVariation (hook_search_api_query_alter and hook_views_pre_render in ai_search.module) now adds user or role cache contexts per the index's results cache mode, so cached results are not shared across users by default."
+    },
+    {
+      "id": "SA-2026-271-fixed",
+      "locations": [
+        {
+          "file": "src/Base/OpenAiBasedProviderClientBase.php",
+          "lines": [
+            541,
+            589
+          ]
+        }
+      ],
+      "why": "The audio goes to the API from a php://memory stream and is never written to disk."
+    },
+    {
+      "id": "SA-2026-272-fixed",
+      "locations": [
+        {
+          "file": "src/Service/HostnameFilter.php",
+          "lines": [
+            421,
+            528
+          ]
+        }
+      ],
+      "why": "hx-* and data-hx-* attributes are stripped together with on* handlers."
+    },
+    {
+      "id": "SA-2026-273-fixed",
+      "locations": [
+        {
+          "file": "modules/ai_automators/src/Plugin/AiAutomatorType/LlmText.php",
+          "lines": [
+            54,
+            68
+          ]
+        },
+        {
+          "file": "modules/ai_automators/src/Plugin/AiAutomatorType/LlmText.php",
+          "lines": [
+            73,
+            79
+          ]
+        },
+        {
+          "file": "modules/ai_automators/src/Plugin/AiAutomatorType/LlmTextLong.php",
+          "lines": [
+            54,
+            70
+          ]
+        },
+        {
+          "file": "modules/ai_automators/src/Plugin/AiAutomatorType/LlmTextLong.php",
+          "lines": [
+            75,
+            81
+          ]
+        },
+        {
+          "file": "modules/ai_automators/src/Plugin/AiAutomatorType/LlmTextWithSummary.php",
+          "lines": [
+            54,
+            68
+          ]
+        },
+        {
+          "file": "modules/ai_automators/src/Plugin/AiAutomatorType/LlmTextWithSummary.php",
+          "lines": [
+            73,
+            79
+          ]
+        },
+        {
+          "file": "modules/ai_automators/src/Plugin/AiAutomatorType/LlmSimpleTextLong.php",
+          "lines": [
+            52,
+            65
+          ]
+        },
+        {
+          "file": "modules/ai_automators/src/Plugin/AiAutomatorType/LlmSimpleTextLong.php",
+          "lines": [
+            70,
+            75
+          ]
+        },
+        {
+          "file": "modules/ai_automators/src/Plugin/AiAutomatorType/LlmSimpleTextWithSummary.php",
+          "lines": [
+            52,
+            65
+          ]
+        },
+        {
+          "file": "modules/ai_automators/src/Plugin/AiAutomatorType/LlmSimpleTextWithSummary.php",
+          "lines": [
+            70,
+            75
+          ]
+        },
+        {
+          "file": "modules/ai_automators/src/Plugin/AiAutomatorType/LlmSummarizeToTextLong.php",
+          "lines": [
+            52,
+            65
+          ]
+        },
+        {
+          "file": "modules/ai_automators/src/Plugin/AiAutomatorType/LlmSummarizeToTextLong.php",
+          "lines": [
+            70,
+            75
+          ]
+        },
+        {
+          "file": "modules/ai_automators/src/Plugin/AiAutomatorType/LlmVideoToTextLong.php",
+          "lines": [
+            52,
+            65
+          ]
+        },
+        {
+          "file": "modules/ai_automators/src/Plugin/AiAutomatorType/LlmVideoToTextLong.php",
+          "lines": [
+            70,
+            75
+          ]
+        },
+        {
+          "file": "modules/ai_automators/src/Plugin/AiAutomatorType/LlmVideoToHtml.php",
+          "lines": [
+            95,
+            140
+          ]
+        },
+        {
+          "file": "modules/ai_automators/src/Plugin/AiAutomatorType/LlmVideoToHtml.php",
+          "lines": [
+            157,
+            190
+          ]
+        },
+        {
+          "file": "modules/ai_automators/src/Traits/TextFormatAccessTrait.php",
+          "lines": [
+            1,
+            124
+          ]
+        }
+      ],
+      "why": "textFormatForCurrentUser() (TextFormatAccessTrait) uses the configured format only when the saving user may use it, falling back to a format they may use or skipping; queued runs execute as that user or the configured fallback user."
+    }
+  ],
+  "known_extras": []
+}

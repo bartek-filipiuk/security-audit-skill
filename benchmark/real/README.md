@@ -103,6 +103,27 @@ holds about 700 FastAPI routes, so it runs Parallel Mode. Its sdist has no lockf
 FAILED (no package sources) and the dependency gap goes to `not-assessed.md`. 42208 was published in April
 2026 and widely covered; check the model's cutoff before reading anything into a hit on it.
 
+## Drupal AI, eight advisories in one release (2026-11-10)
+
+| Module id | Target / control | Size | Scored on the target |
+|---|---|---|---|
+| `drupal/ai` | 1.5.1 / 1.5.2 | PHP about 92k lines, JS 21k, 14 submodules; pruned by `fetch.mjs` (manifest `prune`) to about 95k lines | [SA-CONTRIB-2026-266](https://www.drupal.org/sa-contrib-2026-266) to [273](https://www.drupal.org/sa-contrib-2026-273) (CVE-2026-118545 to 118553, 2026-10-28): tooltip DOM XSS, chatbot block XSS, link filter bypasses (backslash URLs to external hosts, Markdown `javascript:` links, HTMX attributes), AI Search results cached across users, speech-to-text audio left in a shared temp file, automators writing text formats the user may not use |
+
+The module is too large for a whole-module run, and `--scope` filters entry points rather than files, so
+`fetch.mjs` prunes the tree instead (manifest `prune`): core `src/`, `assets/`, `config/`, `templates/`, the five
+submodules the fixes touch and two that no fix touches (`ai_assistant_api`, `ai_observability`), without
+`tests/` and the bundled `deepchat.bundle.js`. Every contender audits that tree with no path list: the skill as
+`/security-audit`, a plain agent with a prompt that names no paths. The maintainers fixed the advisories in
+commits with neutral titles, so the advisory-to-commit mapping is inferred from the advisory text and the diff;
+each key entry's `why` names its commit. Ranges were widened on 2026-11-10 to the function a reasonable finding
+cites, after a review found correct cites outside the first ranges; the control's decoys are the whole fixed
+functions. Two more fixes in 1.5.2 have no advisory (explorer output files readable by other users, CKEditor term
+options without access checks) and are known extras. SA-270's cache lives in Search API, which is not in the
+tarball: report it apart from the other seven. 268, 269 and 272 share `HostnameFilter.php`, and a skill finding
+that merges them by root cause can match only one, so also report the three as one group. The release ships
+`.agents/skills/`, which `fetch.mjs` removes. Plain agents end their answer with a JSONL block that a driver
+writes to `<run>/plain-findings.jsonl`; score it with `--tool plain`.
+
 ## Run
 
     node benchmark/real/fetch.mjs miniorange_saml 3.1.3            # prints the run directory
